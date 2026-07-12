@@ -75,6 +75,7 @@ const DRAFT_MOVE_ID = '__draft__';
 const DEFAULT_FREE_FIRE_DURATION = 15_000;
 const DEFAULT_AXIS_DURATION = 25_000;
 const AXIS_PLACEMENT_WINDOW = 30_000;
+const HEAVY_ATTACK_HOLD_MS = 300;
 type ComboTrackMetric = { extent: number; start: number; center: number };
 
 function clamp(value: number, min: number, max: number): number {
@@ -301,6 +302,20 @@ function currentPeriodLabel(chart: ComboChart | null, stepIndex: number): string
   return period ? `当前：${period.label}` : '';
 }
 
+function bindingCodesForMove(bindings: KeyBinding[], moveId: string): string[] {
+  return bindings.find((binding) => binding.moveId === moveId)?.inputs.map((input) => normalizeInputCode(input.code)) ?? [];
+}
+
+function isPressEvent(event: TrainerLikeInputEvent): boolean {
+  return event.type === 'keydown' || event.type === 'mousedown';
+}
+
+function isReleaseEvent(event: TrainerLikeInputEvent): boolean {
+  return event.type === 'keyup' || event.type === 'mouseup';
+}
+
+type TrainerLikeInputEvent = { type: 'keydown' | 'keyup' | 'mousedown' | 'mouseup'; code: string; time: number };
+
 export default function App() {
   const saved = useMemo(loadSavedState, []);
   const desktop = useMemo(() => createDesktopBridge(), []);
@@ -337,10 +352,13 @@ export default function App() {
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const avatarInputRefs = useRef<Record<number, HTMLInputElement | null>>({});
   const capsuleInputRef = useRef<HTMLInputElement | null>(null);
+  const basicAttackHoldRef = useRef(new Map<string, { pressEvent: TrainerLikeInputEvent; heavyCode: string; timer: number; fired: boolean }>());
 
   const practiceChart = useMemo(() => sortChartForPractice(chart), [chart]);
   const activeStep = practiceChart?.steps[practice.currentStepIndex] ?? null;
   const practiceSettings = useMemo(() => ({ ...(practicePreset === 'strict' ? STRICT_PRACTICE : practicePreset === 'lenient' ? LENIENT_PRACTICE : SIMPLE_PRACTICE), axisGateEnabled }), [practicePreset, axisGateEnabled]);
+  const basicAttackCodes = useMemo(() => new Set(bindingCodesForMove(bindings, 'basic_attack')), [bindings]);
+  const heavyAttackCode = useMemo(() => bindingCodesForMove(bindings, 'heavy_attack')[0] ?? 'MouseLeftHold', [bindings]);
 
   useEffect(() => {
     overlaySettingsRef.current = overlaySettings;
@@ -388,11 +406,13 @@ export default function App() {
       if (event.type === 'keydown') {
         if (page === 'record' && normalized.code === 'Escape' && recorderRef.current.isRecording) {
           event.preventDefault();
+          clearBasicAttackHoldState();
           stopRecording();
           return;
         }
         if (page === 'practice' && normalized.code === 'Escape') {
           event.preventDefault();
+          clearBasicAttackHoldState();
           stopPractice();
           return;
         }
@@ -411,10 +431,43 @@ export default function App() {
       window.removeEventListener('mousedown', handleMouse, true);
       window.removeEventListener('mouseup', handleMouse, true);
       disposeGlobal?.();
+      clearBasicAttackHoldState();
     };
-  }, [page, desktop]);
+  }, [page, desktop, basicAttackCodes, heavyAttackCode]);
 
-  function acceptTrainerInput(event: { type: 'keydown' | 'keyup' | 'mousedown' | 'mouseup'; code: string; time: number }) {
+  function acceptTrainerInput(event: TrainerLikeInputEvent) {
+    const normalizedCode = normalizeInputCode(event.code);
+    if (basicAttackCodes.has(normalizedCode)) {
+      if (isPressEvent(event)) {
+        if (basicAttackHoldRef.current.has(normalizedCode)) return;
+        const hold = {
+          pressEvent: { ...event, code: normalizedCode },
+          heavyCode: heavyAttackCode,
+          timer: window.setTimeout(() => {
+            const current = basicAttackHoldRef.current.get(normalizedCode);
+            if (!current || current.fired) return;
+            current.fired = true;
+            routeTrainerInput({ ...current.pressEvent, code: current.heavyCode, time: current.pressEvent.time + HEAVY_ATTACK_HOLD_MS });
+          }, HEAVY_ATTACK_HOLD_MS),
+          fired: false
+        };
+        basicAttackHoldRef.current.set(normalizedCode, hold);
+        return;
+      }
+      if (isReleaseEvent(event)) {
+        const hold = basicAttackHoldRef.current.get(normalizedCode);
+        if (!hold) return;
+        window.clearTimeout(hold.timer);
+        basicAttackHoldRef.current.delete(normalizedCode);
+        const heldMs = event.time - hold.pressEvent.time;
+        if (!hold.fired && heldMs < HEAVY_ATTACK_HOLD_MS) routeTrainerInput(hold.pressEvent);
+        return;
+      }
+    }
+    routeTrainerInput(event);
+  }
+
+  function routeTrainerInput(event: TrainerLikeInputEvent) {
     if (page === 'record') {
       const before = recorderRef.current.isRecording;
       const next = recorderRef.current.accept(event);
@@ -427,6 +480,11 @@ export default function App() {
     if (page === 'practice' && practiceRef.current) {
       setPractice(practiceRef.current.accept(event));
     }
+  }
+
+  function clearBasicAttackHoldState() {
+    for (const hold of basicAttackHoldRef.current.values()) window.clearTimeout(hold.timer);
+    basicAttackHoldRef.current.clear();
   }
 
   function manualToggleRecording() {
