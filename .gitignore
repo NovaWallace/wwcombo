@@ -1,0 +1,14 @@
+node_modules/
+dist/
+dist-electron/
+src-tauri/target/
+release-test-*/
+鸣潮自助/
+*.zip
+*.tsbuildinfo
+.DS_Store
+*.log
+*.local
+.env
+.env.*
+!.env.example

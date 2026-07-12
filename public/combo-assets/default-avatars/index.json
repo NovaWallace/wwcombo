@@ -1,0 +1,220 @@
+{
+    "avatars":  [
+                    {
+                        "name":  "爱弥斯",
+                        "src":  "/combo-assets/default-avatars/爱弥斯.webp"
+                    },
+                    {
+                        "name":  "安可",
+                        "src":  "/combo-assets/default-avatars/安可.webp"
+                    },
+                    {
+                        "name":  "暗主",
+                        "src":  "/combo-assets/default-avatars/暗主.webp"
+                    },
+                    {
+                        "name":  "奥古斯塔",
+                        "src":  "/combo-assets/default-avatars/奥古斯塔.webp"
+                    },
+                    {
+                        "name":  "白芷",
+                        "src":  "/combo-assets/default-avatars/白芷.webp"
+                    },
+                    {
+                        "name":  "卜灵",
+                        "src":  "/combo-assets/default-avatars/卜灵.webp"
+                    },
+                    {
+                        "name":  "布兰特",
+                        "src":  "/combo-assets/default-avatars/布兰特.webp"
+                    },
+                    {
+                        "name":  "炽霞",
+                        "src":  "/combo-assets/default-avatars/炽霞.webp"
+                    },
+                    {
+                        "name":  "仇远",
+                        "src":  "/combo-assets/default-avatars/仇远.webp"
+                    },
+                    {
+                        "name":  "椿",
+                        "src":  "/combo-assets/default-avatars/椿.webp"
+                    },
+                    {
+                        "name":  "达妮娅",
+                        "src":  "/combo-assets/default-avatars/达妮娅.webp"
+                    },
+                    {
+                        "name":  "丹瑾",
+                        "src":  "/combo-assets/default-avatars/丹瑾.webp"
+                    },
+                    {
+                        "name":  "灯灯",
+                        "src":  "/combo-assets/default-avatars/灯灯.webp"
+                    },
+                    {
+                        "name":  "菲比",
+                        "src":  "/combo-assets/default-avatars/菲比.webp"
+                    },
+                    {
+                        "name":  "绯雪",
+                        "src":  "/combo-assets/default-avatars/绯雪.webp"
+                    },
+                    {
+                        "name":  "风主",
+                        "src":  "/combo-assets/default-avatars/风主.webp"
+                    },
+                    {
+                        "name":  "弗洛洛",
+                        "src":  "/combo-assets/default-avatars/弗洛洛.webp"
+                    },
+                    {
+                        "name":  "光主",
+                        "src":  "/combo-assets/default-avatars/光主.webp"
+                    },
+                    {
+                        "name":  "忌炎",
+                        "src":  "/combo-assets/default-avatars/忌炎.webp"
+                    },
+                    {
+                        "name":  "嘉贝丽娜",
+                        "src":  "/combo-assets/default-avatars/嘉贝丽娜.webp"
+                    },
+                    {
+                        "name":  "鉴心",
+                        "src":  "/combo-assets/default-avatars/鉴心.webp"
+                    },
+                    {
+                        "name":  "今汐",
+                        "src":  "/combo-assets/default-avatars/今汐.webp"
+                    },
+                    {
+                        "name":  "卡卡罗",
+                        "src":  "/combo-assets/default-avatars/卡卡罗.webp"
+                    },
+                    {
+                        "name":  "卡提",
+                        "src":  "/combo-assets/default-avatars/卡提.webp"
+                    },
+                    {
+                        "name":  "坎特蕾拉",
+                        "src":  "/combo-assets/default-avatars/坎特蕾拉.webp"
+                    },
+                    {
+                        "name":  "珂莱塔",
+                        "src":  "/combo-assets/default-avatars/珂莱塔.webp"
+                    },
+                    {
+                        "name":  "雷主",
+                        "src":  "/combo-assets/default-avatars/雷主.webp"
+                    },
+                    {
+                        "name":  "丽贝卡",
+                        "src":  "/combo-assets/default-avatars/丽贝卡.webp"
+                    },
+                    {
+                        "name":  "琳奈",
+                        "src":  "/combo-assets/default-avatars/琳奈.webp"
+                    },
+                    {
+                        "name":  "凌阳",
+                        "src":  "/combo-assets/default-avatars/凌阳.webp"
+                    },
+                    {
+                        "name":  "陆赫斯",
+                        "src":  "/combo-assets/default-avatars/陆赫斯.webp"
+                    },
+                    {
+                        "name":  "露帕",
+                        "src":  "/combo-assets/default-avatars/露帕.webp"
+                    },
+                    {
+                        "name":  "露西",
+                        "src":  "/combo-assets/default-avatars/露西.webp"
+                    },
+                    {
+                        "name":  "洛可可",
+                        "src":  "/combo-assets/default-avatars/洛可可.webp"
+                    },
+                    {
+                        "name":  "洛瑟拉",
+                        "src":  "/combo-assets/default-avatars/洛瑟拉.webp"
+                    },
+                    {
+                        "name":  "莫宁",
+                        "src":  "/combo-assets/default-avatars/莫宁.webp"
+                    },
+                    {
+                        "name":  "莫特斐",
+                        "src":  "/combo-assets/default-avatars/莫特斐.webp"
+                    },
+                    {
+                        "name":  "千咲",
+                        "src":  "/combo-assets/default-avatars/千咲.webp"
+                    },
+                    {
+                        "name":  "秋水",
+                        "src":  "/combo-assets/default-avatars/秋水.webp"
+                    },
+                    {
+                        "name":  "散华",
+                        "src":  "/combo-assets/default-avatars/散华.webp"
+                    },
+                    {
+                        "name":  "守岸人",
+                        "src":  "/combo-assets/default-avatars/守岸人.webp"
+                    },
+                    {
+                        "name":  "桃祈",
+                        "src":  "/combo-assets/default-avatars/桃祈.webp"
+                    },
+                    {
+                        "name":  "维里奈",
+                        "src":  "/combo-assets/default-avatars/维里奈.webp"
+                    },
+                    {
+                        "name":  "西格莉卡",
+                        "src":  "/combo-assets/default-avatars/西格莉卡.webp"
+                    },
+                    {
+                        "name":  "夏空",
+                        "src":  "/combo-assets/default-avatars/夏空.webp"
+                    },
+                    {
+                        "name":  "相里要",
+                        "src":  "/combo-assets/default-avatars/相里要.webp"
+                    },
+                    {
+                        "name":  "秧秧",
+                        "src":  "/combo-assets/default-avatars/秧秧.webp"
+                    },
+                    {
+                        "name":  "吟霖",
+                        "src":  "/combo-assets/default-avatars/吟霖.webp"
+                    },
+                    {
+                        "name":  "尤诺",
+                        "src":  "/combo-assets/default-avatars/尤诺.webp"
+                    },
+                    {
+                        "name":  "釉瑚",
+                        "src":  "/combo-assets/default-avatars/釉瑚.webp"
+                    },
+                    {
+                        "name":  "渊武",
+                        "src":  "/combo-assets/default-avatars/渊武.webp"
+                    },
+                    {
+                        "name":  "赞妮",
+                        "src":  "/combo-assets/default-avatars/赞妮.webp"
+                    },
+                    {
+                        "name":  "长离",
+                        "src":  "/combo-assets/default-avatars/长离.webp"
+                    },
+                    {
+                        "name":  "折枝",
+                        "src":  "/combo-assets/default-avatars/折枝.webp"
+                    }
+                ]
+}

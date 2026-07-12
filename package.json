@@ -1,0 +1,28 @@
+{
+  "name": "wuthering-combo-trainer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Desktop combo trainer for Wuthering Waves.",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5173",
+    "tauri:dev": "cargo tauri dev",
+    "build": "tsc -b && vite build",
+    "tauri:build": "cargo tauri build",
+    "preview": "vite preview --host 127.0.0.1 --port 4173",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "latest",
+    "@vitejs/plugin-react": "latest",
+    "vite": "latest",
+    "typescript": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "lucide-react": "latest"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest"
+  }
+}
