@@ -1,15 +1,24 @@
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
-use tauri::{AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, PhysicalSize, Size, WebviewWindow, WindowEvent};
+use tauri::{
+    AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, PhysicalSize, Size, WebviewWindow,
+    WindowEvent,
+};
 
 static INPUT_HOOK_STARTED: AtomicBool = AtomicBool::new(false);
 static INPUT_HOOK_STATUS: Lazy<Mutex<String>> = Lazy::new(|| Mutex::new(String::from("idle")));
 static INPUT_EVENT_COUNT: Lazy<Mutex<u64>> = Lazy::new(|| Mutex::new(0));
 static APP_HANDLE: Lazy<Mutex<Option<AppHandle>>> = Lazy::new(|| Mutex::new(None));
-static RHYTHM_FEEDBACK_STATE: Lazy<Mutex<serde_json::Value>> = Lazy::new(|| Mutex::new(serde_json::json!({ "visible": false, "moveMode": false })));
-static KEY_MAPPING_STATE: Lazy<Mutex<serde_json::Value>> = Lazy::new(|| Mutex::new(serde_json::json!({ "visible": false, "moveMode": false, "pressedCodes": [] })));
+static RHYTHM_FEEDBACK_STATE: Lazy<Mutex<serde_json::Value>> =
+    Lazy::new(|| Mutex::new(serde_json::json!({ "visible": false, "moveMode": false })));
+static KEY_MAPPING_STATE: Lazy<Mutex<serde_json::Value>> = Lazy::new(|| {
+    Mutex::new(serde_json::json!({ "visible": false, "moveMode": false, "pressedCodes": [] }))
+});
 
 #[derive(Clone, Serialize)]
 struct DesktopInputEvent {
@@ -32,6 +41,22 @@ struct OverlayBounds {
 struct OverlayPosition {
     x: f64,
     y: f64,
+}
+
+#[derive(Clone, Copy, Serialize)]
+struct DisplaySize {
+    width: f64,
+    height: f64,
+}
+
+#[derive(Clone, Serialize)]
+struct SaveExportResult {
+    path: String,
+}
+
+#[derive(Clone, Serialize)]
+struct ExportVideoResult {
+    path: String,
 }
 
 type FeedbackBounds = OverlayBounds;
@@ -78,10 +103,16 @@ fn set_overlay_bounds(app: AppHandle, bounds: OverlayBounds) -> Result<(), Strin
         .ok_or_else(|| String::from("overlay window not found"))?;
     let _ = window.set_shadow(false);
     window
-        .set_position(PhysicalPosition::new(bounds.x.round() as i32, bounds.y.round() as i32))
+        .set_position(PhysicalPosition::new(
+            bounds.x.round() as i32,
+            bounds.y.round() as i32,
+        ))
         .map_err(|error| error.to_string())?;
     window
-        .set_size(PhysicalSize::new(bounds.width.max(1.0).round() as u32, bounds.height.max(1.0).round() as u32))
+        .set_size(PhysicalSize::new(
+            bounds.width.max(1.0).round() as u32,
+            bounds.height.max(1.0).round() as u32,
+        ))
         .map_err(|error| error.to_string())
 }
 
@@ -91,7 +122,10 @@ fn set_overlay_position(app: AppHandle, position: OverlayPosition) -> Result<(),
         .get_webview_window("overlay")
         .ok_or_else(|| String::from("overlay window not found"))?;
     window
-        .set_position(PhysicalPosition::new(position.x.round() as i32, position.y.round() as i32))
+        .set_position(PhysicalPosition::new(
+            position.x.round() as i32,
+            position.y.round() as i32,
+        ))
         .map_err(|error| error.to_string())
 }
 
@@ -111,12 +145,36 @@ fn get_overlay_bounds(app: AppHandle) -> Result<OverlayBounds, String> {
 }
 
 #[tauri::command]
+fn get_display_size(app: AppHandle) -> Result<DisplaySize, String> {
+    let window = app
+        .get_webview_window("overlay")
+        .or_else(|| app.get_webview_window("main"))
+        .ok_or_else(|| String::from("window not found"))?;
+    let monitor = window
+        .current_monitor()
+        .map_err(|error| error.to_string())?
+        .or_else(|| window.primary_monitor().ok().flatten())
+        .ok_or_else(|| String::from("monitor not found"))?;
+    let size = monitor.size();
+    Ok(DisplaySize {
+        width: size.width as f64,
+        height: size.height as f64,
+    })
+}
+
+#[tauri::command]
 fn update_overlay(app: AppHandle, payload: serde_json::Value) -> Result<(), String> {
     let window = app
         .get_webview_window("overlay")
         .ok_or_else(|| String::from("overlay window not found"))?;
-    let visible = payload.get("visible").and_then(|value| value.as_bool()).unwrap_or(false);
-    let move_mode = payload.get("moveMode").and_then(|value| value.as_bool()).unwrap_or(false);
+    let visible = payload
+        .get("visible")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
+    let move_mode = payload
+        .get("moveMode")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
     let _ = window.set_ignore_cursor_events(!move_mode);
     if visible || move_mode {
         let _ = window.set_always_on_top(true);
@@ -158,8 +216,14 @@ fn update_rhythm_feedback(app: AppHandle, payload: serde_json::Value) -> Result<
             let _ = apply_rhythm_feedback_bounds(&window, bounds);
         }
     }
-    let move_mode = payload.get("moveMode").and_then(|value| value.as_bool()).unwrap_or(false);
-    if payload.get("visible").and_then(|value| value.as_bool()).unwrap_or(false)
+    let move_mode = payload
+        .get("moveMode")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
+    if payload
+        .get("visible")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false)
         || move_mode
     {
         let _ = window.set_always_on_top(true);
@@ -180,11 +244,25 @@ fn get_rhythm_feedback_state() -> serde_json::Value {
     RHYTHM_FEEDBACK_STATE.lock().clone()
 }
 
-fn apply_rhythm_feedback_bounds(window: &WebviewWindow, bounds: FeedbackBounds) -> Result<(), String> {
-    let width = bounds.width.max(FEEDBACK_MIN_WIDTH as f64).min(FEEDBACK_MAX_WIDTH as f64).round() as u32;
-    let height = bounds.height.max(FEEDBACK_MIN_HEIGHT as f64).min(FEEDBACK_MAX_HEIGHT as f64).round() as u32;
+fn apply_rhythm_feedback_bounds(
+    window: &WebviewWindow,
+    bounds: FeedbackBounds,
+) -> Result<(), String> {
+    let width = bounds
+        .width
+        .max(FEEDBACK_MIN_WIDTH as f64)
+        .min(FEEDBACK_MAX_WIDTH as f64)
+        .round() as u32;
+    let height = bounds
+        .height
+        .max(FEEDBACK_MIN_HEIGHT as f64)
+        .min(FEEDBACK_MAX_HEIGHT as f64)
+        .round() as u32;
     window
-        .set_position(PhysicalPosition::new(bounds.x.round() as i32, bounds.y.round() as i32))
+        .set_position(PhysicalPosition::new(
+            bounds.x.round() as i32,
+            bounds.y.round() as i32,
+        ))
         .map_err(|error| error.to_string())?;
     window
         .set_size(PhysicalSize::new(width, height))
@@ -220,7 +298,10 @@ fn set_rhythm_feedback_position(app: AppHandle, position: OverlayPosition) -> Re
         .get_webview_window("rhythm-feedback")
         .ok_or_else(|| String::from("rhythm feedback window not found"))?;
     window
-        .set_position(PhysicalPosition::new(position.x.round() as i32, position.y.round() as i32))
+        .set_position(PhysicalPosition::new(
+            position.x.round() as i32,
+            position.y.round() as i32,
+        ))
         .map_err(|error| error.to_string())
 }
 
@@ -233,21 +314,38 @@ fn start_rhythm_feedback_drag(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn notify_rhythm_feedback_bounds_changed(app: AppHandle, bounds: FeedbackBounds) -> Result<(), String> {
-    app.emit("rhythm-feedback:bounds-changed", serde_json::json!({
-        "x": bounds.x.round(),
-        "y": bounds.y.round(),
-        "width": bounds.width.round(),
-        "height": bounds.height.round()
-    }))
+fn notify_rhythm_feedback_bounds_changed(
+    app: AppHandle,
+    bounds: FeedbackBounds,
+) -> Result<(), String> {
+    app.emit(
+        "rhythm-feedback:bounds-changed",
+        serde_json::json!({
+            "x": bounds.x.round(),
+            "y": bounds.y.round(),
+            "width": bounds.width.round(),
+            "height": bounds.height.round()
+        }),
+    )
     .map_err(|error| error.to_string())
 }
 
 fn apply_key_mapping_bounds(window: &WebviewWindow, bounds: OverlayBounds) -> Result<(), String> {
-    let width = bounds.width.max(KEY_MAPPING_MIN_WIDTH as f64).min(KEY_MAPPING_MAX_WIDTH as f64).round();
-    let height = bounds.height.max(KEY_MAPPING_MIN_HEIGHT as f64).min(KEY_MAPPING_MAX_HEIGHT as f64).round();
+    let width = bounds
+        .width
+        .max(KEY_MAPPING_MIN_WIDTH as f64)
+        .min(KEY_MAPPING_MAX_WIDTH as f64)
+        .round();
+    let height = bounds
+        .height
+        .max(KEY_MAPPING_MIN_HEIGHT as f64)
+        .min(KEY_MAPPING_MAX_HEIGHT as f64)
+        .round();
     window
-        .set_position(PhysicalPosition::new(bounds.x.round() as i32, bounds.y.round() as i32))
+        .set_position(PhysicalPosition::new(
+            bounds.x.round() as i32,
+            bounds.y.round() as i32,
+        ))
         .map_err(|error| error.to_string())?;
     window
         .set_size(Size::Logical(LogicalSize::new(width, height)))
@@ -280,7 +378,13 @@ fn update_key_mapping(app: AppHandle, payload: serde_json::Value) -> Result<(), 
         let mut state = KEY_MAPPING_STATE.lock();
         if payload.get("pressedCodes").is_some() && payload.get("layers").is_none() {
             if let Some(record) = state.as_object_mut() {
-                record.insert(String::from("pressedCodes"), payload.get("pressedCodes").cloned().unwrap_or_else(|| serde_json::json!([])));
+                record.insert(
+                    String::from("pressedCodes"),
+                    payload
+                        .get("pressedCodes")
+                        .cloned()
+                        .unwrap_or_else(|| serde_json::json!([])),
+                );
             }
         } else {
             *state = payload.clone();
@@ -288,13 +392,23 @@ fn update_key_mapping(app: AppHandle, payload: serde_json::Value) -> Result<(), 
     }
     if let Some(bounds) = payload.get("bounds") {
         if let Ok(bounds) = serde_json::from_value::<OverlayBounds>(bounds.clone()) {
-            if !payload.get("moveMode").and_then(|value| value.as_bool()).unwrap_or(false) {
+            if !payload
+                .get("moveMode")
+                .and_then(|value| value.as_bool())
+                .unwrap_or(false)
+            {
                 let _ = apply_key_mapping_bounds(&window, bounds);
             }
         }
     }
-    let move_mode = payload.get("moveMode").and_then(|value| value.as_bool()).unwrap_or(false);
-    let visible = payload.get("visible").and_then(|value| value.as_bool()).unwrap_or(false);
+    let move_mode = payload
+        .get("moveMode")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
+    let visible = payload
+        .get("visible")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
     if visible || move_mode {
         let _ = window.set_always_on_top(true);
         let _ = window.set_shadow(false);
@@ -344,7 +458,10 @@ fn set_key_mapping_position(app: AppHandle, position: OverlayPosition) -> Result
         .get_webview_window("key-mapping")
         .ok_or_else(|| String::from("key mapping window not found"))?;
     window
-        .set_position(PhysicalPosition::new(position.x.round() as i32, position.y.round() as i32))
+        .set_position(PhysicalPosition::new(
+            position.x.round() as i32,
+            position.y.round() as i32,
+        ))
         .map_err(|error| error.to_string())
 }
 
@@ -358,64 +475,94 @@ fn start_key_mapping_drag(app: AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 fn notify_key_mapping_bounds_changed(app: AppHandle, bounds: OverlayBounds) -> Result<(), String> {
-    app.emit("key-mapping:bounds-changed", serde_json::json!({
-        "x": bounds.x.round(),
-        "y": bounds.y.round(),
-        "width": bounds.width.round(),
-        "height": bounds.height.round()
-    }))
+    app.emit(
+        "key-mapping:bounds-changed",
+        serde_json::json!({
+            "x": bounds.x.round(),
+            "y": bounds.y.round(),
+            "width": bounds.width.round(),
+            "height": bounds.height.round()
+        }),
+    )
     .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
 fn notify_overlay_bounds_changed(app: AppHandle, bounds: OverlayBounds) -> Result<(), String> {
-    app.emit("overlay:bounds-changed", serde_json::json!({
-        "x": bounds.x.round(),
-        "y": bounds.y.round(),
-        "width": bounds.width.round(),
-        "height": bounds.height.round()
-    }))
+    app.emit(
+        "overlay:bounds-changed",
+        serde_json::json!({
+            "x": bounds.x.round(),
+            "y": bounds.y.round(),
+            "width": bounds.width.round(),
+            "height": bounds.height.round()
+        }),
+    )
     .map_err(|error| error.to_string())
 }
 
 fn emit_overlay_window_bounds(app: &AppHandle, window: &WebviewWindow) {
-    let Ok(position) = window.outer_position() else { return; };
-    let Ok(size) = window.outer_size() else { return; };
-    let _ = app.emit("overlay:bounds-changed", serde_json::json!({
-        "x": position.x,
-        "y": position.y,
-        "width": size.width,
-        "height": size.height
-    }));
+    let Ok(position) = window.outer_position() else {
+        return;
+    };
+    let Ok(size) = window.outer_size() else {
+        return;
+    };
+    let _ = app.emit(
+        "overlay:bounds-changed",
+        serde_json::json!({
+            "x": position.x,
+            "y": position.y,
+            "width": size.width,
+            "height": size.height
+        }),
+    );
 }
 
 fn emit_rhythm_feedback_window_bounds(app: &AppHandle, window: &WebviewWindow) {
-    let Ok(position) = window.outer_position() else { return; };
-    let Ok(size) = window.outer_size() else { return; };
-    let _ = app.emit("rhythm-feedback:bounds-changed", serde_json::json!({
-        "x": position.x,
-        "y": position.y,
-        "width": size.width,
-        "height": size.height
-    }));
+    let Ok(position) = window.outer_position() else {
+        return;
+    };
+    let Ok(size) = window.outer_size() else {
+        return;
+    };
+    let _ = app.emit(
+        "rhythm-feedback:bounds-changed",
+        serde_json::json!({
+            "x": position.x,
+            "y": position.y,
+            "width": size.width,
+            "height": size.height
+        }),
+    );
 }
 
 fn emit_key_mapping_window_bounds(app: &AppHandle, window: &WebviewWindow) {
-    let Ok(position) = window.outer_position() else { return; };
-    let Ok(size) = window.outer_size() else { return; };
+    let Ok(position) = window.outer_position() else {
+        return;
+    };
+    let Ok(size) = window.outer_size() else {
+        return;
+    };
     let scale_factor = window.scale_factor().unwrap_or(1.0).max(0.1);
-    let _ = app.emit("key-mapping:bounds-changed", serde_json::json!({
-        "x": position.x,
-        "y": position.y,
-        "width": size.width as f64 / scale_factor,
-        "height": size.height as f64 / scale_factor
-    }));
+    let _ = app.emit(
+        "key-mapping:bounds-changed",
+        serde_json::json!({
+            "x": position.x,
+            "y": position.y,
+            "width": size.width as f64 / scale_factor,
+            "height": size.height as f64 / scale_factor
+        }),
+    );
 }
 
 #[tauri::command]
 fn request_overlay_move_mode(app: AppHandle, enabled: bool) -> Result<(), String> {
-    app.emit("overlay:move-mode", serde_json::json!({ "enabled": enabled }))
-        .map_err(|error| error.to_string())
+    app.emit(
+        "overlay:move-mode",
+        serde_json::json!({ "enabled": enabled }),
+    )
+    .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -443,6 +590,115 @@ fn global_input_status() -> serde_json::Value {
     })
 }
 
+#[tauri::command]
+fn save_export_file(
+    directory: String,
+    filename: String,
+    bytes: Vec<u8>,
+) -> Result<SaveExportResult, String> {
+    let directory_path = Path::new(directory.trim());
+    if directory_path.as_os_str().is_empty() {
+        return Err(String::from("导出路径为空"));
+    }
+    fs::create_dir_all(directory_path).map_err(|error| error.to_string())?;
+    if !directory_path.is_dir() {
+        return Err(String::from("导出路径不是文件夹"));
+    }
+    let safe_name = Path::new(&filename)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.trim().is_empty())
+        .ok_or_else(|| String::from("导出文件名无效"))?;
+    let path = directory_path.join(safe_name);
+    fs::write(&path, bytes).map_err(|error| error.to_string())?;
+    Ok(SaveExportResult {
+        path: path.to_string_lossy().to_string(),
+    })
+}
+
+#[tauri::command]
+fn save_export_mp4(
+    app: AppHandle,
+    directory: String,
+    filename: String,
+    bytes: Vec<u8>,
+) -> Result<ExportVideoResult, String> {
+    let output_path = export_file_path(&directory, &filename)?;
+    let temp_webm_path = output_path.with_extension("exporting.webm");
+    fs::write(&temp_webm_path, bytes).map_err(|error| error.to_string())?;
+    let ffmpeg = find_ffmpeg(&app).ok_or_else(|| String::from("未找到 ffmpeg，无法转出 MP4。请把 ffmpeg.exe 放到 src-tauri/resources/ffmpeg.exe 后重新打包，或安装 ffmpeg 到 PATH。"))?;
+    let status = Command::new(ffmpeg)
+        .arg("-y")
+        .arg("-i")
+        .arg(&temp_webm_path)
+        .arg("-c:v")
+        .arg("libx264")
+        .arg("-pix_fmt")
+        .arg("yuv420p")
+        .arg("-preset")
+        .arg("veryfast")
+        .arg("-crf")
+        .arg("18")
+        .arg("-c:a")
+        .arg("aac")
+        .arg("-b:a")
+        .arg("192k")
+        .arg("-movflags")
+        .arg("+faststart")
+        .arg(&output_path)
+        .status()
+        .map_err(|error| format!("启动 ffmpeg 失败：{error}"))?;
+    let _ = fs::remove_file(&temp_webm_path);
+    if !status.success() {
+        let _ = fs::remove_file(&output_path);
+        return Err(format!(
+            "ffmpeg 转 MP4 失败，退出码：{}",
+            status.code().unwrap_or(-1)
+        ));
+    }
+    Ok(ExportVideoResult {
+        path: output_path.to_string_lossy().to_string(),
+    })
+}
+
+fn export_file_path(directory: &str, filename: &str) -> Result<PathBuf, String> {
+    let directory_path = Path::new(directory.trim());
+    if directory_path.as_os_str().is_empty() {
+        return Err(String::from("导出路径为空"));
+    }
+    fs::create_dir_all(directory_path).map_err(|error| error.to_string())?;
+    if !directory_path.is_dir() {
+        return Err(String::from("导出路径不是文件夹"));
+    }
+    let safe_name = Path::new(filename)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.trim().is_empty())
+        .ok_or_else(|| String::from("导出文件名无效"))?;
+    Ok(directory_path.join(safe_name))
+}
+
+fn find_ffmpeg(app: &AppHandle) -> Option<PathBuf> {
+    if let Ok(dir) = app.path().resource_dir() {
+        let bundled = dir.join("ffmpeg.exe");
+        if bundled.is_file() {
+            return Some(bundled);
+        }
+    }
+    let local = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("resources")
+        .join("ffmpeg.exe");
+    if local.is_file() {
+        return Some(local);
+    }
+    Command::new("ffmpeg")
+        .arg("-version")
+        .status()
+        .ok()
+        .filter(|status| status.success())
+        .map(|_| PathBuf::from("ffmpeg"))
+}
+
 fn emit_input(event_type: &str, code: String) {
     *INPUT_EVENT_COUNT.lock() += 1;
     let event = DesktopInputEvent {
@@ -467,8 +723,8 @@ fn current_time_ms() -> f64 {
 #[cfg(windows)]
 mod winhook {
     use super::{emit_input, INPUT_HOOK_STARTED, INPUT_HOOK_STATUS};
-    use std::sync::atomic::Ordering;
     use std::io;
+    use std::sync::atomic::Ordering;
 
     type Hhook = isize;
     type Hinstance = isize;
@@ -521,9 +777,19 @@ mod winhook {
 
     #[link(name = "user32")]
     extern "system" {
-        fn SetWindowsHookExW(id_hook: i32, lpfn: Option<HookProc>, hmod: Hinstance, thread_id: u32) -> Hhook;
+        fn SetWindowsHookExW(
+            id_hook: i32,
+            lpfn: Option<HookProc>,
+            hmod: Hinstance,
+            thread_id: u32,
+        ) -> Hhook;
         fn CallNextHookEx(hhk: Hhook, n_code: i32, w_param: Wparam, l_param: Lparam) -> Lresult;
-        fn GetMessageW(lp_msg: *mut Msg, hwnd: Hwnd, msg_filter_min: u32, msg_filter_max: u32) -> i32;
+        fn GetMessageW(
+            lp_msg: *mut Msg,
+            hwnd: Hwnd,
+            msg_filter_min: u32,
+            msg_filter_max: u32,
+        ) -> i32;
         fn TranslateMessage(lp_msg: *const Msg) -> i32;
         fn DispatchMessageW(lp_msg: *const Msg) -> Lresult;
         fn GetAsyncKeyState(v_key: i32) -> i16;
@@ -626,10 +892,18 @@ mod winhook {
             (0xA5, "AltRight"),
         ];
         for vk in 0x30..=0x39 {
-            keys.push((vk, Box::leak(format!("Digit{}", vk - 0x30).into_boxed_str())));
+            keys.push((
+                vk,
+                Box::leak(format!("Digit{}", vk - 0x30).into_boxed_str()),
+            ));
         }
         for vk in 0x41..=0x5A {
-            keys.push((vk, Box::leak(format!("Key{}", char::from_u32(vk as u32).unwrap_or('?')).into_boxed_str())));
+            keys.push((
+                vk,
+                Box::leak(
+                    format!("Key{}", char::from_u32(vk as u32).unwrap_or('?')).into_boxed_str(),
+                ),
+            ));
         }
         for vk in 0x70..=0x7B {
             keys.push((vk, Box::leak(format!("F{}", vk - 0x6F).into_boxed_str())));
@@ -712,7 +986,9 @@ fn start_windows_global_input(_app: AppHandle) -> Result<(), String> {
 #[cfg(not(windows))]
 fn start_windows_global_input(_app: AppHandle) -> Result<(), String> {
     INPUT_HOOK_STARTED.store(false, Ordering::SeqCst);
-    Err(String::from("global input hook is only implemented on Windows"))
+    Err(String::from(
+        "global input hook is only implemented on Windows",
+    ))
 }
 
 pub fn run() {
@@ -736,8 +1012,14 @@ pub fn run() {
                 let _ = feedback.set_always_on_top(true);
                 let _ = feedback.set_shadow(false);
                 let _ = feedback.set_ignore_cursor_events(true);
-                let _ = feedback.set_min_size(Some(Size::Physical(PhysicalSize::new(FEEDBACK_MIN_WIDTH, FEEDBACK_MIN_HEIGHT))));
-                let _ = feedback.set_max_size(Some(Size::Physical(PhysicalSize::new(FEEDBACK_MAX_WIDTH, FEEDBACK_MAX_HEIGHT))));
+                let _ = feedback.set_min_size(Some(Size::Physical(PhysicalSize::new(
+                    FEEDBACK_MIN_WIDTH,
+                    FEEDBACK_MIN_HEIGHT,
+                ))));
+                let _ = feedback.set_max_size(Some(Size::Physical(PhysicalSize::new(
+                    FEEDBACK_MAX_WIDTH,
+                    FEEDBACK_MAX_HEIGHT,
+                ))));
                 let app_handle = app.handle().clone();
                 let feedback_for_event = feedback.clone();
                 feedback.on_window_event(move |event| match event {
@@ -751,8 +1033,14 @@ pub fn run() {
                 let _ = key_mapping.set_always_on_top(true);
                 let _ = key_mapping.set_shadow(false);
                 let _ = key_mapping.set_ignore_cursor_events(true);
-                let _ = key_mapping.set_min_size(Some(Size::Logical(LogicalSize::new(KEY_MAPPING_MIN_WIDTH as f64, KEY_MAPPING_MIN_HEIGHT as f64))));
-                let _ = key_mapping.set_max_size(Some(Size::Logical(LogicalSize::new(KEY_MAPPING_MAX_WIDTH as f64, KEY_MAPPING_MAX_HEIGHT as f64))));
+                let _ = key_mapping.set_min_size(Some(Size::Logical(LogicalSize::new(
+                    KEY_MAPPING_MIN_WIDTH as f64,
+                    KEY_MAPPING_MIN_HEIGHT as f64,
+                ))));
+                let _ = key_mapping.set_max_size(Some(Size::Logical(LogicalSize::new(
+                    KEY_MAPPING_MAX_WIDTH as f64,
+                    KEY_MAPPING_MAX_HEIGHT as f64,
+                ))));
                 let app_handle = app.handle().clone();
                 let key_mapping_for_event = key_mapping.clone();
                 key_mapping.on_window_event(move |event| match event {
@@ -765,7 +1053,10 @@ pub fn run() {
             if let Some(main) = app.get_webview_window("main") {
                 let app_handle = app.handle().clone();
                 main.on_window_event(move |event| {
-                    if matches!(event, WindowEvent::CloseRequested { .. } | WindowEvent::Destroyed) {
+                    if matches!(
+                        event,
+                        WindowEvent::CloseRequested { .. } | WindowEvent::Destroyed
+                    ) {
                         if let Some(overlay) = app_handle.get_webview_window("overlay") {
                             let _ = overlay.hide();
                             let _ = overlay.destroy();
@@ -790,6 +1081,7 @@ pub fn run() {
             set_overlay_bounds,
             set_overlay_position,
             get_overlay_bounds,
+            get_display_size,
             update_overlay,
             notify_overlay_bounds_changed,
             request_overlay_move_mode,
@@ -810,7 +1102,9 @@ pub fn run() {
             start_key_mapping_drag,
             notify_key_mapping_bounds_changed,
             start_global_input,
-            global_input_status
+            global_input_status,
+            save_export_file,
+            save_export_mp4
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

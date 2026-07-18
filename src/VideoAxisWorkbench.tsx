@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from 'react';
+import { cloneElement, isValidElement, useEffect, useMemo, useRef, useState } from 'react';
+import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode, WheelEvent as ReactWheelEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { Download, FileVideo, Pause, Play, Plus, Save, Trash2, Upload, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, Download, File as FileIcon, FileVideo, Pause, Play, Save, Upload, X } from 'lucide-react';
 import type { CharacterSlot, ComboChart, ComboImageStyle, ComboPeriod, ComboStep } from '../combo-core';
 import {
   chartToComboImageItems,
@@ -32,10 +32,12 @@ type VideoAxisWorkbenchProps = {
   chart: ComboChart;
   comboImageStyle: ComboImageStyle;
   overlaySettings: OverlaySettings;
+  exportDirectory?: string;
   timelineEditor: ReactNode;
   onApplyChart: (chart: ComboChart) => void;
   onClose: () => void;
   onSave: () => void;
+  getDisplaySize?: () => Promise<{ width: number; height: number }>;
 };
 
 type VideoMeta = {
@@ -118,11 +120,23 @@ function comboTrackOffset(items: ReturnType<typeof chartToComboImageItems>, acti
   return Math.round(style.scrollStartOffsetPx - activeMetric.start);
 }
 
-function currentScreenSize(): { width: number; height: number } {
-  return {
-    width: Math.max(1, Math.round(window.screen?.width || window.screen?.availWidth || window.innerWidth || 1920)),
-    height: Math.max(1, Math.round(window.screen?.height || window.screen?.availHeight || window.innerHeight || 1080))
-  };
+function currentScreenSize(settings: OverlaySettings): { width: number; height: number } {
+  const dpr = Number.isFinite(window.devicePixelRatio) && window.devicePixelRatio > 0 ? window.devicePixelRatio : 1;
+  const cssWidth = Math.max(1, Math.round(window.screen?.width || window.screen?.availWidth || window.innerWidth || 1920));
+  const cssHeight = Math.max(1, Math.round(window.screen?.height || window.screen?.availHeight || window.innerHeight || 1080));
+  const scaledWidth = Math.max(1, Math.round(cssWidth * dpr));
+  const scaledHeight = Math.max(1, Math.round(cssHeight * dpr));
+  const overlayRight = Math.max(settings.width, settings.x + settings.width);
+  const overlayBottom = Math.max(settings.height, settings.y + settings.height);
+  const cssLooksTooSmall = overlayRight > cssWidth * 1.04 || overlayBottom > cssHeight * 1.04;
+  const scaledCanContainOverlay = overlayRight <= scaledWidth * 1.12 && overlayBottom <= scaledHeight * 1.12;
+  return cssLooksTooSmall && scaledCanContainOverlay ? { width: scaledWidth, height: scaledHeight } : { width: cssWidth, height: cssHeight };
+}
+
+function normalizeDisplaySize(value: { width: number; height: number } | null | undefined): { width: number; height: number } | null {
+  const width = Math.round(value?.width ?? 0);
+  const height = Math.round(value?.height ?? 0);
+  return width > 0 && height > 0 ? { width, height } : null;
 }
 
 function overlayBoundsToVideoPercent(settings: OverlaySettings, screenSize: { width: number; height: number }): VideoLayerBounds {
@@ -134,12 +148,10 @@ function overlayBoundsToVideoPercent(settings: OverlaySettings, screenSize: { wi
   };
 }
 
-function overlayPixelBounds(settings: OverlaySettings, videoMeta: VideoMeta, screenSize: { width: number; height: number }): { width: number; height: number } {
-  const videoWidth = Math.max(1, videoMeta.width || 1920);
-  const videoHeight = Math.max(1, videoMeta.height || 1080);
+function overlaySourceBounds(settings: OverlaySettings): { width: number; height: number } {
   return {
-    width: Math.max(1, Math.round((settings.width / screenSize.width) * videoWidth)),
-    height: Math.max(1, Math.round((settings.height / screenSize.height) * videoHeight))
+    width: Math.max(1, Math.round(settings.width)),
+    height: Math.max(1, Math.round(settings.height))
   };
 }
 
@@ -255,7 +267,7 @@ function currentPeriodLabel(chart: ComboChart, timeMs: number): string {
   const period = chart.periods
     .filter((candidate) => candidate.kind !== 'free_fire' && timeMs >= candidate.startMs && timeMs <= candidate.endMs)
     .sort((left, right) => left.startMs - right.startMs)[0];
-  return period ? `当前：${period.label}` : '';
+  return period ? `褰撳墠锛?{period.label}` : '';
 }
 
 function chooseMediaRecorderMime(): string {
@@ -269,6 +281,17 @@ function downloadBlob(blob: Blob, filename: string) {
   link.download = filename;
   link.click();
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function exportBlob(blob: Blob, filename: string, directory?: string): Promise<{ path: string | null; format: 'mp4' | 'webm' }> {
+  const targetDirectory = directory?.trim();
+  if (targetDirectory && window.trainerDesktop?.saveExportMp4) {
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    const result = await window.trainerDesktop.saveExportMp4(targetDirectory, filename.replace(/\.webm$/i, '.mp4'), bytes);
+    return { path: result.path, format: 'mp4' };
+  }
+  downloadBlob(blob, filename);
+  return { path: null, format: 'webm' };
 }
 
 function normalizeStepLike(step: ComboStep): ComboStep {
@@ -380,7 +403,15 @@ function preloadCanvasImage(src: string | undefined, cache: ImageCache): Promise
 }
 
 function preloadComboLayerImages(style: ComboImageStyle, cache: ImageCache): Promise<void[]> {
-  return Promise.all(CHARACTER_SLOTS.map((slot) => preloadCanvasImage(style.roleStyles[slot]?.avatar, cache)));
+  const sources = new Set<string>();
+  if (style.backgroundImage) sources.add(style.backgroundImage);
+  if (style.capsuleImage) sources.add(style.capsuleImage);
+  CHARACTER_SLOTS.forEach((slot) => {
+    const role = style.roleStyles[slot];
+    if (role?.avatar) sources.add(role.avatar);
+    if (role?.capsuleImage) sources.add(role.capsuleImage);
+  });
+  return Promise.all(Array.from(sources).map((src) => preloadCanvasImage(src, cache)));
 }
 
 function preloadChartIconImages(chart: ComboChart, style: ComboImageStyle, cache: ImageCache): Promise<void[]> {
@@ -437,16 +468,45 @@ function roundedRect(ctx: CanvasRenderingContext2D, x: number, y: number, width:
   ctx.closePath();
 }
 
-function drawCroppedCircleImage(ctx: CanvasRenderingContext2D, image: HTMLImageElement, x: number, y: number, size: number) {
+function drawCroppedCircleImage(ctx: CanvasRenderingContext2D, image: HTMLImageElement, x: number, y: number, size: number, cropInput?: ComboImageStyle['roleStyles'][CharacterSlot]['avatarCrop']) {
   ctx.save();
   ctx.beginPath();
   ctx.arc(x + size / 2, y + size / 2, size / 2, 0, Math.PI * 2);
   ctx.clip();
-  const side = Math.min(image.naturalWidth || image.width, image.naturalHeight || image.height);
-  const sx = ((image.naturalWidth || image.width) - side) / 2;
-  const sy = ((image.naturalHeight || image.height) - side) / 2;
-  ctx.drawImage(image, sx, sy, side, side, x, y, size, size);
+  const sourceWidth = Math.max(1, image.naturalWidth || image.width);
+  const sourceHeight = Math.max(1, image.naturalHeight || image.height);
+  const crop = normalizeRectPercent(cropInput, { x: 0, y: 0, w: 100, h: 100 });
+  const sx = (crop.x / 100) * sourceWidth;
+  const sy = (crop.y / 100) * sourceHeight;
+  const sw = Math.max(1, (crop.w / 100) * sourceWidth);
+  const sh = Math.max(1, (crop.h / 100) * sourceHeight);
+  ctx.drawImage(image, sx, sy, sw, sh, x, y, size, size);
   ctx.restore();
+}
+
+function drawCapsuleImageBlock(ctx: CanvasRenderingContext2D, image: HTMLImageElement, style: ComboImageStyle, role: ComboImageStyle['roleStyles'][CharacterSlot], x: number, y: number, width: number, height: number) {
+  const capsule = effectiveCapsuleImageFields(style, role);
+  const naturalWidth = Math.max(1, image.naturalWidth || image.width);
+  const naturalHeight = Math.max(1, image.naturalHeight || image.height);
+  const crop = normalizeRectPercent(capsule.crop, { x: 0, y: 0, w: 100, h: 100 });
+  const stretch = capsule.stretch ?? { left: 25, right: 75 };
+  const cropX = (crop.x / 100) * naturalWidth;
+  const cropY = (crop.y / 100) * naturalHeight;
+  const cropWidth = Math.max(1, (crop.w / 100) * naturalWidth);
+  const cropHeight = Math.max(1, (crop.h / 100) * naturalHeight);
+  const leftLine = clamp((stretch.left / 100) * naturalWidth - cropX, 1, Math.max(1, cropWidth - 2));
+  const rightLine = clamp((stretch.right / 100) * naturalWidth - cropX, leftLine + 1, Math.max(leftLine + 1, cropWidth - 1));
+  const heightScale = height / cropHeight;
+  const destLeft = Math.max(0, Math.round(leftLine * heightScale));
+  const destRight = Math.max(0, Math.round((cropWidth - rightLine) * heightScale));
+  const destMiddle = Math.max(0, width - destLeft - destRight);
+  const middleSourceWidth = Math.max(1, rightLine - leftLine);
+  const previousSmoothing = ctx.imageSmoothingEnabled;
+  ctx.imageSmoothingEnabled = false;
+  if (destLeft > 0) ctx.drawImage(image, cropX, cropY, leftLine, cropHeight, x, y, destLeft, height);
+  if (destMiddle > 0) ctx.drawImage(image, cropX + leftLine, cropY, middleSourceWidth, cropHeight, x + destLeft, y, destMiddle, height);
+  if (destRight > 0) ctx.drawImage(image, cropX + rightLine, cropY, Math.max(1, cropWidth - rightLine), cropHeight, x + destLeft + destMiddle, y, destRight, height);
+  ctx.imageSmoothingEnabled = previousSmoothing;
 }
 
 function drawComboTextParts(ctx: CanvasRenderingContext2D, parts: ReturnType<typeof comboTextParts>, x: number, y: number, maxWidth: number, fontSize: number, imageCache: ImageCache) {
@@ -478,58 +538,96 @@ function drawComboLayerToCanvas(ctx: CanvasRenderingContext2D, chart: ComboChart
   const y = (bounds.y / 100) * canvasHeight;
   const width = (bounds.width / 100) * canvasWidth;
   const height = (bounds.height / 100) * canvasHeight;
+  const sourceWidth = Math.max(1, overlayBounds.width);
+  const sourceHeight = Math.max(1, overlayBounds.height);
   const activeStepId = activeStepIdAt(chart, timeMs);
   const allItems = chartToComboImageItems(chart, style);
   const activeIndex = comboImageDisplayIndexForStep(allItems, activeStepId);
   const trackOffset = comboTrackOffset(allItems, activeIndex, layout, overlayBounds, style);
+  const metrics = comboTrackMetrics(allItems, layout, style);
+  const activeMetric = metrics[clamp(activeIndex, 0, Math.max(0, metrics.length - 1))];
 
   ctx.save();
   ctx.beginPath();
   ctx.rect(x, y, width, height);
   ctx.clip();
-  ctx.fillStyle = 'rgba(0,0,0,0.42)';
-  ctx.fillRect(x, y, width, height);
-  ctx.font = `${Math.max(18, Math.round(height * 0.28))}px Microsoft YaHei, sans-serif`;
+  ctx.translate(x, y);
+  ctx.scale(width / sourceWidth, height / sourceHeight);
+  const background = loadCanvasImage(style.backgroundImage, imageCache);
+  if (background) {
+    const backgroundWidth = Math.max(1, background.naturalWidth || background.width);
+    const backgroundHeight = Math.max(1, background.naturalHeight || background.height);
+    const crop = normalizeRectPercent(style.backgroundCrop, { x: 0, y: 0, w: 100, h: 100 });
+    ctx.drawImage(background, (crop.x / 100) * backgroundWidth, (crop.y / 100) * backgroundHeight, Math.max(1, (crop.w / 100) * backgroundWidth), Math.max(1, (crop.h / 100) * backgroundHeight), 0, 0, sourceWidth, sourceHeight);
+  }
+  ctx.font = `${Math.max(12, Math.round(style.fontSize))}px ${style.fontFamily || 'Microsoft YaHei, sans-serif'}`;
   ctx.textBaseline = 'middle';
-  let cursor = (layout === 'vertical' ? y : x) + trackOffset;
+  let cursor = trackOffset;
   allItems.forEach((item, index) => {
     const role = style.roleStyles[item.characterSlot];
     const size = comboImageItemSizeForDisplayItem(style, item, role);
-    const chipHeight = Math.min(layout === 'vertical' ? height * 0.28 : height * 0.72, Math.max(28, size.height));
-    const chipWidth = Math.min(layout === 'vertical' ? width * 0.9 : width * 0.72, Math.max(72, size.width));
-    const chipX = layout === 'vertical' ? x + (width - chipWidth) / 2 : cursor;
-    const chipY = layout === 'vertical' ? cursor : y + (height - chipHeight) / 2;
-    const visible = layout === 'vertical' ? chipY + chipHeight >= y - 12 && chipY <= y + height + 12 : chipX + chipWidth >= x - 12 && chipX <= x + width + 12;
+    const chipHeight = Math.max(1, size.height);
+    const chipWidth = Math.max(1, size.width);
+    const chipX = layout === 'vertical' ? Math.max(0, (sourceWidth - chipWidth) / 2) : cursor;
+    const chipY = layout === 'vertical' ? cursor : (sourceHeight - chipHeight) / 2;
+    const visible = layout === 'vertical' ? chipY + chipHeight >= -12 && chipY <= sourceHeight + 12 : chipX + chipWidth >= -12 && chipX <= sourceWidth + 12;
     if (visible) {
       const active = index === activeIndex;
-      ctx.fillStyle = active ? '#b90000' : role.color || '#333';
-      roundedRect(ctx, chipX, chipY, chipWidth, chipHeight, style.capsuleShape === 'capsule' ? chipHeight / 2 : 4);
-      ctx.fill();
-      ctx.lineWidth = active ? 4 : 2;
-      ctx.strokeStyle = active ? '#ffffff' : 'rgba(255,255,255,0.5)';
-      ctx.stroke();
-      let textX = chipX + 14;
+      const opacity = style.prePromptEnabled && index === activeIndex + 1 ? 1 : comboItemOpacity(metrics[item.index], activeMetric, trackOffset, layout, overlayBounds, style);
+      ctx.save();
+      ctx.globalAlpha = opacity;
+      const capsule = effectiveCapsuleImageFields(style, role);
+      const capsuleImage = style.blockMode === 'image' ? loadCanvasImage(capsule.image, imageCache) : null;
+      if (style.blockMode === 'image' && capsuleImage) {
+        drawCapsuleImageBlock(ctx, capsuleImage, style, role, chipX, chipY, chipWidth, chipHeight);
+      } else {
+        ctx.fillStyle = style.useCustomCapsuleColor ? style.capsuleColor : role.color || '#333';
+        roundedRect(ctx, chipX, chipY, chipWidth, chipHeight, style.capsuleShape === 'capsule' ? chipHeight / 2 : 4);
+        ctx.fill();
+        ctx.lineWidth = active ? 4 : 2;
+        ctx.strokeStyle = active ? '#ffffff' : 'rgba(255,255,255,0.5)';
+        ctx.stroke();
+      }
+      let textX = style.blockMode === 'image' ? chipX + 14 : chipX + 14;
       if (item.showAvatar) {
-        const avatarSize = Math.min(chipHeight * 0.78, 54);
-        const avatarX = chipX + 8;
-        const avatarY = chipY + (chipHeight - avatarSize) / 2;
+        const avatarSize = Math.max(1, style.avatarSize);
+        const avatarLeft = style.blockMode === 'image' ? style.avatarOffsetX - 12 : style.avatarOffsetX;
+        const avatarX = chipX + avatarLeft;
+        const avatarY = chipY + chipHeight / 2 + style.avatarOffsetY - avatarSize / 2;
         const avatar = loadCanvasImage(role.avatar, imageCache);
         ctx.fillStyle = 'rgba(0,0,0,0.45)';
         ctx.beginPath();
         ctx.arc(avatarX + avatarSize / 2, avatarY + avatarSize / 2, avatarSize / 2, 0, Math.PI * 2);
         ctx.fill();
-        if (avatar) drawCroppedCircleImage(ctx, avatar, avatarX, avatarY, avatarSize);
+        if (avatar) drawCroppedCircleImage(ctx, avatar, avatarX, avatarY, avatarSize, role.avatarCrop);
         ctx.strokeStyle = 'rgba(255,255,255,0.72)';
         ctx.lineWidth = 2;
         ctx.stroke();
-        textX += avatarSize + 10;
+        textX = style.blockMode === 'image' ? chipX + 44 : Math.max(textX, avatarX + avatarSize + 10);
+      }
+      if (active && style.blockMode === 'image') {
+        const avatarLeft = style.avatarOffsetX - 12;
+        const avatarTop = chipHeight / 2 + style.avatarOffsetY - style.avatarSize / 2;
+        const avatarBottom = chipHeight / 2 + style.avatarOffsetY + style.avatarSize / 2;
+        const frameLeft = item.showAvatar ? Math.min(-3, avatarLeft - 3) : -3;
+        const frameTop = item.showAvatar ? Math.min(-3, avatarTop - 3) : -3;
+        const frameBottom = item.showAvatar ? Math.min(-3, chipHeight - avatarBottom - 3) : -3;
+        roundedRect(ctx, chipX + frameLeft, chipY + frameTop, chipWidth - frameLeft + 3, chipHeight - frameTop - frameBottom, 5);
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = 'rgba(255,255,255,0.96)';
+        ctx.stroke();
       }
       ctx.fillStyle = style.textColor || '#fff';
       ctx.shadowColor = 'rgba(0,0,0,0.7)';
       ctx.shadowBlur = 6;
       const parts = comboTextParts(item.displayText || item.step.label, Boolean(item.iconId), role.iconMappings ?? style.iconMappings);
-      drawComboTextParts(ctx, parts, textX, chipY + chipHeight / 2, Math.max(24, chipWidth - (textX - chipX) - 12), Math.max(18, Math.round(chipHeight * 0.34)), imageCache);
+      if (style.blockMode === 'image') {
+        drawComboTextParts(ctx, parts, textX, chipY + chipHeight / 2, Math.max(24, chipWidth - (textX - chipX) - 14), Math.max(12, Math.round(style.fontSize)), imageCache);
+      } else {
+        drawComboTextParts(ctx, parts, textX, chipY + chipHeight / 2, Math.max(24, chipWidth - (textX - chipX) - 12), Math.max(12, Math.round(style.fontSize)), imageCache);
+      }
       ctx.shadowBlur = 0;
+      ctx.restore();
     }
     cursor += (layout === 'vertical' ? chipHeight : chipWidth) + style.capsuleGap;
   });
@@ -598,7 +696,7 @@ function VideoComboLayer({ chart, style, timeMs, layout, bounds }: { chart: Comb
     </div>
   );
 }
-export function VideoAxisWorkbench({ chart, comboImageStyle, overlaySettings, timelineEditor, onApplyChart, onClose, onSave }: VideoAxisWorkbenchProps) {
+export function VideoAxisWorkbench({ chart, comboImageStyle, overlaySettings, exportDirectory, timelineEditor, onApplyChart, onClose, onSave, getDisplaySize }: VideoAxisWorkbenchProps) {
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [videoMeta, setVideoMeta] = useState<VideoMeta>(DEFAULT_VIDEO_META);
   const [playbackMs, setPlaybackMs] = useState(0);
@@ -612,24 +710,159 @@ export function VideoAxisWorkbench({ chart, comboImageStyle, overlaySettings, ti
   });
   const [exportStatus, setExportStatus] = useState<ExportStatus>({ state: 'idle', message: '等待导出', progress: 0 });
   const [importMessage, setImportMessage] = useState('引用本地视频文件，不写入项目存储。');
+  const [fileMenuOpen, setFileMenuOpen] = useState(false);
+  const [timelineCollapsed, setTimelineCollapsed] = useState(false);
+  const [previewTransform, setPreviewTransform] = useState({ scale: 1, x: 0, y: 0 });
+  const [stageHudVisible, setStageHudVisible] = useState(true);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const zoomDragRef = useRef<ZoomDragSnapshot | null>(null);
+  const previewPanRef = useRef<{ pointerId: number; startX: number; startY: number; originX: number; originY: number } | null>(null);
+  const stageHudHideTimerRef = useRef<number | null>(null);
   const imageCacheRef = useRef<ImageCache>(new Map());
+  const stageShellRef = useRef<HTMLDivElement | null>(null);
+  const [displaySize, setDisplaySize] = useState<{ width: number; height: number } | null>(() => normalizeDisplaySize(currentScreenSize(overlaySettings)));
+  const [inspectorPortalTarget, setInspectorPortalTarget] = useState<HTMLElement | null>(null);
+  const [stageShellSize, setStageShellSize] = useState({ width: 0, height: 0 });
 
   const chartTotal = chartExtentMs(chart);
   const renderTotal = Math.max(chartTotal, videoMeta.durationMs || 0, ...keyframes.map((frame) => frame.timeMs + 600));
   const zoomTrackTotal = Math.max(renderTotal, videoMeta.durationMs || 0, chartTotal);
   const frameAspect = `${Math.max(1, videoMeta.width)} / ${Math.max(1, videoMeta.height)}`;
-  const screenSize = currentScreenSize();
+  const stageFrameSize = useMemo(() => {
+    if (!stageShellSize.width || !stageShellSize.height) return null;
+    const aspect = Math.max(1, videoMeta.width) / Math.max(1, videoMeta.height);
+    let width = stageShellSize.width;
+    let height = width / aspect;
+    if (height > stageShellSize.height) {
+      height = stageShellSize.height;
+      width = height * aspect;
+    }
+    return { width: Math.max(1, Math.floor(width)), height: Math.max(1, Math.floor(height)) };
+  }, [stageShellSize.height, stageShellSize.width, videoMeta.height, videoMeta.width]);
+  const stageFrameStyle = { aspectRatio: frameAspect, ...(stageFrameSize ? { width: `${stageFrameSize.width}px`, height: `${stageFrameSize.height}px` } : {}) } as CSSProperties;
+  const screenSize = displaySize ?? currentScreenSize(overlaySettings);
   const layerBounds = overlayBoundsToVideoPercent(overlaySettings, screenSize);
-  const layerPixelBounds = overlayPixelBounds(overlaySettings, videoMeta, screenSize);
+  const layerSourceBounds = overlaySourceBounds(overlaySettings);
   const sortedKeyframes = useMemo(() => [...keyframes].sort((left, right) => left.timeMs - right.timeMs || left.id.localeCompare(right.id)), [keyframes]);
+  const previewTransformStyle = {
+    transform: `translate(${previewTransform.x}px, ${previewTransform.y}px) scale(${previewTransform.scale})`
+  } as CSSProperties;
+
+  function clearStageHudHideTimer() {
+    if (stageHudHideTimerRef.current !== null) {
+      window.clearTimeout(stageHudHideTimerRef.current);
+      stageHudHideTimerRef.current = null;
+    }
+  }
+
+  function revealStageHud() {
+    clearStageHudHideTimer();
+    setStageHudVisible(true);
+  }
+
+  function scheduleStageHudHide() {
+    clearStageHudHideTimer();
+    stageHudHideTimerRef.current = window.setTimeout(() => setStageHudVisible(false), 2000);
+  }
+
+  function clampPreviewTransform(next: { scale: number; x: number; y: number }) {
+    const scale = clamp(next.scale, 1, 4);
+    if (scale <= 1 || !stageFrameSize) return { scale: 1, x: 0, y: 0 };
+    const maxX = Math.max(0, (stageFrameSize.width * (scale - 1)) / 2);
+    const maxY = Math.max(0, (stageFrameSize.height * (scale - 1)) / 2);
+    return { scale, x: clamp(next.x, -maxX, maxX), y: clamp(next.y, -maxY, maxY) };
+  }
+
+  function handlePreviewWheel(event: ReactWheelEvent<HTMLDivElement>) {
+    if (!stageFrameSize) return;
+    event.preventDefault();
+    const rect = event.currentTarget.getBoundingClientRect();
+    const pointX = event.clientX - rect.left - rect.width / 2;
+    const pointY = event.clientY - rect.top - rect.height / 2;
+    setPreviewTransform((current) => {
+      const nextScale = clamp(current.scale * (event.deltaY < 0 ? 1.12 : 0.88), 1, 4);
+      if (nextScale <= 1.01) return { scale: 1, x: 0, y: 0 };
+      const ratio = nextScale / Math.max(1, current.scale);
+      return clampPreviewTransform({
+        scale: nextScale,
+        x: pointX - (pointX - current.x) * ratio,
+        y: pointY - (pointY - current.y) * ratio
+      });
+    });
+  }
+
+  function beginPreviewPan(event: ReactPointerEvent<HTMLDivElement>) {
+    if (previewTransform.scale <= 1) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    previewPanRef.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, originX: previewTransform.x, originY: previewTransform.y };
+  }
+
+  function movePreviewPan(event: ReactPointerEvent<HTMLDivElement>) {
+    const pan = previewPanRef.current;
+    if (!pan || pan.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    setPreviewTransform((current) => clampPreviewTransform({
+      scale: current.scale,
+      x: pan.originX + event.clientX - pan.startX,
+      y: pan.originY + event.clientY - pan.startY
+    }));
+  }
+
+  function endPreviewPan(event: ReactPointerEvent<HTMLDivElement>) {
+    if (previewPanRef.current?.pointerId === event.pointerId) previewPanRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  }
 
   useEffect(() => {
     document.body.classList.add('video-workbench-open');
     return () => document.body.classList.remove('video-workbench-open');
   }, []);
+
+  useEffect(() => () => clearStageHudHideTimer(), []);
+
+  useEffect(() => {
+    let disposed = false;
+    const fallback = currentScreenSize(overlaySettings);
+    setDisplaySize((current) => current ?? fallback);
+    void getDisplaySize?.().then((next) => {
+      if (disposed) return;
+      setDisplaySize(normalizeDisplaySize(next) ?? fallback);
+    }).catch(() => {
+      if (!disposed) setDisplaySize(fallback);
+    });
+    return () => {
+      disposed = true;
+    };
+  }, [getDisplaySize, overlaySettings.x, overlaySettings.y, overlaySettings.width, overlaySettings.height]);
+
+  useEffect(() => {
+    const node = stageShellRef.current;
+    if (!node) return;
+    const update = () => {
+      const rect = node.getBoundingClientRect();
+      const next = { width: Math.max(0, rect.width), height: Math.max(0, rect.height) };
+      setStageShellSize((current) => current.width === next.width && current.height === next.height ? current : next);
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(node);
+    window.addEventListener('resize', update);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', update);
+    };
+  }, []);
+
+  useEffect(() => {
+    setPreviewTransform({ scale: 1, x: 0, y: 0 });
+    previewPanRef.current = null;
+  }, [videoUrl]);
+
+  useEffect(() => {
+    setPreviewTransform((current) => clampPreviewTransform(current));
+  }, [stageFrameSize?.height, stageFrameSize?.width]);
 
   useEffect(() => () => {
     if (videoUrl) URL.revokeObjectURL(videoUrl);
@@ -669,7 +902,7 @@ export function VideoAxisWorkbench({ chart, comboImageStyle, overlaySettings, ti
           return { ...frame, timeMs: clamp(frame.timeMs, MIN_FRAME_GAP_MS * index, Math.max(MIN_FRAME_GAP_MS * index, chartEnd - MIN_FRAME_GAP_MS * (normalized.length - index - 1))) };
         });
       });
-      setImportMessage(`已引用 ${meta.name}，${meta.width}x${meta.height}，${formatMs(meta.durationMs)}`);
+      setImportMessage(`宸插紩鐢?${meta.name}锛?{meta.width}x${meta.height}锛?{formatMs(meta.durationMs)}`);
     } catch (error) {
       setImportMessage(error instanceof Error ? error.message : '视频读取失败');
     }
@@ -718,10 +951,10 @@ export function VideoAxisWorkbench({ chart, comboImageStyle, overlaySettings, ti
     seekTo(Math.min(playbackMs, nextTime));
   }
 
-  function beginZoomDrag(event: ReactPointerEvent<HTMLButtonElement>, frameId: string) {
+  function beginZoomDrag(event: ReactPointerEvent<HTMLButtonElement>, frameId: string, trackRenderTotal = zoomTrackTotal) {
     event.preventDefault();
     event.stopPropagation();
-    const track = event.currentTarget.closest('.video-zoom-track') as HTMLElement | null;
+    const track = event.currentTarget.closest('.timeline-zoom-frame-track') as HTMLElement | null;
     const markerIndex = sortedKeyframes.findIndex((frame) => frame.id === frameId);
     if (!track || markerIndex < 0) return;
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -730,7 +963,7 @@ export function VideoAxisWorkbench({ chart, comboImageStyle, overlaySettings, ti
       markerIndex,
       startX: event.clientX,
       trackWidth: Math.max(1, track.getBoundingClientRect().width),
-      renderTotal: zoomTrackTotal,
+      renderTotal: trackRenderTotal,
       chart: { ...chart, steps: chart.steps.map((step) => ({ ...step })), periods: chart.periods?.map((period) => ({ ...period })) },
       keyframes: sortedKeyframes
     };
@@ -803,7 +1036,7 @@ export function VideoAxisWorkbench({ chart, comboImageStyle, overlaySettings, ti
     const wasLooping = sourceVideo.loop;
     const wasPaused = sourceVideo.paused;
     await preloadExportImages(chart, comboImageStyle, imageCacheRef.current);
-    setExportStatus({ state: 'running', message: '正在导出 WebM...', progress: 0 });
+    setExportStatus({ state: 'running', message: '姝ｅ湪瀵煎嚭 WebM...', progress: 0 });
     await new Promise<void>((resolve, reject) => {
       let drawFrame = 0;
       const cleanup = () => {
@@ -830,8 +1063,8 @@ export function VideoAxisWorkbench({ chart, comboImageStyle, overlaySettings, ti
         ctx.clearRect(0, 0, width, height);
         ctx.drawImage(sourceVideo, 0, 0, width, height);
         const timeMs = Math.round(sourceVideo.currentTime * 1000);
-        drawComboLayerToCanvas(ctx, chart, comboImageStyle, timeMs, layerBounds, overlaySettings.layout, layerPixelBounds, width, height, imageCacheRef.current);
-        setExportStatus({ state: 'running', message: `正在导出 WebM ${formatMs(timeMs)} / ${formatMs(duration * 1000)}`, progress: clamp(timeMs / Math.max(1, duration * 1000), 0, 1) });
+        drawComboLayerToCanvas(ctx, chart, comboImageStyle, timeMs, layerBounds, overlaySettings.layout, layerSourceBounds, width, height, imageCacheRef.current);
+        setExportStatus({ state: 'running', message: `姝ｅ湪瀵煎嚭 WebM ${formatMs(timeMs)} / ${formatMs(duration * 1000)}`, progress: clamp(timeMs / Math.max(1, duration * 1000), 0, 1) });
         if (sourceVideo.ended || sourceVideo.currentTime >= duration - 0.03) {
           recorder.stop();
           return;
@@ -854,45 +1087,89 @@ export function VideoAxisWorkbench({ chart, comboImageStyle, overlaySettings, ti
         cleanup();
         reject(new Error('视频导出读取失败'));
       };
-    }).then(() => {
+    });
+    try {
       const blob = new Blob(chunks, { type: mimeType || 'video/webm' });
       if (!blob.size) throw new Error('导出失败：没有生成视频数据');
-      downloadBlob(blob, `${safeFileName(videoMeta.name.replace(/\.[^.]+$/, ''))}-带连段图.webm`);
-      setExportStatus({ state: 'done', message: `导出完成：${(blob.size / 1024 / 1024).toFixed(1)} MB`, progress: 1 });
-    }).catch((error) => {
+      const filename = `${safeFileName(videoMeta.name.replace(/\.[^.]+$/, ''))}-带连段图.webm`;
+      setExportStatus({ state: 'running', message: '正在转码 MP4...', progress: 0.98 });
+      const saved = await exportBlob(blob, filename, exportDirectory);
+      setExportStatus({ state: 'done', message: saved.path ? `导出完成：${saved.path}` : `导出完成：${(blob.size / 1024 / 1024).toFixed(1)} MB ${saved.format.toUpperCase()}`, progress: 1 });
+    } catch (error) {
       setExportStatus({ state: 'error', message: error instanceof Error ? error.message : '导出失败', progress: 0 });
-    });
+    }
   }
+
+  const enhancedTimelineEditor = isValidElement(timelineEditor) ? cloneElement(timelineEditor, {
+    zoomFrameTrack: {
+      frames: sortedKeyframes,
+      playbackMs,
+      onAdd: addZoomKeyframe,
+      onSeek: seekTo,
+      onDelete: deleteZoomKeyframe,
+      onBeginDrag: beginZoomDrag,
+      onDragMove: onZoomDragMove,
+      onDragEnd: endZoomDrag
+    },
+    inspectorPortalTarget,
+    renderTotalOverride: zoomTrackTotal
+  } as Record<string, unknown>) : timelineEditor;
 
   const panel = (
     <div className="video-workbench" role="dialog" aria-modal="true" aria-label="视频辅助轴编辑">
-      <div className="video-workbench-head">
-        <div>
-          <h2>视频辅助轴编辑</h2>
-          <p>本地视频仅引用播放；连段图作为视频图层同步预览，可导出合成后的 WebM。</p>
-        </div>
-        <div className="video-workbench-actions">
-          <input ref={fileInputRef} className="file-input" type="file" accept="video/*" onChange={(event) => void importVideo(event.target.files?.[0] ?? null)} />
-          <button onClick={() => fileInputRef.current?.click()}><Upload size={17} />导入视频</button>
-          <button className="primary" onClick={togglePlay} disabled={!videoUrl}>{isPlaying ? <Pause size={17} /> : <Play size={17} />}{isPlaying ? '暂停' : '播放'}</button>
-          <button onClick={fitChartToVideoDuration} disabled={!videoMeta.durationMs}>匹配视频长度</button>
-          <button onClick={onSave}><Save size={17} />保存轴</button>
-          <button onClick={() => void exportVideo()} disabled={!videoUrl || exportStatus.state === 'running'}><Download size={17} />导出视频</button>
-          <button className="icon-button" title="关闭" onClick={onClose}><X size={18} /></button>
-        </div>
-      </div>
-
-      <div className="video-workbench-main">
+      <input ref={fileInputRef} className="file-input" type="file" accept="video/*" onChange={(event) => void importVideo(event.target.files?.[0] ?? null)} />
+      <div className={`video-workbench-main ${timelineCollapsed ? 'timeline-collapsed' : ''}`}>
         <section className="video-preview-panel">
           <div className="video-info-row">
             <div><FileVideo size={17} /><strong>{videoMeta.name}</strong><span>{videoMeta.width}x{videoMeta.height}</span><span>{formatMs(videoMeta.durationMs || renderTotal)}</span></div>
             <span>{importMessage}</span>
           </div>
-          <div className="video-stage-shell">
-            <div className="video-stage-frame" style={{ aspectRatio: frameAspect }}>
-              {videoUrl ? <video ref={videoRef} src={videoUrl} playsInline onPlay={() => setIsPlaying(true)} onPause={() => setIsPlaying(false)} onEnded={() => setIsPlaying(false)} /> : <div className="video-empty"><FileVideo size={38} /><strong>导入实战视频</strong><span>视频不会写入项目文件，只在当前会话中引用。</span></div>}
-              <div className="video-combo-layer-box synced" style={{ left: `${layerBounds.x}%`, top: `${layerBounds.y}%`, width: `${layerBounds.width}%`, height: `${layerBounds.height}%` }} title="位置和尺寸来自连段图外观设置">
-                <VideoComboLayer chart={chart} style={comboImageStyle} timeMs={playbackMs} layout={overlaySettings.layout} bounds={layerPixelBounds} />
+          <div ref={stageShellRef} className="video-stage-shell">
+            <div
+              className={`video-stage-frame ${previewTransform.scale > 1 ? 'is-zoomed' : ''}`}
+              style={stageFrameStyle}
+              onMouseEnter={revealStageHud}
+              onMouseMove={revealStageHud}
+              onMouseLeave={scheduleStageHudHide}
+              onWheel={handlePreviewWheel}
+              onPointerDown={beginPreviewPan}
+              onPointerMove={movePreviewPan}
+              onPointerUp={endPreviewPan}
+              onPointerCancel={endPreviewPan}
+            >
+              <div className="video-stage-content" style={previewTransformStyle}>
+                {videoUrl ? <video ref={videoRef} src={videoUrl} playsInline onPlay={() => setIsPlaying(true)} onPause={() => setIsPlaying(false)} onEnded={() => setIsPlaying(false)} /> : <div className="video-empty"><FileVideo size={38} /><strong>导入实战视频</strong><span>视频不会写入项目文件，只在当前会话中引用。</span></div>}
+                <div className="video-combo-layer-box synced" style={{ left: `${layerBounds.x}%`, top: `${layerBounds.y}%`, width: `${layerBounds.width}%`, height: `${layerBounds.height}%` }} title="位置和尺寸来自连段图外观设置">
+                  <VideoComboLayer chart={chart} style={comboImageStyle} timeMs={playbackMs} layout={overlaySettings.layout} bounds={layerSourceBounds} />
+                </div>
+              </div>
+              <div className={`video-stage-hud ${stageHudVisible ? 'visible' : ''}`} onPointerDown={(event) => event.stopPropagation()} onMouseEnter={revealStageHud}>
+                <div className="video-stage-hud-top">
+                  {(exportStatus.state !== 'idle' || exportStatus.progress > 0) && <div className="video-export-status floating">
+                    <div><span style={{ width: `${Math.round(exportStatus.progress * 100)}%` }} /></div>
+                    <strong className={exportStatus.state}>{exportStatus.message}</strong>
+                  </div>}
+                </div>
+                <div className="video-stage-hud-bottom">
+                  <div className="video-preview-actions compact">
+                    <button className="primary icon-button" title={isPlaying ? '暂停' : '播放'} onClick={togglePlay} disabled={!videoUrl}>{isPlaying ? <Pause size={17} /> : <Play size={17} />}</button>
+                    <button className="icon-button" title="重置预览缩放" onClick={() => setPreviewTransform({ scale: 1, x: 0, y: 0 })} disabled={previewTransform.scale <= 1}>1x</button>
+                    <span>{Math.round(previewTransform.scale * 100)}%</span>
+                  </div>
+                  <div className="video-workbench-actions compact">
+                    <div className="video-file-menu">
+                      <button className="icon-button" title="文件" onClick={() => setFileMenuOpen((open) => !open)}><FileIcon size={18} /></button>
+                      {fileMenuOpen && <div className="video-file-menu-panel">
+                        <button onClick={() => { setFileMenuOpen(false); fileInputRef.current?.click(); }}><Upload size={16} />导入视频</button>
+                        <button onClick={() => { setFileMenuOpen(false); void togglePlay(); }} disabled={!videoUrl}>{isPlaying ? <Pause size={16} /> : <Play size={16} />}{isPlaying ? '暂停' : '播放'}</button>
+                        <button onClick={() => { setFileMenuOpen(false); fitChartToVideoDuration(); }} disabled={!videoMeta.durationMs}>匹配视频长度</button>
+                        <button onClick={() => { setFileMenuOpen(false); onSave(); }}><Save size={16} />保存轴</button>
+                        <button onClick={() => { setFileMenuOpen(false); void exportVideo(); }} disabled={!videoUrl || exportStatus.state === 'running'}><Download size={16} />导出视频</button>
+                      </div>}
+                    </div>
+                    <button className="icon-button" title="关闭" onClick={onClose}><X size={18} /></button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -901,34 +1178,16 @@ export function VideoAxisWorkbench({ chart, comboImageStyle, overlaySettings, ti
             <input type="range" min="0" max={Math.max(1, renderTotal)} step="16" value={Math.min(playbackMs, renderTotal)} onChange={(event) => seekTo(Number(event.target.value))} />
             <span>{formatMs(renderTotal)}</span>
           </div>
-          <div className="video-export-status">
-            <div><span style={{ width: `${Math.round(exportStatus.progress * 100)}%` }} /></div>
-            <strong className={exportStatus.state}>{exportStatus.message}</strong>
-          </div>
         </section>
+        <aside className="video-side-inspector" ref={setInspectorPortalTarget} />
 
-        <section className="video-edit-panel">
-          <div className="video-zoom-panel">
-            <div className="video-zoom-head">
-              <div><strong>缩放关键帧</strong><span>拖动右侧帧会等比缩放上一帧到该帧之间完整包含的招式，并平移后续内容。</span></div>
-              <button onClick={addZoomKeyframe}><Plus size={16} />添加缩放帧</button>
-            </div>
-            <div className="video-zoom-track" onPointerMove={onZoomDragMove} onPointerUp={endZoomDrag} onPointerCancel={endZoomDrag}>
-              <div className="video-zoom-playhead" style={{ left: `${(playbackMs / zoomTrackTotal) * 100}%` }} />
-              {sortedKeyframes.map((frame, index) => (
-                <button key={frame.id} className="video-zoom-marker" style={{ left: `${(frame.timeMs / zoomTrackTotal) * 100}%` }} title={`缩放帧 ${index + 1} ${formatMs(frame.timeMs)}`} onPointerDown={(event) => beginZoomDrag(event, frame.id)}>
-                  <span />
-                  <em>{index + 1}</em>
-                </button>
-              ))}
-            </div>
-            <div className="video-zoom-list">
-              {sortedKeyframes.map((frame, index) => <button key={frame.id} className="video-zoom-pill" onClick={() => seekTo(frame.timeMs)}><span>帧 {index + 1}</span><strong>{formatMs(frame.timeMs)}</strong>{sortedKeyframes.length > 2 && <Trash2 size={14} onClick={(event) => { event.stopPropagation(); deleteZoomKeyframe(frame.id); }} />}</button>)}
-            </div>
-          </div>
-          <div className="video-timeline-compact">
-            {timelineEditor}
-          </div>
+        <section className={`video-edit-panel ${timelineCollapsed ? 'collapsed' : ''}`}>
+          <button className="video-timeline-toggle icon-button" title={timelineCollapsed ? '展开时间轴' : '收起时间轴'} onClick={() => setTimelineCollapsed((collapsed) => !collapsed)}>
+            {timelineCollapsed ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+          </button>
+          {!timelineCollapsed && <div className="video-timeline-compact">
+            {enhancedTimelineEditor}
+          </div>}
         </section>
       </div>
     </div>

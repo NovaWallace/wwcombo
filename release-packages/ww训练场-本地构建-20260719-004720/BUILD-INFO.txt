@@ -1,0 +1,18 @@
+﻿Build: local-current
+PackageName: ww训练场-本地构建-20260719-004720.zip
+BuiltAt: 2026-07-19 00:47:20
+GitHead: bb4de70
+ExeLastWriteTime: 2026-07-19 00:46:28
+ExeSize: 24107520
+BuildCommand: npm.cmd run build; cargo tauri build --no-bundle
+BundleStatus: portable-zip
+InstallerStatus: skipped; portable package generated from no-bundle executable.
+
+LocalChanges:
+ M src-tauri/src/lib.rs
+ M src/App.tsx
+ M src/VideoAxisWorkbench.tsx
+ M src/desktopBridge.ts
+ M src/styles.css
+ M src/vite-env.d.ts
+?? "release-packages/ww\350\256\255\347\273\203\345\234\272-\346\234\254\345\234\260\346\236\204\345\273\272-20260719-004720/"

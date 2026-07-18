@@ -1,0 +1,7 @@
+﻿name=ww训练场-本地构建-20260719-021935
+built_at=20260719-021935
+command=npm run tauri:build
+source_commit_before_package=bb4de70
+portable_exe=wwcombo.exe
+nsis=WW Combo Trainer_0.1.0_x64-setup.exe
+msi=WW Combo Trainer_0.1.0_x64_en-US.msi

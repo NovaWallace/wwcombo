@@ -8,6 +8,7 @@ declare global {
       setOverlayBounds(bounds: { x: number; y: number; width: number; height: number }): Promise<void>;
       setOverlayPosition?(position: { x: number; y: number }): Promise<void>;
       getOverlayBounds?(): Promise<{ x: number; y: number; width: number; height: number }>;
+      getDisplaySize?(): Promise<{ width: number; height: number }>;
       updateOverlay(payload: unknown): Promise<void>;
       setRhythmFeedbackVisible?(visible: boolean): Promise<void>;
       updateRhythmFeedback?(payload: unknown): Promise<void>;
@@ -24,6 +25,8 @@ declare global {
       startGlobalInput(): Promise<{ ok: boolean; reason?: string }>;
       getGlobalInputStatus(): Promise<{ started: boolean; status: string; eventCount: number }>;
       stopGlobalInput(): Promise<void>;
+      saveExportFile?(directory: string, filename: string, bytes: Uint8Array): Promise<{ path: string }>;
+      saveExportMp4?(directory: string, filename: string, bytes: Uint8Array): Promise<{ path: string }>;
       onGlobalInput(callback: (event: DesktopInputEvent) => void): () => void;
     };
     trainerOverlay?: {

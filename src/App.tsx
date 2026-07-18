@@ -1,6 +1,7 @@
-﻿import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
-import { Activity, Bug, Download, Eye, EyeOff, FileVideo, Keyboard, Palette, Plus, Play, Save, Settings, Square, Target, Trash2, Upload } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { Activity, ArrowLeft, Bug, Download, Eye, EyeOff, FileVideo, FlaskConical, Gamepad2, Keyboard, Layers, Music2, Palette, Plus, Play, Save, Settings, Square, Target, Trash2, Upload } from 'lucide-react';
 import {
   CharacterSlot,
   ComboChart,
@@ -29,21 +30,28 @@ import { createDesktopBridge } from './desktopBridge';
 import {
   chartToComboImageItems,
   comboImageBackgroundSource,
-  comboImageItemSize,
-  comboImageItemSizeForText,
+  comboImageContentCenterPercent,
+  comboImageDisplayIndexForStep,
+  comboImageItemContainsStep,
+  comboImageItemSizeForDisplayItem,
   comboTextParts,
   createDefaultComboImageStyle,
-  iconSourceForId,
+  effectiveCapsuleImageFields,
+  effectiveIconMappings,
   maybeConvertTextToIconLabel,
   normalizeComboImageStyle,
   normalizeRectPercent,
   parseQuickInputText,
   visibleComboImageItems
 } from './combo-image/comboImage';
+import { AxisRhythmGame } from './AxisRhythmGame';
+import { CoopEventLab } from './CoopEventLab';
+import { KeyMappingLab } from './KeyMappingLab';
 import { VideoAxisWorkbench } from './VideoAxisWorkbench';
 import './styles.css';
 
-type Page = 'record' | 'practice' | 'appearance' | 'settings';
+type Page = 'record' | 'practice' | 'appearance' | 'experiment' | 'settings';
+type ExperimentPage = 'home' | 'rhythm' | 'axis' | 'coop' | 'keymap';
 type EditorTab = 'timeline' | 'content';
 type PracticePreset = 'strict' | 'lenient' | 'simple';
 type ComboLayout = 'horizontal' | 'vertical';
@@ -62,6 +70,7 @@ type OverlaySettings = {
 };
 type OverlayBounds = Omit<OverlaySettings, 'layout'>;
 type OverlayLayoutBounds = Record<ComboLayout, OverlayBounds>;
+type RhythmUiSettings = { width: number; height: number; laneGap: number; fallSpeed: number; judgeLineOffset: number; ringStartScale: number; ringEndScale: number; ringOffsetX: number; ringOffsetY: number; ringDurationMs: number; feedbackX: number; feedbackY: number };
 
 const STORAGE_KEY = 'ww-combo-trainer-state-v2';
 const MIN_EDITOR_DURATION = 35;
@@ -73,12 +82,14 @@ const DEFAULT_OVERLAY_LAYOUT_BOUNDS: OverlayLayoutBounds = {
   vertical: { x: 160, y: 36, ...VERTICAL_OVERLAY_SIZE }
 };
 const DEFAULT_OVERLAY_SETTINGS: OverlaySettings = { layout: 'horizontal', ...DEFAULT_OVERLAY_LAYOUT_BOUNDS.horizontal };
+const DEFAULT_RHYTHM_UI: RhythmUiSettings = { width: 430, height: 700, laneGap: 7, fallSpeed: 0.18, judgeLineOffset: 200, ringStartScale: 1.78, ringEndScale: 1.25, ringOffsetX: 0, ringOffsetY: -9, ringDurationMs: 420, feedbackX: 50, feedbackY: 64 };
 const LOCAL_STORAGE_SOFT_LIMIT = 4_200_000;
 const DRAFT_MOVE_ID = '__draft__';
 const DEFAULT_FREE_FIRE_DURATION = 15_000;
 const DEFAULT_AXIS_DURATION = 25_000;
 const AXIS_PLACEMENT_WINDOW = 30_000;
 const HEAVY_ATTACK_HOLD_MS = 300;
+const DEFAULT_EXPORT_DIRECTORY = '';
 type ComboTrackMetric = { extent: number; start: number; center: number };
 
 function clamp(value: number, min: number, max: number): number {
@@ -288,7 +299,7 @@ function overlaySettingsForLayout(layout: ComboLayout, bounds: OverlayLayoutBoun
 }
 
 function loadSavedState() {
-  const fallback = { moves: DEFAULT_MOVES, bindings: DEFAULT_BINDINGS, chart: null as ComboChart | null, library: [] as ComboChart[], startingCharacterSlot: 1 as CharacterSlot, overlaySettings: DEFAULT_OVERLAY_SETTINGS, overlayLayoutBounds: DEFAULT_OVERLAY_LAYOUT_BOUNDS, comboImageStyle: createDefaultComboImageStyle(), axisGateEnabled: true };
+  const fallback = { moves: DEFAULT_MOVES, bindings: DEFAULT_BINDINGS, chart: null as ComboChart | null, library: [] as ComboChart[], startingCharacterSlot: 1 as CharacterSlot, overlaySettings: DEFAULT_OVERLAY_SETTINGS, overlayLayoutBounds: DEFAULT_OVERLAY_LAYOUT_BOUNDS, comboImageStyle: createDefaultComboImageStyle(), axisGateEnabled: true, exportDirectory: DEFAULT_EXPORT_DIRECTORY };
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return fallback;
@@ -304,7 +315,8 @@ function loadSavedState() {
       overlaySettings: overlaySettingsForLayout(layout, overlayLayoutBounds),
       overlayLayoutBounds,
       comboImageStyle: normalizeComboImageStyle(parsed.comboImageStyle),
-      axisGateEnabled: parsed.axisGateEnabled !== false
+      axisGateEnabled: parsed.axisGateEnabled !== false,
+      exportDirectory: typeof parsed.exportDirectory === 'string' ? parsed.exportDirectory : DEFAULT_EXPORT_DIRECTORY
     };
   } catch {
     return fallback;
@@ -341,7 +353,9 @@ type TrainerLikeInputEvent = { type: 'keydown' | 'keyup' | 'mousedown' | 'mouseu
 export default function App() {
   const saved = useMemo(loadSavedState, []);
   const desktop = useMemo(() => createDesktopBridge(), []);
+  const getDisplaySize = useMemo(() => desktop?.getDisplaySize ? () => desktop.getDisplaySize!() : undefined, [desktop]);
   const [page, setPage] = useState<Page>('record');
+  const [experimentPage, setExperimentPage] = useState<ExperimentPage>('home');
   const [moves, setMoves] = useState<MoveDefinition[]>(saved.moves);
   const [bindings, setBindings] = useState<KeyBinding[]>(saved.bindings);
   const [chart, setChart] = useState<ComboChart | null>(saved.chart);
@@ -359,6 +373,7 @@ export default function App() {
   const [practicePreset, setPracticePreset] = useState<PracticePreset>('strict');
   const [practice, setPractice] = useState<PracticeSnapshot>(createEmptyPractice);
   const [axisGateEnabled, setAxisGateEnabled] = useState(saved.axisGateEnabled);
+  const [exportDirectory, setExportDirectory] = useState(saved.exportDirectory);
   const [overlayVisible, setOverlayVisible] = useState(false);
   const [overlayMoveMode, setOverlayMoveMode] = useState(false);
   const [chartTitle, setChartTitle] = useState(chart?.title ?? '');
@@ -366,6 +381,7 @@ export default function App() {
   const [quickInputStartStepId, setQuickInputStartStepId] = useState<string | null>(null);
   const [quickInputMemory, setQuickInputMemory] = useState<string[]>([]);
   const [videoWorkbenchOpen, setVideoWorkbenchOpen] = useState(false);
+  const [experimentInputSignal, setExperimentInputSignal] = useState<(TrainerLikeInputEvent & { id: string }) | null>(null);
   const [editorZoom, setEditorZoom] = useState(0.46);
   const [defaultAvatars, setDefaultAvatars] = useState<DefaultAvatarEntry[]>([]);
   const [defaultBasePresets, setDefaultBasePresets] = useState<DefaultBasePresetEntry[]>([]);
@@ -403,9 +419,9 @@ export default function App() {
   }, [practiceChart, moves, bindings, practiceSettings]);
 
   useEffect(() => {
-    const payload = JSON.stringify({ moves, bindings, chart, library, startingCharacterSlot, overlaySettings, overlayLayoutBounds, comboImageStyle, axisGateEnabled });
+    const payload = JSON.stringify({ moves, bindings, chart, library, startingCharacterSlot, overlaySettings, overlayLayoutBounds, comboImageStyle, axisGateEnabled, exportDirectory });
     if (payload.length < LOCAL_STORAGE_SOFT_LIMIT) localStorage.setItem(STORAGE_KEY, payload);
-  }, [moves, bindings, chart, library, startingCharacterSlot, overlaySettings, overlayLayoutBounds, comboImageStyle, axisGateEnabled]);
+  }, [moves, bindings, chart, library, startingCharacterSlot, overlaySettings, overlayLayoutBounds, comboImageStyle, axisGateEnabled, exportDirectory]);
 
   useEffect(() => setChartTitle(chart?.title ?? ''), [chart?.id]);
 
@@ -418,9 +434,9 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const emit = () => desktop?.updateOverlay({ chart: practiceChart, practice, visible: overlayVisible, moveMode: overlayMoveMode, settings: overlaySettings, comboImageStyle });
+    const emit = () => desktop?.updateOverlay({ chart: practiceChart, practice, practicePreset, visible: overlayVisible, moveMode: overlayMoveMode, settings: overlaySettings, comboImageStyle });
     emit();
-  }, [desktop, practiceChart, practice, overlaySettings, comboImageStyle, overlayVisible, overlayMoveMode]);
+  }, [desktop, practiceChart, practice, practicePreset, overlaySettings, comboImageStyle, overlayVisible, overlayMoveMode]);
 
   useEffect(() => desktop?.onOverlayBoundsChanged?.((bounds) => {
     const layout = overlaySettingsRef.current.layout;
@@ -438,7 +454,7 @@ export default function App() {
           stopRecording();
           return;
         }
-        if (page === 'practice' && normalized.code === 'Escape') {
+        if ((page === 'practice' || (page === 'experiment' && experimentPage === 'rhythm')) && normalized.code === 'Escape') {
           event.preventDefault();
           clearBasicAttackHoldState();
           stopPractice();
@@ -461,7 +477,7 @@ export default function App() {
       disposeGlobal?.();
       clearBasicAttackHoldState();
     };
-  }, [page, desktop, basicAttackCodes, heavyAttackCode]);
+  }, [page, experimentPage, desktop, basicAttackCodes, heavyAttackCode]);
 
   function acceptTrainerInput(event: TrainerLikeInputEvent) {
     const normalizedCode = normalizeInputCode(event.code);
@@ -496,6 +512,7 @@ export default function App() {
   }
 
   function routeTrainerInput(event: TrainerLikeInputEvent) {
+    setExperimentInputSignal({ ...event, id: crypto.randomUUID() });
     if (page === 'record') {
       const before = recorderRef.current.isRecording;
       const next = recorderRef.current.accept(event);
@@ -505,7 +522,7 @@ export default function App() {
         setDebugMessage(`录制完成：捕获 ${next.units.length} 个指令。可以选择覆盖载入编辑区，或调试合并到当前连段。`);
       }
     }
-    if (page === 'practice' && practiceRef.current) {
+    if ((page === 'practice' || (page === 'experiment' && experimentPage === 'rhythm')) && practiceRef.current) {
       setPractice(practiceRef.current.accept(event));
     }
   }
@@ -717,7 +734,7 @@ export default function App() {
       await desktop?.setOverlayVisible(true);
     }
     await desktop?.setOverlayClickThrough(!enabled);
-    await desktop?.updateOverlay({ chart: practiceChart, practice, visible: enabled ? true : overlayVisible, moveMode: enabled, settings: nextSettings, comboImageStyle });
+    await desktop?.updateOverlay({ chart: practiceChart, practice, practicePreset, visible: enabled ? true : overlayVisible, moveMode: enabled, settings: nextSettings, comboImageStyle });
   }
 
   async function resetOverlayBounds() {
@@ -726,7 +743,7 @@ export default function App() {
     overlaySettingsRef.current = next;
     setOverlayLayoutBounds((current) => ({ ...current, [next.layout]: { x: next.x, y: next.y, width: next.width, height: next.height } }));
     await desktop?.setOverlayBounds(next);
-    await desktop?.updateOverlay({ chart: practiceChart, practice, visible: overlayVisible, moveMode: overlayMoveMode, settings: next, comboImageStyle });
+    await desktop?.updateOverlay({ chart: practiceChart, practice, practicePreset, visible: overlayVisible, moveMode: overlayMoveMode, settings: next, comboImageStyle });
   }
 
   async function setOverlayLayout(layout: ComboLayout) {
@@ -734,7 +751,7 @@ export default function App() {
     setOverlaySettings(next);
     overlaySettingsRef.current = next;
     await desktop?.setOverlayBounds(next);
-    await desktop?.updateOverlay({ chart: practiceChart, practice, visible: overlayVisible, moveMode: overlayMoveMode, settings: next, comboImageStyle });
+    await desktop?.updateOverlay({ chart: practiceChart, practice, practicePreset, visible: overlayVisible, moveMode: overlayMoveMode, settings: next, comboImageStyle });
   }
 
   return (
@@ -745,13 +762,14 @@ export default function App() {
           <button className={page === 'record' ? 'active' : ''} onClick={() => setPage('record')}><Activity size={18} /><span>{'记录'}</span></button>
           <button className={page === 'practice' ? 'active' : ''} onClick={() => setPage('practice')}><Target size={18} /><span>{'练习'}</span></button>
           <button className={page === 'appearance' ? 'active' : ''} onClick={() => setPage('appearance')}><Palette size={18} /><span>{'外观'}</span></button>
+          <button className={page === 'experiment' ? 'active' : ''} onClick={() => { setPage('experiment'); setExperimentPage('home'); }}><FlaskConical size={18} /><span>{'实验'}</span></button>
           <button className={page === 'settings' ? 'active' : ''} onClick={() => setPage('settings')}><Settings size={18} /><span>{'设置'}</span></button>
         </nav>
         <button className={`sidebar-tool sidebar-global-listener ${globalInputEnabled ? 'active' : ''}`} title={globalInputStatus} onClick={() => void (globalInputEnabled ? stopGlobalInput() : startGlobalInput())}><Keyboard size={18} /><span>{'全局监听'}</span></button>
         <div className="sidebar-illustration" aria-hidden="true" />
       </aside>
 
-      <main className="workspace">
+      <main className={`workspace ${page === 'experiment' && experimentPage !== 'home' ? 'workspace-experiment' : ''}`}>
         {page === 'record' && (
           <section className="record-page-layout record-page-layout-v2">
             <div className="panel record-panel record-panel-v2">
@@ -787,8 +805,8 @@ export default function App() {
           <section className="practice-layout">
             <div className="panel practice-main-panel">
               <div className="panel-title"><div><h2>{'练习模式'}</h2><p>{'F 开始，Esc 结束；演示按时间展示流程，练习按正确输入推进。'}</p></div><div className="segmented"><button className={practicePreset === 'simple' ? 'active' : ''} onClick={() => setPracticePreset('simple')}>{'演示'}</button><button className={practicePreset === 'lenient' ? 'active' : ''} onClick={() => setPracticePreset('lenient')}>{'练习'}</button><button className={practicePreset === 'strict' ? 'active' : ''} onClick={() => setPracticePreset('strict')}>{'挑战'}</button></div></div>
-              {practiceChart ? <ComboImagePreview chart={practiceChart} practice={practice} style={comboImageStyle} layout="horizontal" bounds={overlaySettings} /> : <EmptyState text="暂无连段谱。" />}
-              <div className="record-actions"><button className="primary" onClick={startPractice} disabled={practice.status === 'running' || practice.status === 'armed'}><Play size={18} />{'开始 F'}</button><button onClick={stopPractice}><Square size={18} />{'结束 Esc'}</button><button onClick={() => { setQuickInputStartStepId(null); setQuickInputOpen(true); }} disabled={!practiceChart}>{'快捷输入'}</button><button className="icon-button" onClick={toggleOverlay}>{overlayVisible ? <EyeOff size={18} /> : <Eye size={18} />}</button><label className="checkline axis-gate-toggle"><input type="checkbox" checked={axisGateEnabled} onChange={(event) => setAxisGateEnabled(event.target.checked)} />轴首招启动</label></div>
+              {practiceChart ? <ComboImagePreview chart={practiceChart} practice={practice} style={comboImageStyle} layout="horizontal" bounds={overlaySettings} mergedHighlightMode={practicePreset === 'lenient' ? 'input' : 'time'} /> : <EmptyState text="暂无连段谱。" />}
+              <div className="record-actions"><button className="primary" onClick={startPractice} disabled={practice.status === 'running' || practice.status === 'armed'}><Play size={18} />{'开始 F'}</button><button onClick={stopPractice}><Square size={18} />{'结束 Esc'}</button><button onClick={() => { setQuickInputStartStepId(null); setQuickInputOpen(true); }} disabled={!practiceChart}>{'快捷输入'}</button><button className="icon-button" onClick={toggleOverlay}>{overlayVisible ? <EyeOff size={18} /> : <Eye size={18} />}</button><label className="checkline axis-gate-toggle"><input type="checkbox" checked={axisGateEnabled} onChange={(event) => setAxisGateEnabled(event.target.checked)} />轴首招启动</label><label className="checkline axis-gate-toggle"><input type="checkbox" checked={comboImageStyle.mergeSameRoleSteps} onChange={(event) => updateComboImageStyle({ mergeSameRoleSteps: event.target.checked })} />同角色合并</label></div>
               <div className="practice-feedback-row">{practice.feedback[0] ? <div className={`feedback ${practice.feedback[0].level}`}>{practice.feedback[0].message}</div> : <div className="feedback info">{'等待输入提示'}</div>}</div>
               {practiceChart && practice.errorStepIds.length > 0 && <PracticeErrorSummary chart={practiceChart} practice={practice} />}
             </div>
@@ -807,10 +825,56 @@ export default function App() {
           </section>
         )}
 
-        {page === 'settings' && <SettingsPanel moves={moves} bindings={bindings} onMoveChange={updateMove} onBindingChange={updateBinding} />}
+        {page === 'experiment' && (
+          <section className="experiment-page-layout">
+            {experimentPage === 'home' && (
+              <div className="panel experiment-panel">
+                <div className="panel-title"><div><h2>{'实验'}</h2><p>{'还在打磨中的玩法和工具入口。'}</p></div></div>
+                <div className="experiment-grid">
+                  <button className="experiment-card" onClick={() => setExperimentPage('rhythm')}><span className="experiment-card-icon"><img src="/theme/experiment-rhythm.png" alt="" /></span><strong>{'音游模式'}</strong></button>
+                  <button className="experiment-card" onClick={() => setExperimentPage('axis')}><span className="experiment-card-icon"><Music2 size={64} /></span><strong>{'节奏合轴'}</strong></button>
+                  <button className="experiment-card" onClick={() => setExperimentPage('coop')}><span className="experiment-card-icon"><img src="/theme/experiment-coop.png" alt="" /></span><strong>{'协同事件'}</strong></button>
+                  <button className="experiment-card" onClick={() => setExperimentPage('keymap')}><span className="experiment-card-icon"><img src="/theme/experiment-keymap.png" alt="" /></span><strong>{'按键映射'}</strong></button>
+                </div>
+              </div>
+            )}
+            {experimentPage === 'rhythm' && (
+              <div className="experiment-rhythm-layout">
+                <div className="panel practice-main-panel experiment-rhythm-main">
+                  <div className="panel-title experiment-subtitle"><div><h2>{'音游模式'}</h2><p>{'按连段时间生成三轨下落块。'}</p></div><button className="icon-button experiment-back-button" onClick={() => setExperimentPage('home')} title="返回"><ArrowLeft size={18} /></button></div>
+                  <RhythmGameDemo chart={practiceChart} style={comboImageStyle} practice={practice} settings={DEFAULT_RHYTHM_UI} />
+                  <div className="record-actions rhythm-actions"><button className="primary" onClick={startPractice} disabled={!practiceChart || practice.status === 'running' || practice.status === 'armed'}><Play size={18} />{'开始 F'}</button><button onClick={stopPractice} disabled={!practiceChart}><Square size={18} />{'结束 Esc'}</button></div>
+                  <div className="rhythm-hint-row"><span>{practiceChart ? `当前谱：${practiceChart.title || '未命名连段谱'}` : '先在右侧读取或选择一个连段谱。'}</span><span>{practice.status === 'running' ? '播放中' : practice.status === 'armed' ? '准备中' : '未开始'}</span></div>
+                </div>
+                <LibraryPanel chart={chart} library={library} onSelect={(id) => setChart(library.find((item) => item.id === id) ?? chart)} onEdit={(id) => { const item = library.find((entry) => entry.id === id); if (item) { setChart(item); setPage('record'); setEditorTab('timeline'); } }} onDelete={deleteLibraryChart} onExportCurrent={exportCurrentChart} onExportLibrary={exportLibrary} onImport={() => importInputRef.current?.click()} />
+                <input ref={importInputRef} className="file-input" type="file" accept="application/json,.json" onChange={(event) => void importCharts(event.target.files?.[0] ?? null)} />
+              </div>
+            )}
+            {experimentPage === 'axis' && (
+              <div className="experiment-axis-page">
+                <div className="panel-title experiment-subtitle"><div><h2>{'节奏合轴'}</h2><p>{'按连段时间生成三轨判定玩法。'}</p></div><button className="icon-button experiment-back-button" onClick={() => setExperimentPage('home')} title="返回"><ArrowLeft size={18} /></button></div>
+                <AxisRhythmGame chart={practiceChart} style={comboImageStyle} moves={moves} bindings={bindings} inputSignal={experimentInputSignal} iconStorageKey="ww-combo-axis-rhythm-icons-v1" />
+              </div>
+            )}
+            {experimentPage === 'coop' && (
+              <div className="experiment-coop-page">
+                <div className="panel-title experiment-subtitle"><div><h2>{'协同事件'}</h2><p>{'给连段事件绑定音频和图片触发。'}</p></div><button className="icon-button experiment-back-button" onClick={() => setExperimentPage('home')} title="返回"><ArrowLeft size={18} /></button></div>
+                <CoopEventLab sourceChart={chart} library={library} moves={moves} bindings={bindings} comboImageStyle={comboImageStyle} inputSignal={experimentInputSignal} />
+              </div>
+            )}
+            {experimentPage === 'keymap' && (
+              <div className="experiment-keymap-page">
+                <div className="panel-title experiment-subtitle"><div><h2>{'按键映射'}</h2><p>{'按下键位时显示对应图片。'}</p></div><button className="icon-button experiment-back-button" onClick={() => setExperimentPage('home')} title="返回"><ArrowLeft size={18} /></button></div>
+                <KeyMappingLab inputSignal={experimentInputSignal} onRequestGlobalInput={startGlobalInput} />
+              </div>
+            )}
+          </section>
+        )}
+
+        {page === 'settings' && <SettingsPanel moves={moves} bindings={bindings} exportDirectory={exportDirectory} onExportDirectoryChange={setExportDirectory} onMoveChange={updateMove} onBindingChange={updateBinding} />}
       </main>
       {quickInputOpen && practiceChart && <QuickInputDialog chart={practiceChart} style={comboImageStyle} initialValues={quickInputMemory} startStepId={quickInputStartStepId} onApply={applyQuickInput} onClose={() => setQuickInputOpen(false)} />}
-      {videoWorkbenchOpen && chart && <VideoAxisWorkbench chart={chart} comboImageStyle={comboImageStyle} overlaySettings={overlaySettings} timelineEditor={<TimelineEditor chart={chart} moves={moves} comboImageStyle={comboImageStyle} mode={editorTab} zoom={editorZoom} onZoomChange={setEditorZoom} onUpdate={updateStep} onDelete={deleteStep} onPeriodsChange={updatePeriods} onContentChange={updateComboImageStyle} onQuickInput={(stepId) => { setQuickInputStartStepId(stepId); setQuickInputOpen(true); }} onSave={saveCurrentChart} />} onApplyChart={applyVideoWorkbenchChart} onClose={() => setVideoWorkbenchOpen(false)} onSave={saveCurrentChart} />}
+      {videoWorkbenchOpen && chart && <VideoAxisWorkbench chart={chart} comboImageStyle={comboImageStyle} overlaySettings={overlaySettings} exportDirectory={exportDirectory} timelineEditor={<TimelineEditor chart={chart} moves={moves} comboImageStyle={comboImageStyle} mode={editorTab} zoom={editorZoom} onZoomChange={setEditorZoom} onUpdate={updateStep} onDelete={deleteStep} onPeriodsChange={updatePeriods} onContentChange={updateComboImageStyle} onQuickInput={(stepId) => { setQuickInputStartStepId(stepId); setQuickInputOpen(true); }} onSave={saveCurrentChart} />} onApplyChart={applyVideoWorkbenchChart} onClose={() => setVideoWorkbenchOpen(false)} onSave={saveCurrentChart} getDisplaySize={getDisplaySize} />}
     </div>
   );
 }
@@ -838,7 +902,76 @@ function avatarBackgroundStyle(src?: string): CSSProperties {
 }
 
 function ComboInlineContent({ parts, className }: { parts: ReturnType<typeof comboTextParts>; className: string }) {
-  return <strong className={className}>{parts.map((part, index) => part.kind === 'icon' ? <img key={`${part.iconId}-${index}`} className="combo-inline-icon" src={iconSourceForId(part.iconId)} alt={part.label} title={part.label} /> : <span key={`text-${index}`}>{part.value}</span>)}</strong>;
+  return <strong className={className}>{parts.map((part, index) => part.kind === 'icon' ? <span key={`${part.iconId}-${index}`} className="combo-inline-icon-mark" style={{ '--icon-scale': part.iconScale } as CSSProperties}><img className="combo-inline-icon" src={part.src} alt={part.label} title={part.label} /></span> : <span key={`text-${index}`}>{part.value}</span>)}</strong>;
+}
+
+function RhythmGameDemo({ chart, style, practice, settings }: { chart: ComboChart | null; style: ComboImageStyle; practice: PracticeSnapshot; settings: RhythmUiSettings }) {
+  const [clockNow, setClockNow] = useState(() => performance.now());
+
+  useEffect(() => {
+    if (practice.status !== 'running') return;
+    let frame = 0;
+    const tick = () => {
+      setClockNow(performance.now());
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [practice.status, practice.startedAt]);
+
+  const orderedSteps = useMemo(() => [...(chart?.steps ?? [])].sort((left, right) => left.startMin - right.startMin || (left.characterSlot ?? 1) - (right.characterSlot ?? 1) || left.id.localeCompare(right.id)), [chart]);
+  const chartEndMs = Math.max(3000, ...(chart?.steps ?? []).map((step) => step.startMin + step.durationMax + 1000));
+  const elapsedMs = practice.status === 'running' && practice.startedAt !== null ? Math.max(0, clockNow - practice.startedAt) : Math.max(0, practice.elapsedMs ?? 0);
+  const judgeY = clamp(settings.height - settings.judgeLineOffset, 120, settings.height - 90);
+  const lookAheadMs = Math.ceil((judgeY + 180) / Math.max(0.01, settings.fallSpeed));
+  const visibleSteps = orderedSteps.filter((step) => step.startMin + Math.max(120, step.durationMax) >= elapsedMs && step.startMin <= elapsedMs + lookAheadMs);
+  const matchedStepIds = new Set(practice.matchedStepIds ?? []);
+  const activeSlot = orderedSteps.filter((step) => step.startMin <= elapsedMs && (step.moveId === 'switch_1' || step.moveId === 'switch_2' || step.moveId === 'switch_3')).sort((left, right) => right.startMin - left.startMin)[0]?.moveId.replace('switch_', '') ?? orderedSteps[0]?.characterSlot ?? 1;
+  const latestFeedback = practice.feedback.find((item) => item.stepId && item.level !== 'info');
+  const latestJudgement = latestFeedback?.stepId ? practice.judgements?.[latestFeedback.stepId] : undefined;
+
+  if (!chart) return <div className="rhythm-empty"><Music2 size={44} /><strong>{'暂无连段谱'}</strong><span>{'从右侧读取连段谱后，这里会生成下落式操作块。'}</span></div>;
+
+  return (
+    <div className="rhythm-demo-shell">
+      <div className="rhythm-demo-status">
+        <span><b>{'时长'}</b>{(chartEndMs / 1000).toFixed(1)}s</span>
+        <span><b>{'进度'}</b>{(elapsedMs / 1000).toFixed(2)}s</span>
+        <span><b>{'指令'}</b>{orderedSteps.length}</span>
+      </div>
+      <div className="rhythm-demo-stage" style={{ '--rhythm-stage-width': `${settings.width}px`, '--rhythm-stage-height': `${settings.height}px`, '--rhythm-lane-gap': `${settings.laneGap}px`, '--rhythm-judge-y': `${judgeY}px` } as CSSProperties}>
+        <div className="rhythm-lanes">
+          {CHARACTER_SLOTS.map((slot) => {
+            const role = style.roleStyles[slot];
+            return (
+              <div key={slot} className="rhythm-lane">
+                {Number(activeSlot) === slot && <div className="rhythm-active-role-gradient" />}
+                <div className="rhythm-lane-label">{role.name || `角色${slot}`}</div>
+                {visibleSteps.filter((step) => (step.characterSlot ?? 1) === slot).map((step) => {
+                  const top = judgeY - (step.startMin - elapsedMs) * settings.fallSpeed - 34;
+                  const contentText = style.contentLabels[step.id]?.trim() || displayMoveLabel(step);
+                  const parts = comboTextParts(maybeConvertTextToIconLabel(contentText, style.convertIcons), style.convertIcons, style.iconMappings);
+                  const active = elapsedMs >= step.startMin && elapsedMs <= step.startMin + step.durationMax;
+                  const matched = matchedStepIds.has(step.id);
+                  const judgement = practice.judgements?.[step.id];
+                  return <div key={step.id} className={`rhythm-note ${step.moveId === 'heavy_attack' || step.moveId.endsWith('_hold') ? 'hold' : 'normal'} ${parts.length > 1 ? 'stacked' : ''} ${active ? 'active' : ''} ${matched ? 'matched' : ''} ${judgement ? `judge-${judgement}` : ''}`} style={{ top } as CSSProperties}><ComboInlineContent parts={parts} className="rhythm-note-content" /></div>;
+                })}
+              </div>
+            );
+          })}
+        </div>
+        <div className="rhythm-judgement-line" />
+        {latestJudgement && <div className={`rhythm-floating-feedback judge-${latestJudgement}`} style={{ left: `${settings.feedbackX}%`, top: `${settings.feedbackY}%` } as CSSProperties}>{latestJudgement.toUpperCase()}</div>}
+        <div className="rhythm-avatar-row">
+          {CHARACTER_SLOTS.map((slot) => {
+            const role = style.roleStyles[slot];
+            const promptStep = orderedSteps.find((step) => (step.characterSlot ?? 1) === slot && elapsedMs <= step.startMin + step.durationMax);
+            return <div key={slot} className="rhythm-avatar-cell"><span className="rhythm-lane-prompt">{promptStep ? displayMoveLabel(promptStep) : ''}</span><span className="rhythm-avatar" style={avatarBackgroundStyle(role.avatar)}>{role.avatar ? null : slot}</span></div>;
+          })}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function CapsuleBlockBackground() {
@@ -856,12 +989,13 @@ function imageCropBackground(src: string | undefined, crop = { x: 0, y: 0, w: 10
   };
 }
 
-function capsuleImageStyle(style: ComboImageStyle, width: number, height: number): CSSProperties {
-  if (style.blockMode !== 'image' || !style.capsuleImage) return {};
+function capsuleImageStyle(style: ComboImageStyle, width: number, height: number, roleStyle?: ComboImageStyle['roleStyles'][CharacterSlot]): CSSProperties {
+  const capsule = effectiveCapsuleImageFields(style, roleStyle);
+  if (style.blockMode !== 'image' || !capsule.image) return {};
   return {
     backgroundImage: 'none',
     borderColor: 'transparent',
-    ...capsuleBackgroundVars(style, width, height)
+    ...capsuleBackgroundVars(style, width, height, roleStyle)
   } as CSSProperties;
 }
 
@@ -873,16 +1007,17 @@ function cssPx(value: number): string {
   return `${Number(value.toFixed(3))}px`;
 }
 
-function capsuleBackgroundVars(style: ComboImageStyle, targetWidthInput: number, targetHeightInput: number): CSSProperties {
-  const source = style.capsuleImage ?? '';
-  const naturalWidth = Math.max(1, style.capsuleImageWidth ?? style.capsuleWidth ?? 200);
-  const naturalHeight = Math.max(1, style.capsuleImageHeight ?? style.capsuleHeight ?? 80);
-  const crop = normalizeRectPercent(style.capsuleCrop, { x: 0, y: 0, w: 100, h: 100 });
+function capsuleBackgroundVars(style: ComboImageStyle, targetWidthInput: number, targetHeightInput: number, roleStyle?: ComboImageStyle['roleStyles'][CharacterSlot]): CSSProperties {
+  const capsule = effectiveCapsuleImageFields(style, roleStyle);
+  const source = capsule.image ?? '';
+  const naturalWidth = Math.max(1, capsule.width ?? style.capsuleWidth ?? 200);
+  const naturalHeight = Math.max(1, capsule.height ?? style.capsuleHeight ?? 80);
+  const crop = normalizeRectPercent(capsule.crop, { x: 0, y: 0, w: 100, h: 100 });
   const cropX = Math.round((crop.x / 100) * naturalWidth);
   const cropY = Math.round((crop.y / 100) * naturalHeight);
   const cropWidth = Math.max(1, Math.round((crop.w / 100) * naturalWidth));
   const cropHeight = Math.max(1, Math.round((crop.h / 100) * naturalHeight));
-  const stretch = style.capsuleStretch ?? { left: 25, right: 75 };
+  const stretch = capsule.stretch ?? { left: 25, right: 75 };
   const leftLine = Math.round(clamp(((stretch.left ?? 25) / 100) * naturalWidth - cropX, 1, cropWidth - 2));
   const rightLine = Math.round(clamp(((stretch.right ?? 75) / 100) * naturalWidth - cropX, leftLine + 1, cropWidth - 1));
   const targetWidth = Math.max(1, Math.round(targetWidthInput));
@@ -938,7 +1073,8 @@ function comboTrackMetrics(items: ReturnType<typeof chartToComboImageItems>, lay
   let cursor = 0;
   return items.map((item, index) => {
     if (index > 0) cursor += style.capsuleGap;
-    const size = comboImageItemSizeForText(style, item.displayText, item.showAvatar);
+    const roleStyle = style.roleStyles[item.characterSlot];
+    const size = comboImageItemSizeForDisplayItem(style, item, roleStyle);
     const extent = layout === 'vertical' ? size.height : size.width;
     const metric = { extent, start: cursor, center: cursor + extent / 2 };
     cursor += extent;
@@ -969,19 +1105,86 @@ function comboTrackOffset(items: ReturnType<typeof chartToComboImageItems>, acti
   return Math.round(style.scrollStartOffsetPx - activeMetric.start);
 }
 
-function ComboImagePreview({ chart, practice, style, layout, bounds }: { chart: ComboChart | null; practice: PracticeSnapshot; style: ComboImageStyle; layout: ComboLayout; bounds: OverlaySettings }) {
+function timedStepIndexForPractice(chart: ComboChart | null, practice: PracticeSnapshot, floorIndex = 0): number | null {
+  if (!chart?.steps.length) return 0;
+  if (practice.status === 'running' && practice.startedAt !== null) {
+    const elapsed = Math.max(0, practice.elapsedMs ?? performance.now() - practice.startedAt);
+    const startedTimedStep = chart.steps
+      .map((step, index) => ({ step, index }))
+      .filter(({ step }) => elapsed >= step.startMin)
+      .sort((left, right) => right.step.startMin - left.step.startMin || right.index - left.index)[0];
+    if (startedTimedStep) return Math.max(floorIndex, startedTimedStep.index);
+  }
+  return null;
+}
+
+function activeFrameVars(showAvatar: boolean, blockMode: ComboImageStyle['blockMode'], avatarLeft: number, avatarSize: number, avatarOffsetY: number, blockHeight: number, visualHeight = blockHeight): CSSProperties {
+  if (blockMode !== 'image') return {};
+  const bleed = 3;
+  const frameHeight = Math.min(blockHeight, Math.max(1, visualHeight));
+  const centeredInset = Math.max(-bleed, (blockHeight - frameHeight) / 2 - bleed);
+  const avatarTop = blockHeight / 2 + avatarOffsetY - avatarSize / 2;
+  const avatarBottom = blockHeight / 2 + avatarOffsetY + avatarSize / 2;
+  return {
+    '--active-frame-left': `${showAvatar ? Math.min(-bleed, avatarLeft - bleed) : -bleed}px`,
+    '--active-frame-right': `${-bleed}px`,
+    '--active-frame-top': `${showAvatar ? Math.min(centeredInset, avatarTop - bleed) : centeredInset}px`,
+    '--active-frame-bottom': `${showAvatar ? Math.min(centeredInset, blockHeight - avatarBottom - bleed) : centeredInset}px`
+  } as CSSProperties;
+}
+
+function ComboItemContent({ item, parts, className, mappings, activeMergedStepId }: { item: ReturnType<typeof chartToComboImageItems>[number]; parts: ReturnType<typeof comboTextParts>; className: string; mappings: ComboImageStyle['iconMappings']; activeMergedStepId?: string }) {
+  if (item.mergedParts?.length && activeMergedStepId) {
+    return <strong className={className}>{item.mergedParts.map((part) => {
+      const active = part.stepId === activeMergedStepId;
+      return <span key={part.stepId} className={active ? 'combo-merged-part active' : 'combo-merged-part'}>{comboTextParts(part.displayText, Boolean(part.iconId), mappings).map((piece, index) => piece.kind === 'icon' ? <span key={`${piece.iconId}-${index}`} className={active ? 'combo-inline-icon-mark active' : 'combo-inline-icon-mark'} style={{ '--icon-scale': piece.iconScale } as CSSProperties}><img className="combo-inline-icon" src={piece.src} alt={piece.label} title={piece.label} /></span> : <span key={`text-${index}`}>{piece.value}</span>)}</span>;
+    })}</strong>;
+  }
+  return <ComboInlineContent parts={parts} className={className} />;
+}
+
+function shouldShowPromptForStep(step: ComboStep | null | undefined): step is ComboStep {
+  return Boolean(step && !step.free && (step.moveId === 'basic_attack' || (!step.independent && step.advancesStep !== false)));
+}
+
+function promptTextForStep(step: ComboStep | null | undefined): string {
+  if (!step) return '';
+  if (step.note?.trim()) return step.note.trim();
+  return displayMoveLabel(step);
+}
+
+function ComboImagePreview({ chart, practice, style, layout, bounds, mergedHighlightMode = 'time' }: { chart: ComboChart | null; practice: PracticeSnapshot; style: ComboImageStyle; layout: ComboLayout; bounds: OverlaySettings; mergedHighlightMode?: 'time' | 'input' }) {
   const previewRef = useRef<HTMLDivElement | null>(null);
+  const progressRef = useRef({ runKey: '', activeStepIndex: 0, indicatorStepIndex: 0 });
   const [measuredBounds, setMeasuredBounds] = useState<OverlaySettings | null>(null);
   const [nextIndicatorSide, setNextIndicatorSide] = useState<'above' | 'below' | 'left' | 'right'>('above');
-  const activeIndex = practice.currentStepIndex ?? 0;
+  const activeIndex = chart?.steps.length ? clamp(practice.currentStepIndex ?? 0, 0, chart.steps.length - 1) : 0;
+  const timedIndex = timedStepIndexForPractice(chart, practice, activeIndex);
   const allItems = chartToComboImageItems(chart, style);
+  const activeStep = chart?.steps[activeIndex] ?? null;
+  const rawIndicatorStepIndex = style.mergeSameRoleSteps ? Math.min(chart?.steps.length ?? 0, activeIndex + 1) : activeIndex + 1;
+  const runKey = `${chart?.id ?? 'none'}:${practice.startedAt ?? 'idle'}:${practice.status}`;
+  if (progressRef.current.runKey !== runKey || practice.status !== 'running') progressRef.current = { runKey, activeStepIndex: activeIndex, indicatorStepIndex: rawIndicatorStepIndex };
+  else progressRef.current = { runKey, activeStepIndex: Math.max(progressRef.current.activeStepIndex, activeIndex), indicatorStepIndex: Math.max(progressRef.current.indicatorStepIndex, rawIndicatorStepIndex) };
+  const activeStepIndex = clamp(progressRef.current.activeStepIndex, 0, Math.max(0, (chart?.steps.length ?? 1) - 1));
+  const indicatorStepIndex = clamp(progressRef.current.indicatorStepIndex, 0, Math.max(0, (chart?.steps.length ?? 1) - 1));
+  const timedStepId = timedIndex === null ? undefined : chart?.steps[Math.max(timedIndex, activeStepIndex)]?.id;
+  const activeDisplayStepId = chart?.steps[activeStepIndex]?.id;
+  const mergedHighlightStepId = mergedHighlightMode === 'input' ? activeDisplayStepId : timedStepId;
+  const indicatorStepId = chart?.steps[indicatorStepIndex]?.id ?? activeDisplayStepId;
+  const activeDisplayIndex = comboImageDisplayIndexForStep(allItems, activeDisplayStepId);
+  const indicatorDisplayIndex = comboImageDisplayIndexForStep(allItems, indicatorStepId);
   const effectiveBounds = measuredBounds ?? bounds;
-  const items = visibleComboImageItems(allItems, activeIndex, layout, effectiveBounds, style);
-  const trackOffset = comboTrackOffset(allItems, activeIndex, layout, effectiveBounds, style);
+  const items = visibleComboImageItems(allItems, activeDisplayIndex, layout, effectiveBounds, style);
+  const trackOffset = comboTrackOffset(allItems, activeDisplayIndex, layout, effectiveBounds, style);
   const metrics = comboTrackMetrics(allItems, layout, style);
-  const activeMetric = metrics[clamp(activeIndex, 0, Math.max(0, metrics.length - 1))];
+  const activeMetric = metrics[clamp(activeDisplayIndex, 0, Math.max(0, metrics.length - 1))];
   const background = comboImageBackgroundSource(style);
-  const periodLabel = currentPeriodLabel(chart, activeIndex);
+  const periodLabel = currentPeriodLabel(chart, activeStepIndex);
+  const displayActiveStep = chart?.steps[activeStepIndex] ?? activeStep;
+  const promptStep = style.prePromptEnabled && shouldShowPromptForStep(displayActiveStep) ? displayActiveStep : null;
+  const promptSide = layout === 'horizontal' ? nextIndicatorSide : (nextIndicatorSide === 'right' ? 'left' : 'right');
+  const promptText = promptTextForStep(promptStep);
   useEffect(() => {
     const node = previewRef.current;
     if (!node) return;
@@ -1008,16 +1211,25 @@ function ComboImagePreview({ chart, practice, style, layout, bounds }: { chart: 
       {periodLabel && <div className="combo-period-label">{periodLabel}</div>}
       {items.length ? <div className="combo-preview-track" style={{ gap: style.capsuleGap, transform: layout === 'vertical' ? `translateY(${trackOffset}px)` : `translateX(${trackOffset}px)` }}>{items.map((item) => {
         const roleStyle = style.roleStyles[item.characterSlot];
-        const chipSize = comboImageItemSizeForText(style, item.displayText, item.showAvatar);
-        const contentParts = comboTextParts(item.displayText, Boolean(item.iconId));
+        const chipSize = comboImageItemSizeForDisplayItem(style, item, roleStyle);
+        const itemIconMappings = effectiveIconMappings(style, item.characterSlot);
+        const contentParts = comboTextParts(item.displayText, Boolean(item.iconId), itemIconMappings);
         const blockColor = style.blockMode === 'capsule' ? roleStyle.color : 'transparent';
-        const blockImageStyle = capsuleImageStyle(style, chipSize.width, chipSize.height);
-        const avatarLeft = style.blockMode === 'image' ? style.avatarOffsetX - 12 : style.avatarOffsetX;
+        const blockImageStyle = capsuleImageStyle(style, chipSize.width, chipSize.height, roleStyle);
+        const avatarLeft = style.avatarOffsetX;
+        const frameVisualHeight = style.blockMode === 'image' ? Math.min(chipSize.height, style.capsuleHeight) : chipSize.height;
+        const triangleCenter = comboImageContentCenterPercent(item, indicatorStepId);
+        const activeMergedStepId = style.mergeSameRoleSteps && comboImageItemContainsStep(item, mergedHighlightStepId) ? mergedHighlightStepId : undefined;
+        const isNext = style.prePromptEnabled && comboImageItemContainsStep(item, indicatorStepId) && indicatorDisplayIndex !== activeDisplayIndex;
+        const metricIndex = allItems.indexOf(item);
+        const isError = Boolean(item.mergedStepIds?.some((stepId) => practice.errorStepIds.includes(stepId)) || practice.errorStepIds.includes(item.step.id));
         return (
-          <div key={item.step.id} className={`combo-preview-chip ${style.blockMode === 'image' ? 'image-block' : ''} ${item.showAvatar ? 'with-avatar' : ''} ${item.index === activeIndex ? 'active' : ''} ${style.prePromptEnabled && item.index === activeIndex + 1 ? 'next' : ''} ${practice.errorStepIds.includes(item.step.id) ? 'error' : ''}`} style={{ width: chipSize.width, height: chipSize.height, color: style.textColor, fontSize: style.fontSize, fontFamily: style.fontFamily, opacity: style.prePromptEnabled && item.index === activeIndex + 1 ? 1 : comboItemOpacity(metrics[item.index], activeMetric, trackOffset, layout, effectiveBounds, style), backgroundColor: blockColor, borderRadius: style.blockMode === 'capsule' && style.capsuleShape === 'capsule' ? 999 : 4, '--move-color': roleStyle.color, ...blockImageStyle } as CSSProperties}>
+          <div key={item.step.id} className={`combo-preview-chip ${style.blockMode === 'image' ? 'image-block' : ''} ${item.showAvatar ? 'with-avatar' : ''} ${comboImageItemContainsStep(item, activeDisplayStepId) ? 'active' : ''} ${isNext ? 'next' : ''} ${isError ? 'error' : ''}`} style={{ width: chipSize.width, height: chipSize.height, color: style.textColor, fontSize: style.fontSize, fontFamily: style.fontFamily, opacity: isNext ? 1 : comboItemOpacity(metrics[metricIndex], activeMetric, trackOffset, layout, effectiveBounds, style), backgroundColor: blockColor, borderRadius: style.blockMode === 'capsule' && style.capsuleShape === 'capsule' ? 999 : 4, '--move-color': roleStyle.color, '--next-indicator-x': `${triangleCenter ?? 50}%`, ...blockImageStyle, ...activeFrameVars(item.showAvatar, style.blockMode, avatarLeft, style.avatarSize, style.avatarOffsetY, chipSize.height, frameVisualHeight) } as CSSProperties}>
             {style.blockMode === 'image' && <CapsuleBlockBackground />}
             {item.showAvatar && <span className="avatar-slot preview-avatar" style={{ width: style.avatarSize, height: style.avatarSize, left: avatarLeft, transform: `translateY(calc(-50% + ${style.avatarOffsetY}px))`, ...imageCropBackground(roleStyle.avatar, roleStyle.avatarCrop) }}>{roleStyle.avatar ? null : item.characterSlot}</span>}
-            <ComboInlineContent parts={contentParts} className="combo-preview-content" />
+            {layout === 'horizontal' && promptText && comboImageItemContainsStep(item, promptStep?.id) && <div className={`combo-preview-action-prompt horizontal ${promptSide}`}>{promptText}</div>}
+            {layout === 'vertical' && promptText && comboImageItemContainsStep(item, activeDisplayStepId) && <div className={`combo-preview-action-prompt vertical ${nextIndicatorSide}`}>{promptText}</div>}
+            <ComboItemContent item={item} parts={contentParts} className="combo-preview-content" mappings={itemIconMappings} activeMergedStepId={activeMergedStepId} />
           </div>
         );
       })}</div> : '暂无连段图'}
@@ -1040,6 +1252,18 @@ type TimelineLane = {
   lane: LaneKind;
   id: string;
   laneNumber: 1 | 2;
+};
+
+type TimelineZoomFrame = { id: string; timeMs: number };
+type TimelineZoomFrameTrack = {
+  frames: TimelineZoomFrame[];
+  playbackMs: number;
+  onAdd: () => void;
+  onSeek: (timeMs: number) => void;
+  onDelete: (frameId: string) => void;
+  onBeginDrag: (event: ReactPointerEvent<HTMLButtonElement>, frameId: string, renderTotal: number) => void;
+  onDragMove: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  onDragEnd: () => void;
 };
 
 
@@ -1090,7 +1314,20 @@ function displayMoveLabel(step: ComboStep): string {
   return step.label.replace(/^切人(?=\d)/, '');
 }
 
-function TimelineEditor({ chart, moves, comboImageStyle, mode, zoom, onZoomChange, onUpdate, onDelete, onPeriodsChange, onContentChange, onQuickInput, onSave }: { chart: ComboChart; moves: MoveDefinition[]; comboImageStyle: ComboImageStyle; mode: EditorTab; zoom: number; onZoomChange: (value: number) => void; onUpdate: (stepId: string, patch: Partial<ComboStep>) => void; onDelete: (stepId: string) => void; onPeriodsChange: (periods: ComboPeriod[]) => void; onContentChange: (patch: Partial<ComboImageStyle>) => void; onQuickInput: (stepId: string | null) => void; onSave: () => void }) {
+function msToSeconds(value: number | undefined): number {
+  return Number(((value ?? 0) / 1000).toFixed(3));
+}
+
+function secondsToMs(value: string): number {
+  const seconds = Number(value);
+  return Number.isFinite(seconds) ? Math.round(seconds * 1000) : 0;
+}
+
+function formatTimelineMs(ms: number): string {
+  return `${(ms / 1000).toFixed(3).replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1')}s`;
+}
+
+function TimelineEditor({ chart, moves, comboImageStyle, mode, zoom, onZoomChange, onUpdate, onDelete, onPeriodsChange, onContentChange, onQuickInput, onSave, zoomFrameTrack, inspectorPortalTarget, renderTotalOverride }: { chart: ComboChart; moves: MoveDefinition[]; comboImageStyle: ComboImageStyle; mode: EditorTab; zoom: number; onZoomChange: (value: number) => void; onUpdate: (stepId: string, patch: Partial<ComboStep>) => void; onDelete: (stepId: string) => void; onPeriodsChange: (periods: ComboPeriod[]) => void; onContentChange: (patch: Partial<ComboImageStyle>) => void; onQuickInput: (stepId: string | null) => void; onSave: () => void; zoomFrameTrack?: TimelineZoomFrameTrack; inspectorPortalTarget?: HTMLElement | null; renderTotalOverride?: number }) {
   const [selectedId, setSelectedId] = useState(chart.steps[0]?.id ?? '');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [selectionBox, setSelectionBox] = useState<SelectionBox | null>(null);
@@ -1108,7 +1345,7 @@ function TimelineEditor({ chart, moves, comboImageStyle, mode, zoom, onZoomChang
   const selected = chart.steps.find((step) => step.id === selectedId) ?? chart.steps[0] ?? null;
   const selectedSteps = chart.steps.filter((step) => selectedIds.includes(step.id));
   const selectedPeriod = periods.find((period) => period.id === selectedPeriodId) ?? null;
-  const total = Math.max(3000, ...chart.steps.map((step) => step.startMax + step.durationMax + 600), ...periods.map((period) => period.endMs + 600));
+  const total = Math.max(3000, renderTotalOverride ?? 0, ...chart.steps.map((step) => step.startMax + step.durationMax + 600), ...periods.map((period) => period.endMs + 600), ...(zoomFrameTrack?.frames.map((frame) => frame.timeMs + 600) ?? []));
   const renderTotal = dragRenderTotal ?? total;
   const trackWidth = Math.max(760, Math.ceil(renderTotal * zoom));
   const timelineBodyStyle = { width: trackWidth + 112, '--timeline-track-width': `${trackWidth}px` } as CSSProperties;
@@ -1386,6 +1623,55 @@ function TimelineEditor({ chart, moves, comboImageStyle, mode, zoom, onZoomChang
     return <strong>{displayMoveLabel(step)}</strong>;
   }
 
+  function renderZoomFrameTrack() {
+    if (!zoomFrameTrack) return null;
+    const frames = [...zoomFrameTrack.frames].sort((left, right) => left.timeMs - right.timeMs || left.id.localeCompare(right.id));
+    return (
+      <div className="timeline-zoom-frame-track" style={{ width: trackWidth }} onPointerMove={zoomFrameTrack.onDragMove} onPointerUp={zoomFrameTrack.onDragEnd} onPointerCancel={zoomFrameTrack.onDragEnd}>
+        <div className="timeline-editor-lane period-lane-label">缩放帧</div>
+        <button className="timeline-zoom-frame-add" onClick={zoomFrameTrack.onAdd}><Plus size={14} />添加</button>
+        <div className="timeline-zoom-playhead" style={{ left: `${(zoomFrameTrack.playbackMs / renderTotal) * 100}%` }} />
+        {frames.map((frame, index) => (
+          <button key={frame.id} className="timeline-zoom-frame-marker" style={{ left: `${(frame.timeMs / renderTotal) * 100}%` }} title={`缩放帧 ${index + 1} ${formatTimelineMs(frame.timeMs)}`} onClick={() => zoomFrameTrack.onSeek(frame.timeMs)} onPointerDown={(event) => zoomFrameTrack.onBeginDrag(event, frame.id, renderTotal)}>
+            <span />
+            <em>{index + 1}</em>
+            {frames.length > 2 && <Trash2 size={13} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); zoomFrameTrack.onDelete(frame.id); }} />}
+          </button>
+        ))}
+      </div>
+    );
+  }
+
+  const inspectorContent = (
+    <>
+      {selectedPeriod && (
+        <div className="timeline-period-inspector">
+          <strong>{selectedPeriod.label}</strong>
+          <label>类型<select value={selectedPeriod.kind} onChange={(event) => setPeriodKind(selectedPeriod.id, event.target.value as ComboPeriodKind)}><option value="draft_period">待设置</option><option value="free_fire">自由开火</option><option value="startup_axis">启动轴</option><option value="loop_axis">循环轴</option></select></label>
+          <label>名称<input value={selectedPeriod.label} onChange={(event) => updatePeriod(selectedPeriod.id, { label: event.target.value })} /></label>
+          {selectedPeriod.kind === 'loop_axis' && <label>编号<input type="number" value={selectedPeriod.loopIndex ?? 1} onChange={(event) => updatePeriod(selectedPeriod.id, { loopIndex: Number(event.target.value) })} /></label>}
+          <label>开始 s<input type="number" step="0.001" disabled={selectedPeriod.kind === 'startup_axis'} value={msToSeconds(selectedPeriod.startMs)} onChange={(event) => updatePeriod(selectedPeriod.id, { startMs: secondsToMs(event.target.value) })} /></label>
+          <label>结束 s<input type="number" step="0.001" value={msToSeconds(selectedPeriod.endMs)} onChange={(event) => updatePeriod(selectedPeriod.id, { endMs: secondsToMs(event.target.value) })} /></label>
+          <button onClick={() => onPeriodsChange(periods.filter((period) => period.id !== selectedPeriod.id))}>删除时段</button>
+        </div>
+      )}
+      {selected && (
+        <div className="timeline-editor-inspector">
+          <strong style={{ color: selected.color }}>{selectedSteps.length > 1 ? `已选 ${selectedSteps.length} 个` : selected.label}</strong>
+          <label className="timeline-label-wide">招式块文本<input value={comboImageStyle.contentLabels[selected.id] ?? ''} placeholder={displayMoveLabel(selected)} onChange={(event) => setContentLabel(selected.id, event.target.value)} /></label>
+          <label>角色<select value={selected.characterSlot ?? 1} onChange={(event) => selectedSteps.length > 1 ? updateSelectedSteps({ characterSlot: Number(event.target.value) as CharacterSlot }) : onUpdate(selected.id, { characterSlot: Number(event.target.value) as CharacterSlot })}>{CHARACTER_SLOTS.map((slot) => <option key={slot} value={slot}>角色 {slot}</option>)}</select></label>
+          <label>轨道<select value={selected.lane} onChange={(event) => selectedSteps.length > 1 ? updateSelectedSteps({ lane: event.target.value as LaneKind }) : onUpdate(selected.id, { lane: event.target.value as LaneKind })}><option value="main">轨道 1</option><option value="independent">轨道 2</option></select></label>
+          <label><input type="checkbox" checked={Boolean(selected.manualFree)} onChange={(event) => selectedSteps.length > 1 ? updateSelectedSteps({ manualFree: event.target.checked }) : onUpdate(selected.id, { manualFree: event.target.checked })} />自由</label>
+          <label>最早开始 s<input type="number" step="0.001" value={msToSeconds(selected.startMin)} onChange={(event) => selectedSteps.length > 1 ? updateSelectedSteps({ startMin: secondsToMs(event.target.value) }) : onUpdate(selected.id, { startMin: secondsToMs(event.target.value) })} /></label>
+          <label>最长持续 s<input type="number" step="0.001" value={msToSeconds(selected.durationMax)} onChange={(event) => selectedSteps.length > 1 ? updateSelectedSteps({ durationMax: secondsToMs(event.target.value) }) : onUpdate(selected.id, { durationMax: secondsToMs(event.target.value) })} /></label>
+          <label>预热 s<input type="number" step="0.001" value={msToSeconds(selected.preheatMs ?? 0)} onChange={(event) => selectedSteps.length > 1 ? updateSelectedSteps({ preheatMs: secondsToMs(event.target.value) }) : onUpdate(selected.id, { preheatMs: secondsToMs(event.target.value) })} /></label>
+          <label>后摇 s<input type="number" step="0.001" value={msToSeconds(selected.recoveryMs ?? 0)} onChange={(event) => selectedSteps.length > 1 ? updateSelectedSteps({ recoveryMs: secondsToMs(event.target.value) }) : onUpdate(selected.id, { recoveryMs: secondsToMs(event.target.value) })} /></label>
+        </div>
+      )}
+    </>
+  );
+  const inspectorNode = inspectorPortalTarget ? createPortal(inspectorContent, inspectorPortalTarget) : inspectorContent;
+
   return (
     <div className="timeline-editor">
       <div className="timeline-editor-toolbar"><div className="timeline-editor-add">
@@ -1394,11 +1680,13 @@ function TimelineEditor({ chart, moves, comboImageStyle, mode, zoom, onZoomChang
         <label className="timeline-zoom-control">缩放<input type="range" min="0.05" max="1.6" step="0.01" value={zoom} onChange={(event) => onZoomChange(Number(event.target.value))} /><span>{Math.round(zoom * 100)}%</span></label>
         <button className="primary" onClick={onSave}><Save size={18} />{'保存连段谱'}</button>
         {mode === 'content' && <label className="checkline timeline-icon-convert"><input type="checkbox" checked={comboImageStyle.convertIcons} onChange={(event) => onContentChange({ convertIcons: event.target.checked })} />图标转换</label>}
+        {mode === 'content' && <label className="checkline timeline-icon-convert"><input type="checkbox" checked={comboImageStyle.mergeSameRoleSteps} onChange={(event) => onContentChange({ mergeSameRoleSteps: event.target.checked })} />同角色合并</label>}
         {mode === 'content' && <button className="danger" onClick={() => onQuickInput(selected?.id ?? null)}>快捷输入</button>}
         {pending && <button onClick={() => { setPending(null); setPendingPoint(null); }}>取消放置</button>}
         {pending && <span className="timeline-hint">点击轨道放置{pending.kind === 'step' ? '灰色指令块' : '黑色时段块'}，再右键选择内容</span>}
       </div></div>
       <div className="timeline-editor-scroll">
+        {renderZoomFrameTrack()}
         <div className={`timeline-editor-period-track ${pending ? 'placing' : ''}`} style={{ width: trackWidth }} onPointerMove={(event) => { if (!pending || pending.kind !== 'period') return; setPendingPoint({ startMs: pointerTime(event) }); }} onClick={(event) => { if (!pending || pending.kind !== 'period') return; placePending({ startMs: pointerTime(event) }); }} onContextMenu={(event) => openPeriodContext(event, null)}>
           <div className="timeline-editor-lane period-lane-label">时段</div>
           {globalPeriods.map((period) => renderPeriodBlock(period))}
@@ -1439,29 +1727,7 @@ function TimelineEditor({ chart, moves, comboImageStyle, mode, zoom, onZoomChang
         {context.coveredPeriods.length > 1 && <div className="context-menu-title">光标下的时段</div>}
         {context.coveredPeriods.map((period) => <button key={period.id} onClick={() => { setSelectedPeriodId(period.id); setRaisedPeriodId(period.id); setContext(null); }}>{period.label} 路 {((period.endMs - period.startMs) / 1000).toFixed(2)}s</button>)}
       </div>}
-      {selectedPeriod && (
-        <div className="timeline-period-inspector">
-          <strong>{selectedPeriod.label}</strong>
-          <label>类型<select value={selectedPeriod.kind} onChange={(event) => setPeriodKind(selectedPeriod.id, event.target.value as ComboPeriodKind)}><option value="draft_period">待设置</option><option value="free_fire">自由开火</option><option value="startup_axis">启动轴</option><option value="loop_axis">循环轴</option></select></label>
-          <label>名称<input value={selectedPeriod.label} onChange={(event) => updatePeriod(selectedPeriod.id, { label: event.target.value })} /></label>
-          {selectedPeriod.kind === 'loop_axis' && <label>编号<input type="number" value={selectedPeriod.loopIndex ?? 1} onChange={(event) => updatePeriod(selectedPeriod.id, { loopIndex: Number(event.target.value) })} /></label>}
-          <label>开始<input type="number" disabled={selectedPeriod.kind === 'startup_axis'} value={Math.round(selectedPeriod.startMs)} onChange={(event) => updatePeriod(selectedPeriod.id, { startMs: Number(event.target.value) })} /></label>
-          <label>结束<input type="number" value={Math.round(selectedPeriod.endMs)} onChange={(event) => updatePeriod(selectedPeriod.id, { endMs: Number(event.target.value) })} /></label>
-          <button onClick={() => onPeriodsChange(periods.filter((period) => period.id !== selectedPeriod.id))}>删除时段</button>
-        </div>
-      )}
-      {selected && (
-        <div className="timeline-editor-inspector">
-          <strong style={{ color: selected.color }}>{selectedSteps.length > 1 ? `已选 ${selectedSteps.length} 个` : selected.label}</strong>
-          <label>角色<select value={selected.characterSlot ?? 1} onChange={(event) => selectedSteps.length > 1 ? updateSelectedSteps({ characterSlot: Number(event.target.value) as CharacterSlot }) : onUpdate(selected.id, { characterSlot: Number(event.target.value) as CharacterSlot })}>{CHARACTER_SLOTS.map((slot) => <option key={slot} value={slot}>角色 {slot}</option>)}</select></label>
-          <label>轨道<select value={selected.lane} onChange={(event) => selectedSteps.length > 1 ? updateSelectedSteps({ lane: event.target.value as LaneKind }) : onUpdate(selected.id, { lane: event.target.value as LaneKind })}><option value="main">轨道 1</option><option value="independent">轨道 2</option></select></label>
-          <label><input type="checkbox" checked={Boolean(selected.manualFree)} onChange={(event) => selectedSteps.length > 1 ? updateSelectedSteps({ manualFree: event.target.checked }) : onUpdate(selected.id, { manualFree: event.target.checked })} />自由</label>
-          <label>最早开始<input type="number" value={Math.round(selected.startMin)} onChange={(event) => selectedSteps.length > 1 ? updateSelectedSteps({ startMin: Number(event.target.value) }) : onUpdate(selected.id, { startMin: Number(event.target.value) })} /></label>
-          <label>最长持续<input type="number" value={Math.round(selected.durationMax)} onChange={(event) => selectedSteps.length > 1 ? updateSelectedSteps({ durationMax: Number(event.target.value) }) : onUpdate(selected.id, { durationMax: Number(event.target.value) })} /></label>
-          <label>预热<input type="number" value={Math.round(selected.preheatMs ?? 0)} onChange={(event) => selectedSteps.length > 1 ? updateSelectedSteps({ preheatMs: Number(event.target.value) }) : onUpdate(selected.id, { preheatMs: Number(event.target.value) })} /></label>
-          <label>后摇<input type="number" value={Math.round(selected.recoveryMs ?? 0)} onChange={(event) => selectedSteps.length > 1 ? updateSelectedSteps({ recoveryMs: Number(event.target.value) }) : onUpdate(selected.id, { recoveryMs: Number(event.target.value) })} /></label>
-        </div>
-      )}
+      {inspectorNode}
     </div>
   );
 }
@@ -1689,7 +1955,7 @@ function CapsuleImageVisualEditor({ style, onChange }: { style: ComboImageStyle;
   );
 }
 
-function SettingsPanel({ moves, bindings, onMoveChange, onBindingChange }: { moves: MoveDefinition[]; bindings: KeyBinding[]; onMoveChange: (moveId: string, patch: Partial<MoveDefinition>) => void; onBindingChange: (moveId: string, value: string) => void }) {
+function SettingsPanel({ moves, bindings, exportDirectory, onExportDirectoryChange, onMoveChange, onBindingChange }: { moves: MoveDefinition[]; bindings: KeyBinding[]; exportDirectory: string; onExportDirectoryChange: (value: string) => void; onMoveChange: (moveId: string, patch: Partial<MoveDefinition>) => void; onBindingChange: (moveId: string, value: string) => void }) {
   const [capturingMoveId, setCapturingMoveId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -1729,6 +1995,13 @@ function SettingsPanel({ moves, bindings, onMoveChange, onBindingChange }: { mov
   return (
     <section className="panel settings-panel">
       <div className="panel-title"><div><h2>键位与招式设置</h2><p>连段谱保存招式而不是固定键位；开始默认 F，结束默认 Esc。</p></div><Keyboard size={22} /></div>
+      <div className="settings-export-path">
+        <label>
+          <span>视频导出路径</span>
+          <input value={exportDirectory} placeholder="留空则使用系统默认下载位置，例如 C:\\Users\\你的用户名\\Videos" onChange={(event) => onExportDirectoryChange(event.target.value)} />
+        </label>
+        <button type="button" onClick={() => onExportDirectoryChange('')}>默认</button>
+      </div>
       <div className="settings-table">
         <div className="settings-head"><span>招式</span><span>输入代码</span><span>设置</span><span>独立</span><span>推进练习</span></div>
         {moves.map((move) => {

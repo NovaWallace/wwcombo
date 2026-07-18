@@ -14,6 +14,7 @@ type TauriGlobalInputPayload = {
 };
 
 type OverlayBounds = { x: number; y: number; width: number; height: number };
+type DisplaySize = { width: number; height: number };
 type OverlayPosition = { x: number; y: number };
 type ResizeDirection = 'East' | 'North' | 'NorthEast' | 'NorthWest' | 'South' | 'SouthEast' | 'SouthWest' | 'West';
 
@@ -64,6 +65,7 @@ export function createDesktopBridge(): DesktopBridge | null {
     setOverlayBounds: (bounds: OverlayBounds) => invoke('set_overlay_bounds', { bounds }),
     setOverlayPosition: (position: OverlayPosition) => invoke('set_overlay_position', { position }),
     getOverlayBounds: () => invoke<OverlayBounds>('get_overlay_bounds'),
+    getDisplaySize: () => invoke<DisplaySize>('get_display_size'),
     updateOverlay: (payload: unknown) => invoke('update_overlay', { payload }),
     setRhythmFeedbackVisible: (visible: boolean) => invoke('set_rhythm_feedback_visible', { visible }),
     updateRhythmFeedback: (payload: unknown) => invoke('update_rhythm_feedback', { payload }),
@@ -80,6 +82,8 @@ export function createDesktopBridge(): DesktopBridge | null {
     startGlobalInput: () => invoke<{ ok: boolean; reason?: string }>('start_global_input'),
     getGlobalInputStatus: () => invoke<{ started: boolean; status: string; eventCount: number }>('global_input_status'),
     stopGlobalInput: async () => undefined,
+    saveExportFile: (directory: string, filename: string, bytes: Uint8Array) => invoke<{ path: string }>('save_export_file', { directory, filename, bytes: Array.from(bytes) }),
+    saveExportMp4: (directory: string, filename: string, bytes: Uint8Array) => invoke<{ path: string }>('save_export_mp4', { directory, filename, bytes: Array.from(bytes) }),
     onGlobalInput: (callback: (event: DesktopInputEvent) => void) => listenUntilDisposed<TauriGlobalInputPayload>('global-input', (payload) => {
       callback({
         source: 'desktop',
