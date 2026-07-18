@@ -1,0 +1,67 @@
+{
+	"Version": 3,
+	"Parameters": [
+		{
+			"Id": "ParamMouseLeftDown",
+			"GroupId": "",
+			"Name": "r"
+		},
+		{
+			"Id": "ParamMouseRightDown",
+			"GroupId": "",
+			"Name": "l"
+		},
+		{
+			"Id": "CatParamLeftHandDown",
+			"GroupId": "",
+			"Name": "参数10"
+		},
+		{
+			"Id": "ParamAngleX",
+			"GroupId": "",
+			"Name": "角度 X"
+		},
+		{
+			"Id": "ParamAngleY",
+			"GroupId": "",
+			"Name": "角度 Y"
+		},
+		{
+			"Id": "ParamEyeLOpen",
+			"GroupId": "",
+			"Name": "左眼　开闭"
+		},
+		{
+			"Id": "ParamEyeROpen",
+			"GroupId": "",
+			"Name": "右眼"
+		},
+		{
+			"Id": "ParamMouseX",
+			"GroupId": "",
+			"Name": "参数6"
+		},
+		{
+			"Id": "ParamMouseY",
+			"GroupId": "",
+			"Name": "参数7"
+		},
+		{
+			"Id": "ParamEyeBallX",
+			"GroupId": "",
+			"Name": "眼珠 X"
+		},
+		{
+			"Id": "ParamEyeBallY",
+			"GroupId": "",
+			"Name": "眼珠 Y"
+		}
+	],
+	"ParameterGroups": [],
+	"Parts": [
+		{
+			"Id": "Part",
+			"Name": "组 4"
+		}
+	]
+}

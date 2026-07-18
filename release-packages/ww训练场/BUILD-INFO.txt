@@ -1,0 +1,18 @@
+﻿Build: local-current
+PackageName: ww训练场.zip
+BuiltAt: 2026-07-12 15:47:03
+GitHead: 552f84d
+ExeLastWriteTime: 2026-07-12 15:46:41
+ExeSize: 13741568
+
+LocalChanges:
+ M README.md
+ M combo-core/defaults.ts
+ M combo-core/types.ts
+ M src-tauri/src/lib.rs
+ M src/App.tsx
+ M src/combo-image/comboImage.ts
+ M src/overlay.css
+ M src/overlay.tsx
+ M src/styles.css
+?? release-packages/

@@ -1,0 +1,175 @@
+{
+	"Version": 3,
+	"Parameters": [
+		{
+			"Id": "ParamEyeROpen",
+			"GroupId": "ParamGroup",
+			"Name": "右眼"
+		},
+		{
+			"Id": "ParamEyeLOpen",
+			"GroupId": "ParamGroup",
+			"Name": "左眼"
+		},
+		{
+			"Id": "ParamAngleX",
+			"GroupId": "ParamGroup",
+			"Name": "角度 X"
+		},
+		{
+			"Id": "ParamAngleY",
+			"GroupId": "ParamGroup",
+			"Name": "角度 Y"
+		},
+		{
+			"Id": "ParamMouseX",
+			"GroupId": "ParamGroup",
+			"Name": "鼠标 X"
+		},
+		{
+			"Id": "ParamMouseY",
+			"GroupId": "ParamGroup",
+			"Name": "鼠标 Y"
+		},
+		{
+			"Id": "ParamMouseLeftDown",
+			"GroupId": "ParamGroup",
+			"Name": "左键"
+		},
+		{
+			"Id": "ParamMouseRightDown",
+			"GroupId": "ParamGroup",
+			"Name": "右键"
+		},
+		{
+			"Id": "CatParamLeftHandDown",
+			"GroupId": "ParamGroup",
+			"Name": "键盘"
+		},
+		{
+			"Id": "Param",
+			"GroupId": "ParamGroup2",
+			"Name": "物理"
+		},
+		{
+			"Id": "Param2",
+			"GroupId": "ParamGroup2",
+			"Name": "物理耳朵"
+		},
+		{
+			"Id": "Param3",
+			"GroupId": "ParamGroup2",
+			"Name": "物理辫子"
+		},
+		{
+			"Id": "Param4",
+			"GroupId": "ParamGroup2",
+			"Name": "果冻眼"
+		},
+		{
+			"Id": "Param5",
+			"GroupId": "ParamGroup3",
+			"Name": "emoji1"
+		},
+		{
+			"Id": "Param6",
+			"GroupId": "ParamGroup3",
+			"Name": "emoji2"
+		},
+		{
+			"Id": "Param7",
+			"GroupId": "ParamGroup3",
+			"Name": "emoji3"
+		},
+		{
+			"Id": "Param8",
+			"GroupId": "ParamGroup3",
+			"Name": "emoji4"
+		}
+	],
+	"ParameterGroups": [
+		{
+			"Id": "ParamGroup",
+			"GroupId": "",
+			"Name": "Folder 1"
+		},
+		{
+			"Id": "ParamGroup2",
+			"GroupId": "",
+			"Name": "Folder 2"
+		},
+		{
+			"Id": "ParamGroup3",
+			"GroupId": "",
+			"Name": "Folder 3"
+		}
+	],
+	"Parts": [
+		{
+			"Id": "Part4",
+			"Name": "桌宠凌阳.psd(未找到对应图层)"
+		},
+		{
+			"Id": "HAIR1",
+			"Name": "HAIR1"
+		},
+		{
+			"Id": "EYE",
+			"Name": "EYE"
+		},
+		{
+			"Id": "EAR",
+			"Name": "EAR"
+		},
+		{
+			"Id": "FACE",
+			"Name": "FACE"
+		},
+		{
+			"Id": "mouse2",
+			"Name": "mouse"
+		},
+		{
+			"Id": "keyboard",
+			"Name": "keyboard"
+		},
+		{
+			"Id": "body",
+			"Name": "body"
+		},
+		{
+			"Id": "HAIR2",
+			"Name": "HAIR2"
+		},
+		{
+			"Id": "emoij",
+			"Name": "emoij"
+		},
+		{
+			"Id": "L",
+			"Name": "L"
+		},
+		{
+			"Id": "R",
+			"Name": "R"
+		},
+		{
+			"Id": "L2",
+			"Name": "L"
+		},
+		{
+			"Id": "R3",
+			"Name": "R"
+		}
+	],
+	"CombinedParameters": [
+		[
+			"ParamAngleX",
+			"ParamAngleY"
+		],
+		[
+			"ParamMouseX",
+			"ParamMouseY"
+		]
+	]
+}

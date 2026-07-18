@@ -1,4 +1,4 @@
-{
+﻿{
     "avatars":  [
                     {
                         "name":  "爱弥斯",
@@ -29,12 +29,12 @@
                         "src":  "/combo-assets/default-avatars/布兰特.webp"
                     },
                     {
-                        "name":  "炽霞",
-                        "src":  "/combo-assets/default-avatars/炽霞.webp"
+                        "name":  "长离",
+                        "src":  "/combo-assets/default-avatars/长离.webp"
                     },
                     {
-                        "name":  "仇远",
-                        "src":  "/combo-assets/default-avatars/仇远.webp"
+                        "name":  "炽霞",
+                        "src":  "/combo-assets/default-avatars/炽霞.webp"
                     },
                     {
                         "name":  "椿",
@@ -153,6 +153,10 @@
                         "src":  "/combo-assets/default-avatars/千咲.webp"
                     },
                     {
+                        "name":  "仇远",
+                        "src":  "/combo-assets/default-avatars/仇远.webp"
+                    },
+                    {
                         "name":  "秋水",
                         "src":  "/combo-assets/default-avatars/秋水.webp"
                     },
@@ -163,6 +167,10 @@
                     {
                         "name":  "守岸人",
                         "src":  "/combo-assets/default-avatars/守岸人.webp"
+                    },
+                    {
+                        "name":  "穗穗",
+                        "src":  "/combo-assets/default-avatars/穗穗.webp"
                     },
                     {
                         "name":  "桃祈",
@@ -183,6 +191,10 @@
                     {
                         "name":  "相里要",
                         "src":  "/combo-assets/default-avatars/相里要.webp"
+                    },
+                    {
+                        "name":  "玄翎",
+                        "src":  "/combo-assets/default-avatars/玄翎.webp"
                     },
                     {
                         "name":  "秧秧",
@@ -207,10 +219,6 @@
                     {
                         "name":  "赞妮",
                         "src":  "/combo-assets/default-avatars/赞妮.webp"
-                    },
-                    {
-                        "name":  "长离",
-                        "src":  "/combo-assets/default-avatars/长离.webp"
                     },
                     {
                         "name":  "折枝",

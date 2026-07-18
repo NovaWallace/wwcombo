@@ -35,6 +35,36 @@
         "skipTaskbar": true,
         "resizable": true,
         "visible": false
+      },
+      {
+        "label": "rhythm-feedback",
+        "title": "Rhythm Feedback",
+        "url": "rhythm-feedback.html",
+        "width": 260,
+        "height": 96,
+        "x": 520,
+        "y": 320,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "resizable": true,
+        "visible": false
+      },
+      {
+        "label": "key-mapping",
+        "title": "Key Mapping Overlay",
+        "url": "key-mapping.html",
+        "width": 620,
+        "height": 514,
+        "x": 520,
+        "y": 220,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "resizable": true,
+        "visible": false
       }
     ],
     "security": {

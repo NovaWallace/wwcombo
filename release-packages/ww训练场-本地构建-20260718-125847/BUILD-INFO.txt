@@ -1,0 +1,58 @@
+﻿Build: local-current
+PackageName: ww训练场-本地构建-20260718-125847.zip
+BuiltAt: 2026-07-18 12:58:47
+GitHead: 552f84d
+ExeLastWriteTime: 2026-07-18 12:55:17
+ExeSize: 24070144
+BuildCommand: npm run build; cargo tauri build --no-bundle
+BundleStatus: portable-zip
+InstallerStatus: skipped; MSI/NSIS bundlers could not finish because external Wix/NSIS helper downloads timed out or were refused.
+
+LocalChanges:
+ M README.md
+ M combo-core/defaults.ts
+ M combo-core/practice.ts
+ M combo-core/recorder.ts
+ M combo-core/types.ts
+ M public/combo-assets/default-avatars/index.json
+ M src-tauri/capabilities/default.json
+ M src-tauri/gen/schemas/capabilities.json
+ M src-tauri/src/lib.rs
+ M src-tauri/tauri.conf.json
+ M src/App.tsx
+ M src/combo-image/comboImage.ts
+ M src/desktopBridge.ts
+ M src/overlay.css
+ M src/overlay.tsx
+ M src/styles.css
+ M src/vite-env.d.ts
+ M vite.config.ts
+?? "Bongo Cat Mver\351\270\243\346\275\256/"
+?? CODEX_WORKLOG_COOP_AUDIO_FIX.md
+?? CODEX_WORKLOG_KEY_MAPPING.md
+?? CODEX_WORKLOG_RHYTHM_SCALE.md
+?? CODEx_WORKLOG_COOP_EVENTS.md
+?? base/
+?? "head/\347\216\204\347\277\216.webp"
+?? "head/\347\251\227\347\251\227.webp"
+?? hifi/
+?? key-mapping.html
+?? public/combo-assets/base-presets/
+?? "public/combo-assets/default-avatars/\347\216\204\347\277\216.webp"
+?? "public/combo-assets/default-avatars/\347\251\227\347\251\227.webp"
+?? public/hifi/
+?? public/key-mapping/
+?? public/rhythm-switch-ring.png
+?? public/theme/experiment-coop.png
+?? public/theme/experiment-keymap.png
+?? public/theme/experiment-rhythm.png
+?? release-packages/
+?? rhythm-feedback.html
+?? src/AxisRhythmGame.tsx
+?? src/CoopEventLab.tsx
+?? src/KeyMappingLab.tsx
+?? src/keyMappingOverlay.css
+?? src/keyMappingOverlay.tsx
+?? src/keyMappingTypes.ts
+?? src/rhythmFeedback.css
+?? src/rhythmFeedback.tsx

@@ -4,6 +4,7 @@ import type {
   KeyBinding,
   MoveDefinition,
   PracticeFeedback,
+  PracticeJudgement,
   PracticeSettings,
   PracticeSnapshot,
   TrainerInputEvent
@@ -18,6 +19,7 @@ const TEXT = {
   wrongInputNeeds: (label: string) => `\u9519\u4f4d\u8f93\u5165\uff1a\u5f53\u524d\u9700\u8981 ${label}`,
   wrongInputEnded: '\u9519\u4f4d\u8f93\u5165\uff1a\u6d41\u7a0b\u5df2\u7ed3\u675f',
   hitWindow: (label: string) => `${label} \u547d\u4e2d\u7a97\u53e3`,
+  judgement: (rank: string, label: string, offset: number) => `${rank} ${label} ${offset >= 0 ? '+' : ''}${Math.round(offset)}ms`,
   completedWithErrors: (count: number) => `\u6d41\u7a0b\u5b8c\u6210\uff1a${count} \u5904\u9519\u4f4d`,
   completed: '\u8fde\u6bb5\u5b8c\u6210',
   simple: '\u6f14\u793a\u6a21\u5f0f\uff1a\u6309\u65f6\u95f4\u5c55\u793a\u6d41\u7a0b',
@@ -37,8 +39,8 @@ export const STRICT_PRACTICE: PracticeSettings = {
 
 export const LENIENT_PRACTICE: PracticeSettings = {
   mode: 'lenient',
-  allowEarlyMs: 220,
-  allowLateMs: 360,
+  allowEarlyMs: 320,
+  allowLateMs: 720,
   requireDurationMin: false,
   requireDurationMax: true,
   allowExtraIndependentMoves: true,
@@ -59,12 +61,14 @@ export const SIMPLE_PRACTICE: PracticeSettings = {
 
 export class PracticeSession {
   private startedAt: number | null = null;
+  private elapsedMs = 0;
   private currentStepIndex = 0;
   private status: PracticeSnapshot['status'] = 'idle';
   private feedback: PracticeFeedback[] = [];
   private completedStepIds: string[] = [];
   private errorStepIds: string[] = [];
   private matchedStepIds = new Set<string>();
+  private judgements = new Map<string, PracticeJudgement>();
   private missedStepIds = new Set<string>();
   private startedFromElapsed = 0;
   private unlockedAxisStarts = new Set<number>();
@@ -84,6 +88,7 @@ export class PracticeSession {
 
   private arm(): PracticeSnapshot {
     this.startedAt = null;
+    this.elapsedMs = 0;
     this.startedFromElapsed = 0;
     this.currentStepIndex = 0;
     this.status = 'armed';
@@ -91,6 +96,7 @@ export class PracticeSession {
     this.completedStepIds = [];
     this.errorStepIds = [];
     this.matchedStepIds.clear();
+    this.judgements.clear();
     this.missedStepIds.clear();
     this.unlockedAxisStarts.clear();
     this.waitingAxisStart = null;
@@ -100,6 +106,7 @@ export class PracticeSession {
   private startPlayback(time: number, elapsedOffset = 0): PracticeSnapshot {
     const safeOffset = Math.max(0, Math.round(elapsedOffset));
     this.startedAt = time - safeOffset;
+    this.elapsedMs = safeOffset;
     this.startedFromElapsed = safeOffset;
     this.currentStepIndex = 0;
     this.status = 'running';
@@ -107,6 +114,7 @@ export class PracticeSession {
     this.completedStepIds = [];
     this.errorStepIds = [];
     this.matchedStepIds.clear();
+    this.judgements.clear();
     this.missedStepIds.clear();
     this.unlockedAxisStarts.add(safeOffset);
     this.waitingAxisStart = null;
@@ -127,6 +135,7 @@ export class PracticeSession {
     }
     this.status = 'idle';
     this.startedAt = null;
+    this.elapsedMs = 0;
     this.startedFromElapsed = 0;
     this.waitingAxisStart = null;
     return this.snapshot();
@@ -154,19 +163,21 @@ export class PracticeSession {
 
     if (this.status !== 'running' || this.startedAt === null) return this.snapshot();
 
-    const elapsed = event.time - this.startedAt;
+    const inputElapsed = Math.max(0, event.time - this.startedAt);
+    const playbackElapsed = Math.max(this.elapsedMs, inputElapsed);
+    this.elapsedMs = playbackElapsed;
     if (this.settings.mode === 'lenient') {
-      this.advanceLenientByElapsed(elapsed);
-      return this.acceptLenientInput(activation.move.id, elapsed);
+      this.advanceLenientByElapsed(playbackElapsed);
+      return this.acceptLenientInput(activation.move.id, inputElapsed);
     }
 
-    this.advanceByElapsed(elapsed);
+    this.advanceByElapsed(playbackElapsed);
 
     if (this.settings.mode === 'free') {
       return this.snapshot();
     }
 
-    const target = this.findInputTarget(activation.move.id, elapsed);
+    const target = this.findInputTarget(activation.move.id, inputElapsed);
     if (!target) {
       const active = this.chart.steps[this.currentStepIndex];
       const feedback: PracticeFeedback = active
@@ -178,16 +189,19 @@ export class PracticeSession {
 
     this.matchedStepIds.add(target.id);
     if (!this.completedStepIds.includes(target.id)) this.completedStepIds.push(target.id);
-    this.feedback.unshift({ level: 'success', stepId: target.id, message: TEXT.hitWindow(target.label) });
+    const offsetMs = inputElapsed - target.startMin;
+    const judgement = this.judgeHit(offsetMs);
+    this.judgements.set(target.id, judgement);
+    this.feedback.unshift({ level: 'success', stepId: target.id, message: TEXT.judgement(this.judgementLabel(judgement), target.label, offsetMs) });
     this.feedback = this.feedback.slice(0, 8);
     return this.snapshot();
   }
 
   tick(time: number): PracticeSnapshot {
     if (this.status !== 'running' || this.startedAt === null) return this.snapshot();
-    const elapsed = time - this.startedAt;
-    if (this.settings.mode === 'lenient') this.advanceLenientByElapsed(elapsed);
-    else this.advanceByElapsed(elapsed);
+    this.elapsedMs = Math.max(this.elapsedMs, time - this.startedAt, 0);
+    if (this.settings.mode === 'lenient') this.advanceLenientByElapsed(this.elapsedMs);
+    else this.advanceByElapsed(this.elapsedMs);
     return this.snapshot();
   }
 
@@ -195,8 +209,11 @@ export class PracticeSession {
     return {
       status: this.status,
       startedAt: this.startedAt,
+      elapsedMs: this.elapsedMs,
       currentStepIndex: this.currentStepIndex,
       feedback: [...this.feedback],
+      judgements: Object.fromEntries(this.judgements),
+      matchedStepIds: [...this.matchedStepIds],
       completedStepIds: [...this.completedStepIds],
       errorStepIds: [...this.errorStepIds]
     };
@@ -249,17 +266,17 @@ export class PracticeSession {
         if (futureIndex === this.chart.steps.length) futureIndex = index;
         continue;
       }
-      if (elapsed < this.stepEnd(step)) {
+      if (elapsed < this.stepEnd(step) || index > activeIndex) {
         activeIndex = index;
       }
     }
 
-    return activeIndex >= 0 ? activeIndex : futureIndex;
+    return Math.max(startIndex, activeIndex >= 0 ? activeIndex : futureIndex);
   }
 
   private acceptLenientInput(moveId: string, elapsed: number): PracticeSnapshot {
+    this.currentStepIndex = this.findNextLenientIndex(this.currentStepIndex, elapsed);
     const active = this.chart.steps[this.currentStepIndex];
-    if (active && this.isTimedPracticeStep(active)) return this.snapshot();
 
     const target = this.findLenientInputTarget(moveId, active);
     if (!target) {
@@ -270,6 +287,7 @@ export class PracticeSession {
       return this.snapshot();
     }
 
+    if (active && this.isInterruptibleTimedStep(active) && active.id !== target.id) this.markStepMatched(active, false);
     this.markStepMatched(target);
     if (this.isBlockingPracticeStep(target)) {
       const targetIndex = this.chart.steps.findIndex((step) => step.id === target.id);
@@ -282,11 +300,6 @@ export class PracticeSession {
   }
 
   private advanceLenientByElapsed(elapsed: number): void {
-    for (const step of this.chart.steps) {
-      if (!this.isTimedPracticeStep(step) || this.matchedStepIds.has(step.id)) continue;
-      if (elapsed < this.stepEnd(step)) continue;
-      this.markStepMatched(step, false);
-    }
     this.currentStepIndex = this.findNextLenientIndex(this.currentStepIndex, elapsed);
     this.completeIfLenientFinished();
   }
@@ -296,11 +309,9 @@ export class PracticeSession {
       const step = this.chart.steps[index];
       if (this.matchedStepIds.has(step.id)) continue;
       if (this.isTimedPracticeStep(step)) {
-        if (elapsed >= this.stepEnd(step)) {
-          this.markStepMatched(step, false);
-          continue;
-        }
-        return index;
+        if (this.isInterruptibleTimedStep(step) && elapsed < this.stepEnd(step)) return index;
+        this.markStepMatched(step, false);
+        continue;
       }
       if (!this.isBlockingPracticeStep(step)) continue;
       return index;
@@ -310,11 +321,24 @@ export class PracticeSession {
 
   private findLenientInputTarget(moveId: string, active: ComboStep | undefined): ComboStep | null {
     if (active && this.isBlockingPracticeStep(active) && !this.matchedStepIds.has(active.id) && active.moveId === moveId) return active;
+    const activeIndex = active ? this.chart.steps.findIndex((step) => step.id === active.id) : this.currentStepIndex;
+    const searchStart = active && this.isInterruptibleTimedStep(active) ? activeIndex + 1 : Math.max(0, activeIndex - 2);
+    const searchEnd = Math.min(this.chart.steps.length, Math.max(activeIndex + 4, this.currentStepIndex + 4));
+    for (let index = searchStart; index < searchEnd; index += 1) {
+      const step = this.chart.steps[index];
+      if (!this.isBlockingPracticeStep(step) || this.matchedStepIds.has(step.id)) continue;
+      if (step.moveId === moveId) return step;
+      if (index >= this.currentStepIndex && step.moveId !== moveId) break;
+    }
     return null;
   }
 
   private isTimedPracticeStep(step: ComboStep): boolean {
     return step.free || !this.isBlockingPracticeStep(step);
+  }
+
+  private isInterruptibleTimedStep(step: ComboStep): boolean {
+    return step.moveId === 'basic_attack';
   }
 
   private isBlockingPracticeStep(step: ComboStep): boolean {
@@ -325,6 +349,7 @@ export class PracticeSession {
   private markStepMatched(step: ComboStep, pushFeedback = true): void {
     this.matchedStepIds.add(step.id);
     if (!this.completedStepIds.includes(step.id)) this.completedStepIds.push(step.id);
+    this.judgements.set(step.id, 'good');
     if (pushFeedback) {
       this.feedback.unshift({ level: 'success', stepId: step.id, message: TEXT.hitWindow(step.label) });
       this.feedback = this.feedback.slice(0, 8);
@@ -390,6 +415,7 @@ export class PracticeSession {
   private pauseForAxis(axisStart: number): void {
     this.status = 'armed';
     this.startedAt = null;
+    this.elapsedMs = Math.max(0, axisStart);
     this.startedFromElapsed = axisStart;
     this.waitingAxisStart = axisStart;
     this.currentStepIndex = this.findActiveIndex(axisStart);
@@ -409,6 +435,7 @@ export class PracticeSession {
       if (this.inputEnd(step) <= this.startedFromElapsed) continue;
       if (elapsed <= this.inputEnd(step)) continue;
       this.missedStepIds.add(step.id);
+      this.judgements.set(step.id, 'miss');
       this.recordError(step.id, { level: 'error', stepId: step.id, message: TEXT.missed(step.label) }, false);
     }
   }
@@ -416,6 +443,7 @@ export class PracticeSession {
   private recordError(stepId: string | undefined, feedback: PracticeFeedback, pushFeedback = true): void {
     if (stepId && this.chart.steps.find((step) => step.id === stepId && this.inputEnd(step) <= this.startedFromElapsed)) return;
     if (stepId && !this.errorStepIds.includes(stepId)) this.errorStepIds.push(stepId);
+    if (stepId && !this.judgements.has(stepId)) this.judgements.set(stepId, 'miss');
     if (pushFeedback) {
       this.feedback.unshift(feedback);
       this.feedback = this.feedback.slice(0, 8);
@@ -425,6 +453,20 @@ export class PracticeSession {
 
   private inputStart(step: ComboStep): number {
     return step.startMin - (step.preheatMs ?? 0) - this.settings.allowEarlyMs;
+  }
+
+  private judgeHit(offsetMs: number): PracticeJudgement {
+    const distance = Math.abs(offsetMs);
+    if (distance <= 45) return 'perfect';
+    if (distance <= 90) return 'great';
+    return 'good';
+  }
+
+  private judgementLabel(judgement: PracticeJudgement): string {
+    if (judgement === 'perfect') return 'PERFECT';
+    if (judgement === 'great') return 'GREAT';
+    if (judgement === 'good') return 'GOOD';
+    return 'MISS';
   }
 
   private inputEnd(step: ComboStep): number {

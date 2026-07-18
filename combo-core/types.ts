@@ -2,6 +2,13 @@ export type MoveId = string;
 export type CharacterSlot = 1 | 2 | 3;
 
 export type InputEventType = 'keydown' | 'keyup' | 'mousedown' | 'mouseup';
+export type HoldConversionEvent = {
+  sourceCode: string;
+  holdCode: string;
+  pressTime: number;
+  holdStartTime: number;
+  releaseTime: number;
+};
 
 export type InputSource = {
   code: string;
@@ -69,6 +76,7 @@ export type ComboStep = {
   recoveryMs?: number;
   manualFree?: boolean;
   free?: boolean;
+  note?: string;
   color: string;
   advancesStep: boolean;
   samples: ComboStepSample[];
@@ -93,6 +101,8 @@ export type ComboChart = {
   character?: string;
   author?: string;
   tags: string[];
+  contentLabels?: Record<string, string>;
+  timelineDurationMs?: number;
   version: number;
   createdAt: number;
   updatedAt: number;
@@ -110,6 +120,12 @@ export type ComboImageRoleStyle = {
   avatarSize?: number;
   avatarOffsetX?: number;
   avatarOffsetY?: number;
+  capsuleImage?: string;
+  capsuleImageWidth?: number;
+  capsuleImageHeight?: number;
+  capsuleCrop?: RectPercent;
+  capsuleStretch?: StretchPercent;
+  iconMappings?: ComboIconMapping[];
 };
 
 export type RectPercent = {
@@ -122,6 +138,25 @@ export type RectPercent = {
 export type StretchPercent = {
   left: number;
   right: number;
+};
+
+export type ComboIconMapping = {
+  id: string;
+  label: string;
+  src: string;
+  triggers: string[];
+  iconScale?: number;
+};
+
+export type ComboBasePreset = {
+  id: string;
+  name: string;
+  src: string;
+  imageWidth?: number;
+  imageHeight?: number;
+  crop?: RectPercent;
+  stretch?: StretchPercent;
+  user?: boolean;
 };
 
 export type ComboImageStyle = {
@@ -156,6 +191,9 @@ export type ComboImageStyle = {
   fadeRange: number;
   prePromptEnabled: boolean;
   convertIcons: boolean;
+  mergeSameRoleSteps: boolean;
+  iconMappings: ComboIconMapping[];
+  basePresets: ComboBasePreset[];
   contentLabels: Record<string, string>;
 };
 
@@ -189,11 +227,16 @@ export type PracticeFeedback = {
   stepId?: string;
 };
 
+export type PracticeJudgement = 'perfect' | 'great' | 'good' | 'miss';
+
 export type PracticeSnapshot = {
   status: PracticeStatus;
   startedAt: number | null;
+  elapsedMs?: number;
   currentStepIndex: number;
   feedback: PracticeFeedback[];
+  judgements?: Record<string, PracticeJudgement>;
+  matchedStepIds?: string[];
   completedStepIds: string[];
   errorStepIds: string[];
 };

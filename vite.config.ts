@@ -16,7 +16,9 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: 'index.html',
-        overlay: 'overlay.html'
+        overlay: 'overlay.html',
+        rhythmFeedback: 'rhythm-feedback.html',
+        keyMapping: 'key-mapping.html'
       }
     }
   }

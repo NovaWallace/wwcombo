@@ -3,6 +3,7 @@ import type {
   ComboChart,
   ComboStep,
   CharacterSlot,
+  HoldConversionEvent,
   KeyBinding,
   MoveDefinition,
   RecordedUnit,
@@ -100,12 +101,42 @@ export class ComboRecorder {
     return this.snapshot(event.time);
   }
 
+  convertHold(event: HoldConversionEvent): RecordingSnapshot {
+    const sourceMove = resolveActivation({ type: 'keydown', code: event.sourceCode, time: event.pressTime }, this.options.moves, this.options.bindings)?.move;
+    const holdMove = resolveActivation({ type: 'keydown', code: event.holdCode, time: event.holdStartTime }, this.options.moves, this.options.bindings)?.move;
+    if (!sourceMove || !holdMove || !this.isRecording || this.startedAt === null) return this.snapshot(event.releaseTime);
+    const pressTime = Math.max(0, event.pressTime - this.startedAt);
+    const holdStartTime = Math.max(pressTime, event.holdStartTime - this.startedAt);
+    const releaseTime = Math.max(holdStartTime, event.releaseTime - this.startedAt);
+    this.convertActiveHold(sourceMove, holdMove, pressTime, holdStartTime, releaseTime);
+    return this.snapshot(event.releaseTime);
+  }
+
+  finishPress(sourceCode: string, pressTime: number, releaseTime: number): RecordingSnapshot {
+    const sourceMove = resolveActivation({ type: 'keydown', code: sourceCode, time: pressTime }, this.options.moves, this.options.bindings)?.move;
+    if (!sourceMove || !this.isRecording || this.startedAt === null) return this.snapshot(releaseTime);
+    const relativePressTime = Math.max(0, pressTime - this.startedAt);
+    const relativeReleaseTime = Math.max(relativePressTime + MIN_UNIT_MS, releaseTime - this.startedAt);
+    this.closePressedUnit(sourceMove, relativePressTime, relativeReleaseTime);
+    return this.snapshot(releaseTime);
+  }
+
+  extendPress(sourceCode: string, pressTime: number, releaseTime: number): RecordingSnapshot {
+    const sourceMove = resolveActivation({ type: 'keydown', code: sourceCode, time: pressTime }, this.options.moves, this.options.bindings)?.move;
+    if (!sourceMove || !this.isRecording || this.startedAt === null) return this.snapshot(releaseTime);
+    const relativePressTime = Math.max(0, pressTime - this.startedAt);
+    const relativeReleaseTime = Math.max(relativePressTime + MIN_UNIT_MS, releaseTime - this.startedAt);
+    this.extendPressedUnit(sourceMove, relativePressTime, relativeReleaseTime);
+    return this.snapshot(releaseTime);
+  }
+
   toChart(title = 'Untitled Combo'): ComboChart {
     const now = Date.now();
+    const chartId = crypto.randomUUID();
     const steps = this.units.map((unit): ComboStep => {
       const move = this.options.moves.find((candidate) => candidate.id === unit.moveId);
       return {
-        id: unit.id,
+        id: `${chartId}_${unit.id}`,
         moveId: unit.moveId,
         label: unit.label,
         characterSlot: unit.characterSlot ?? 1,
@@ -130,7 +161,7 @@ export class ComboRecorder {
     });
 
     return {
-      id: crypto.randomUUID(),
+      id: chartId,
       title,
       tags: [],
       version: 1,
@@ -145,13 +176,14 @@ export class ComboRecorder {
 
   snapshot(now: number): RecordingSnapshot {
     const elapsed = this.startedAt === null ? 0 : Math.max(0, now - this.startedAt);
+    const liveUnits = [...this.units, ...(this.activeMain ? [this.activeMain] : []), ...this.activeIndependent.values()].map((unit) => ({ ...unit, sourceCodes: [...unit.sourceCodes] }));
     return {
       isRecording: this.isRecording,
       startedAt: this.startedAt,
       elapsed,
       activeMain: this.activeMain,
       activeIndependent: [...this.activeIndependent.values()],
-      units: [...this.units]
+      units: liveUnits
     };
   }
 
@@ -210,6 +242,81 @@ export class ComboRecorder {
       this.closeUnit(unit, unit.endTime);
     }
     this.activeIndependent.clear();
+  }
+
+  private convertActiveHold(sourceMove: MoveDefinition, holdMove: MoveDefinition, pressTime: number, holdStartTime: number, releaseTime: number): void {
+    if (sourceMove.independent) {
+      const unit = this.activeIndependent.get(sourceMove.id) ?? this.findOpenUnit(sourceMove.id, pressTime);
+      if (unit) this.splitUnitForHold(unit, holdMove, holdStartTime, releaseTime);
+      return;
+    }
+    const unit = this.activeMain?.moveId === sourceMove.id ? this.activeMain : this.findOpenUnit(sourceMove.id, pressTime);
+    if (unit) this.splitUnitForHold(unit, holdMove, holdStartTime, releaseTime);
+  }
+
+  private closePressedUnit(sourceMove: MoveDefinition, pressTime: number, releaseTime: number): void {
+    if (sourceMove.independent) {
+      const unit = this.activeIndependent.get(sourceMove.id) ?? this.findOpenUnit(sourceMove.id, pressTime);
+      if (!unit) return;
+      unit.endTime = releaseTime;
+      unit.duration = Math.max(MIN_UNIT_MS, unit.endTime - unit.startTime);
+      this.closeUnit(unit, unit.endTime);
+      this.activeIndependent.delete(sourceMove.id);
+      return;
+    }
+    const unit = this.activeMain?.moveId === sourceMove.id ? this.activeMain : this.findOpenUnit(sourceMove.id, pressTime);
+    if (!unit) return;
+    unit.endTime = releaseTime;
+    unit.duration = Math.max(MIN_UNIT_MS, unit.endTime - unit.startTime);
+    this.closeUnit(unit, unit.endTime);
+    if (this.activeMain === unit) this.activeMain = null;
+  }
+
+  private extendPressedUnit(sourceMove: MoveDefinition, pressTime: number, releaseTime: number): void {
+    const unit = sourceMove.independent ? this.activeIndependent.get(sourceMove.id) ?? this.findOpenUnit(sourceMove.id, pressTime) : this.activeMain?.moveId === sourceMove.id ? this.activeMain : this.findOpenUnit(sourceMove.id, pressTime);
+    if (!unit) return;
+    unit.endTime = Math.max(unit.endTime, releaseTime);
+    unit.duration = Math.max(MIN_UNIT_MS, unit.endTime - unit.startTime);
+  }
+
+  private findOpenUnit(moveId: string, time: number): RecordedUnit | null {
+    if (this.activeMain?.moveId === moveId && time >= this.activeMain.startTime && time <= Math.max(this.activeMain.endTime, time)) return this.activeMain;
+    return [...this.activeIndependent.values()].find((unit) => unit.moveId === moveId && time >= unit.startTime && time <= Math.max(unit.endTime, time)) ?? null;
+  }
+
+  private splitUnitForHold(unit: RecordedUnit, holdMove: MoveDefinition, holdStartTime: number, releaseTime: number): void {
+    const splitAt = Math.max(unit.startTime + MIN_UNIT_MS, holdStartTime);
+    const holdEnd = Math.max(splitAt + MIN_UNIT_MS, releaseTime);
+    const originalEnd = Math.max(unit.endTime, holdEnd);
+    unit.endTime = Math.min(splitAt, originalEnd);
+    unit.duration = Math.max(MIN_UNIT_MS, unit.endTime - unit.startTime);
+    const holdLane: RecordedUnit['lane'] = holdMove.independent ? 'independent' : 'main';
+    const holdUnit = this.createUnit(holdMove, { type: 'keydown', code: holdMove.id, time: splitAt }, holdLane);
+    holdUnit.characterSlot = unit.characterSlot;
+    holdUnit.startTime = splitAt;
+    holdUnit.endTime = holdEnd;
+    holdUnit.duration = Math.max(MIN_UNIT_MS, holdEnd - splitAt);
+    holdUnit.sourceCodes = [...unit.sourceCodes];
+    if (this.activeMain === unit) {
+      this.closeUnit(unit, unit.endTime);
+      if (holdMove.independent) this.activeIndependent.set(holdMove.id, holdUnit);
+      else this.activeMain = holdUnit;
+      return;
+    }
+    for (const [moveId, current] of this.activeIndependent) {
+      if (current !== unit) continue;
+      this.closeUnit(unit, unit.endTime);
+      this.activeIndependent.delete(moveId);
+      if (holdMove.independent) this.activeIndependent.set(holdMove.id, holdUnit);
+      else {
+        if (this.activeMain) {
+          this.closeUnit(this.activeMain, Math.min(this.activeMain.endTime, splitAt));
+          this.activeMain = null;
+        }
+        this.activeMain = holdUnit;
+      }
+      return;
+    }
   }
 
   private createUnit(move: MoveDefinition, event: TrainerInputEvent, lane: RecordedUnit['lane']): RecordedUnit {

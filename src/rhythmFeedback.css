@@ -1,0 +1,23 @@
+html, body, #rhythm-feedback-root { width: 100%; height: 100%; margin: 0; background: transparent; overflow: hidden; }
+.feedback-root { width: 100%; height: 100%; display: grid; place-items: center; background: transparent; user-select: none; }
+.feedback-root.hidden { display: none; }
+.feedback-box { position: relative; width: calc(100% - 10px); height: calc(100% - 10px); display: grid; place-items: center; border-radius: 3px; background: rgba(0,0,0,var(--feedback-opacity, .76)); border: 2px solid rgba(255,255,255,.34); color: #fff; font-family: "\4F18\8BBE\6807\9898\9ED1", "Microsoft YaHei", system-ui, sans-serif; font-size: clamp(24px, 27vh, 54px); font-weight: 950; line-height: 1; text-align: center; letter-spacing: 0; white-space: nowrap; text-shadow: 0 2px 5px rgba(0,0,0,.9); box-shadow: 0 0 12px rgba(0,0,0,.32); touch-action: none; overflow: hidden; }
+.feedback-box span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; padding: 0 10px; }
+.feedback-root.move-mode .feedback-box, .feedback-box.judge-placeholder { cursor: move; border-style: dashed; border-color: rgba(255,255,255,.62); color: rgba(255,255,255,.86); }
+.feedback-root.move-mode .feedback-box { background: rgba(190,28,28,.34); border-color: rgba(255,72,72,.95); color: #fff; }
+.feedback-box.judge-perfect { color: #9ff5ff; border-color: rgba(108,238,255,.72); }
+.feedback-box.judge-great { color: #9be2c0; border-color: rgba(26,184,116,.62); }
+.feedback-box.judge-good { color: #ffd86a; border-color: rgba(255,210,91,.62); }
+.feedback-box.judge-miss { color: #ff9b9b; border-color: rgba(255,71,71,.72); }
+.resize-handle { position: absolute; z-index: 3; width: 14px; height: 14px; border: 1px solid rgba(255,255,255,.86); background: rgba(12,12,12,.72); }
+.resize-handle.n, .resize-handle.s { left: 50%; transform: translateX(-50%); cursor: ns-resize; }
+.resize-handle.e, .resize-handle.w { top: 50%; transform: translateY(-50%); cursor: ew-resize; }
+.resize-handle.n { top: 2px; }
+.resize-handle.s { bottom: 2px; }
+.resize-handle.e { right: 2px; }
+.resize-handle.w { left: 2px; }
+.resize-handle.ne, .resize-handle.nw, .resize-handle.se, .resize-handle.sw { width: 16px; height: 16px; }
+.resize-handle.ne { top: 2px; right: 2px; cursor: nesw-resize; }
+.resize-handle.nw { top: 2px; left: 2px; cursor: nwse-resize; }
+.resize-handle.se { right: 2px; bottom: 2px; cursor: nwse-resize; }
+.resize-handle.sw { left: 2px; bottom: 2px; cursor: nesw-resize; }

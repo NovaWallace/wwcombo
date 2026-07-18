@@ -1,0 +1,9 @@
+html, body, #key-mapping-root { width: 100%; height: 100%; margin: 0; background: transparent; overflow: hidden; }
+.keymap-overlay-root { width: 100%; height: 100%; background: transparent; user-select: none; }
+.keymap-overlay-root.hidden { display: none; }
+.keymap-overlay-stage-shell { position: relative; width: 100%; height: 100%; overflow: hidden; background: transparent; touch-action: none; }
+.keymap-overlay-stage { position: absolute; left: 0; top: 0; transform-origin: left top; overflow: visible; pointer-events: none; }
+.keymap-overlay-layer, .keymap-overlay-key { position: absolute; transform-origin: center; pointer-events: none; }
+.keymap-overlay-layer > img, .keymap-overlay-key { width: 100%; height: 100%; object-fit: contain; display: block; }
+.keymap-overlay-frame { position: absolute; inset: 0; border: 2px dashed rgba(255,72,72,.95); box-sizing: border-box; background: rgba(213,0,0,.08); color: #fff; font-family: "Microsoft YaHei", system-ui, sans-serif; font-size: 13px; font-weight: 900; text-shadow: 0 1px 3px rgba(0,0,0,.9); pointer-events: none; }
+.keymap-overlay-frame span { position: absolute; left: 8px; top: 7px; padding: 2px 7px; border-radius: 3px; background: rgba(0,0,0,.54); }

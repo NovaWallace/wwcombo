@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import type { DesktopInputEvent } from './vite-env';
 
 type DesktopBridge = NonNullable<Window['trainerDesktop']>;
@@ -13,9 +14,43 @@ type TauriGlobalInputPayload = {
 };
 
 type OverlayBounds = { x: number; y: number; width: number; height: number };
+type OverlayPosition = { x: number; y: number };
+type ResizeDirection = 'East' | 'North' | 'NorthEast' | 'NorthWest' | 'South' | 'SouthEast' | 'SouthWest' | 'West';
+
+const RESIZE_DIRECTIONS: Record<string, ResizeDirection> = {
+  n: 'North',
+  e: 'East',
+  s: 'South',
+  w: 'West',
+  ne: 'NorthEast',
+  nw: 'NorthWest',
+  se: 'SouthEast',
+  sw: 'SouthWest'
+};
 
 function isTauriRuntime(): boolean {
   return '__TAURI_INTERNALS__' in window;
+}
+
+function tauriEventTimeToPerformance(time: number): number {
+  if (!Number.isFinite(time)) return performance.now();
+  const converted = performance.now() + (time - Date.now());
+  return Number.isFinite(converted) && Math.abs(converted - performance.now()) < 5000 ? converted : performance.now();
+}
+
+function listenUntilDisposed<T>(eventName: string, callback: (payload: T) => void): () => void {
+  let disposed = false;
+  let unlisten: (() => void) | null = null;
+  listen<T>(eventName, (event) => {
+    if (!disposed) callback(event.payload);
+  }).then((nextUnlisten) => {
+    if (disposed) nextUnlisten();
+    else unlisten = nextUnlisten;
+  });
+  return () => {
+    disposed = true;
+    unlisten?.();
+  };
 }
 
 export function createDesktopBridge(): DesktopBridge | null {
@@ -27,61 +62,32 @@ export function createDesktopBridge(): DesktopBridge | null {
     setOverlayVisible: (visible: boolean) => invoke('set_overlay_visible', { visible }),
     setOverlayClickThrough: (enabled: boolean) => invoke('set_overlay_click_through', { enabled }),
     setOverlayBounds: (bounds: OverlayBounds) => invoke('set_overlay_bounds', { bounds }),
+    setOverlayPosition: (position: OverlayPosition) => invoke('set_overlay_position', { position }),
     getOverlayBounds: () => invoke<OverlayBounds>('get_overlay_bounds'),
     updateOverlay: (payload: unknown) => invoke('update_overlay', { payload }),
-    onOverlayBoundsChanged: (callback: (bounds: OverlayBounds) => void) => {
-      let disposed = false;
-      let unlisten: (() => void) | null = null;
-      listen<OverlayBounds>('overlay:bounds-changed', (event) => {
-        if (!disposed) callback(event.payload);
-      }).then((nextUnlisten) => {
-        if (disposed) nextUnlisten();
-        else unlisten = nextUnlisten;
-      });
-      return () => {
-        disposed = true;
-        unlisten?.();
-      };
-    },
-    onOverlayMoveModeRequested: (callback: (enabled: boolean) => void) => {
-      let disposed = false;
-      let unlisten: (() => void) | null = null;
-      listen<{ enabled: boolean }>('overlay:move-mode', (event) => {
-        if (!disposed) callback(event.payload.enabled);
-      }).then((nextUnlisten) => {
-        if (disposed) nextUnlisten();
-        else unlisten = nextUnlisten;
-      });
-      return () => {
-        disposed = true;
-        unlisten?.();
-      };
-    },
+    setRhythmFeedbackVisible: (visible: boolean) => invoke('set_rhythm_feedback_visible', { visible }),
+    updateRhythmFeedback: (payload: unknown) => invoke('update_rhythm_feedback', { payload }),
+    setRhythmFeedbackBounds: (bounds: OverlayBounds) => invoke('set_rhythm_feedback_bounds', { bounds }),
+    getRhythmFeedbackBounds: () => invoke<OverlayBounds>('get_rhythm_feedback_bounds'),
+    setKeyMappingVisible: (visible: boolean) => invoke('set_key_mapping_visible', { visible }),
+    updateKeyMapping: (payload: unknown) => invoke('update_key_mapping', { payload }),
+    setKeyMappingBounds: (bounds: OverlayBounds) => invoke('set_key_mapping_bounds', { bounds }),
+    getKeyMappingBounds: () => invoke<OverlayBounds>('get_key_mapping_bounds'),
+    onOverlayBoundsChanged: (callback: (bounds: OverlayBounds) => void) => listenUntilDisposed<OverlayBounds>('overlay:bounds-changed', callback),
+    onOverlayMoveModeRequested: (callback: (enabled: boolean) => void) => listenUntilDisposed<{ enabled: boolean }>('overlay:move-mode', (payload) => callback(payload.enabled)),
+    onRhythmFeedbackBoundsChanged: (callback: (bounds: OverlayBounds) => void) => listenUntilDisposed<OverlayBounds>('rhythm-feedback:bounds-changed', callback),
+    onKeyMappingBoundsChanged: (callback: (bounds: OverlayBounds) => void) => listenUntilDisposed<OverlayBounds>('key-mapping:bounds-changed', callback),
     startGlobalInput: () => invoke<{ ok: boolean; reason?: string }>('start_global_input'),
     getGlobalInputStatus: () => invoke<{ started: boolean; status: string; eventCount: number }>('global_input_status'),
     stopGlobalInput: async () => undefined,
-    onGlobalInput: (callback: (event: DesktopInputEvent) => void) => {
-      let disposed = false;
-      let unlisten: (() => void) | null = null;
-
-      listen<TauriGlobalInputPayload>('global-input', (event) => {
-        if (disposed) return;
-        callback({
-          source: 'desktop',
-          type: event.payload.type ?? event.payload.event_type ?? 'keydown',
-          code: event.payload.code,
-          time: performance.now()
-        });
-      }).then((nextUnlisten) => {
-        if (disposed) nextUnlisten();
-        else unlisten = nextUnlisten;
+    onGlobalInput: (callback: (event: DesktopInputEvent) => void) => listenUntilDisposed<TauriGlobalInputPayload>('global-input', (payload) => {
+      callback({
+        source: 'desktop',
+        type: payload.type ?? payload.event_type ?? 'keydown',
+        code: payload.code,
+        time: tauriEventTimeToPerformance(payload.time)
       });
-
-      return () => {
-        disposed = true;
-        unlisten?.();
-      };
-    }
+    })
   };
 }
 
@@ -91,23 +97,50 @@ export function createOverlayBridge() {
 
   return {
     setOverlayBounds: (bounds: OverlayBounds) => invoke('set_overlay_bounds', { bounds }),
+    setOverlayPosition: (position: OverlayPosition) => invoke('set_overlay_position', { position }),
     requestOverlayMoveMode: (enabled: boolean) => invoke('request_overlay_move_mode', { enabled }),
     notifyOverlayBoundsChanged: (bounds: OverlayBounds) => invoke('notify_overlay_bounds_changed', { bounds }),
-    onUpdate: (callback: (payload: unknown) => void) => {
-      let disposed = false;
-      let unlisten: (() => void) | null = null;
+    onWindowBlur: (callback: () => void) => listenUntilDisposed('tauri://blur', callback),
+    onUpdate: (callback: (payload: unknown) => void) => listenUntilDisposed<unknown>('overlay:update', callback)
+  };
+}
 
-      listen<unknown>('overlay:update', (event) => {
-        if (!disposed) callback(event.payload);
-      }).then((nextUnlisten) => {
-        if (disposed) nextUnlisten();
-        else unlisten = nextUnlisten;
-      });
+export function createRhythmFeedbackBridge() {
+  if (window.rhythmFeedbackOverlay) return window.rhythmFeedbackOverlay;
+  if (!isTauriRuntime()) return null;
 
-      return () => {
-        disposed = true;
-        unlisten?.();
-      };
-    }
+  return {
+    getState: () => invoke<unknown>('get_rhythm_feedback_state'),
+    getBounds: () => invoke<OverlayBounds>('get_rhythm_feedback_bounds'),
+    setBounds: (bounds: OverlayBounds) => invoke('set_rhythm_feedback_bounds', { bounds }),
+    setPosition: (position: OverlayPosition) => invoke('set_rhythm_feedback_position', { position }),
+    startDrag: () => invoke('start_rhythm_feedback_drag'),
+    startResize: (edge: string) => {
+      const direction = RESIZE_DIRECTIONS[edge];
+      if (!direction) return Promise.reject(new Error(`invalid resize edge: ${edge}`));
+      return getCurrentWindow().startResizeDragging(direction);
+    },
+    notifyBoundsChanged: (bounds: OverlayBounds) => invoke('notify_rhythm_feedback_bounds_changed', { bounds }),
+    onUpdate: (callback: (payload: unknown) => void) => listenUntilDisposed<unknown>('rhythm-feedback:update', callback)
+  };
+}
+
+export function createKeyMappingBridge() {
+  if (window.keyMappingOverlay) return window.keyMappingOverlay;
+  if (!isTauriRuntime()) return null;
+
+  return {
+    getState: () => invoke<unknown>('get_key_mapping_state'),
+    getBounds: () => invoke<OverlayBounds>('get_key_mapping_bounds'),
+    setBounds: (bounds: OverlayBounds) => invoke('set_key_mapping_bounds', { bounds }),
+    setPosition: (position: OverlayPosition) => invoke('set_key_mapping_position', { position }),
+    startDrag: () => invoke('start_key_mapping_drag'),
+    startResize: (edge: string) => {
+      const direction = RESIZE_DIRECTIONS[edge];
+      if (!direction) return Promise.reject(new Error(`invalid resize edge: ${edge}`));
+      return getCurrentWindow().startResizeDragging(direction);
+    },
+    notifyBoundsChanged: (bounds: OverlayBounds) => invoke('notify_key_mapping_bounds_changed', { bounds }),
+    onUpdate: (callback: (payload: unknown) => void) => listenUntilDisposed<unknown>('key-mapping:update', callback)
   };
 }

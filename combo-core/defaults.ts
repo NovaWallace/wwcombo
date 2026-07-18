@@ -42,11 +42,27 @@ export const DEFAULT_MOVES: MoveDefinition[] = [
     advancesStep: true
   },
   {
+    id: 'skill_hold',
+    label: '长按技能',
+    color: '#8aa2ff',
+    independent: false,
+    priority: 61,
+    advancesStep: true
+  },
+  {
     id: 'echo',
     label: '声骸',
     color: '#b983ff',
     independent: false,
     priority: 55,
+    advancesStep: true
+  },
+  {
+    id: 'echo_hold',
+    label: '长按声骸',
+    color: '#c9a0ff',
+    independent: false,
+    priority: 56,
     advancesStep: true
   },
   {
@@ -58,6 +74,14 @@ export const DEFAULT_MOVES: MoveDefinition[] = [
     advancesStep: true
   },
   {
+    id: 'liberation_hold',
+    label: '长按共鸣解放',
+    color: '#ff8d8d',
+    independent: false,
+    priority: 71,
+    advancesStep: true
+  },
+  {
     id: 'dodge',
     label: '闪避',
     color: '#f8961e',
@@ -66,11 +90,27 @@ export const DEFAULT_MOVES: MoveDefinition[] = [
     advancesStep: true
   },
   {
+    id: 'dodge_hold',
+    label: '长按闪避',
+    color: '#ffad4a',
+    independent: false,
+    priority: 51,
+    advancesStep: true
+  },
+  {
     id: 'jump',
     label: '跳跃',
     color: '#90be6d',
     independent: false,
     priority: 40,
+    advancesStep: true
+  },
+  {
+    id: 'jump_hold',
+    label: '长按跳跃',
+    color: '#addc86',
+    independent: false,
+    priority: 41,
     advancesStep: true
   },
   {
@@ -105,10 +145,15 @@ export const DEFAULT_BINDINGS: KeyBinding[] = [
   { moveId: 'basic_attack', inputs: [{ code: 'MouseLeft', label: '鼠标左键' }] },
   { moveId: 'heavy_attack', inputs: [{ code: 'MouseLeftHold', label: '鼠标左键长按' }] },
   { moveId: 'skill', inputs: [{ code: 'KeyE', label: 'E' }] },
+  { moveId: 'skill_hold', inputs: [{ code: 'KeyEHold', label: 'E长按' }] },
   { moveId: 'echo', inputs: [{ code: 'KeyQ', label: 'Q' }] },
+  { moveId: 'echo_hold', inputs: [{ code: 'KeyQHold', label: 'Q长按' }] },
   { moveId: 'liberation', inputs: [{ code: 'KeyR', label: 'R' }] },
+  { moveId: 'liberation_hold', inputs: [{ code: 'KeyRHold', label: 'R长按' }] },
   { moveId: 'dodge', inputs: [{ code: 'ShiftLeft', label: 'Shift' }, { code: 'MouseRight', label: '鼠标右键' }] },
+  { moveId: 'dodge_hold', inputs: [{ code: 'ShiftLeftHold', label: 'Shift长按' }, { code: 'MouseRightHold', label: '鼠标右键长按' }] },
   { moveId: 'jump', inputs: [{ code: 'Space', label: '空格' }] },
+  { moveId: 'jump_hold', inputs: [{ code: 'SpaceHold', label: '空格长按' }] },
   { moveId: 'switch_1', inputs: [{ code: 'Digit1', label: '1' }] },
   { moveId: 'switch_2', inputs: [{ code: 'Digit2', label: '2' }] },
   { moveId: 'switch_3', inputs: [{ code: 'Digit3', label: '3' }] }

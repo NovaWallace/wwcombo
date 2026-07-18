@@ -1,9 +1,10 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
-import { Activity, Bug, Download, Eye, EyeOff, Keyboard, Palette, Plus, Play, Save, Settings, Square, Target, Trash2, Upload } from 'lucide-react';
+import { Activity, Bug, Download, Eye, EyeOff, FileVideo, Keyboard, Palette, Plus, Play, Save, Settings, Square, Target, Trash2, Upload } from 'lucide-react';
 import {
   CharacterSlot,
   ComboChart,
+  ComboBasePreset,
   ComboImageStyle,
   ComboPeriod,
   ComboPeriodKind,
@@ -39,6 +40,7 @@ import {
   parseQuickInputText,
   visibleComboImageItems
 } from './combo-image/comboImage';
+import { VideoAxisWorkbench } from './VideoAxisWorkbench';
 import './styles.css';
 
 type Page = 'record' | 'practice' | 'appearance' | 'settings';
@@ -47,6 +49,7 @@ type PracticePreset = 'strict' | 'lenient' | 'simple';
 type ComboLayout = 'horizontal' | 'vertical';
 type LaneKind = 'main' | 'independent';
 type DefaultAvatarEntry = { name: string; src: string };
+type DefaultBasePresetEntry = ComboBasePreset;
 type PendingPlacement = { kind: 'step' } | { kind: 'period' };
 type SelectionBox = { x: number; y: number; width: number; height: number };
 
@@ -114,6 +117,25 @@ function normalizeAvatarPresets(value: unknown): DefaultAvatarEntry[] {
     const entry = item as Partial<DefaultAvatarEntry> | null;
     if (!entry || typeof entry.name !== 'string' || typeof entry.src !== 'string') return [];
     return [{ name: entry.name.replace(/\.(webp|png|jpe?g)$/i, ''), src: assetUrl(entry.src) }];
+  });
+}
+
+function normalizeBasePresets(value: unknown): DefaultBasePresetEntry[] {
+  const objectValue = value as { items?: unknown[]; data?: unknown[] } | null;
+  const source = Array.isArray(value) ? value : Array.isArray(objectValue?.items) ? objectValue.items : Array.isArray(objectValue?.data) ? objectValue.data : [];
+  return source.flatMap((item) => {
+    const entry = item as Partial<DefaultBasePresetEntry> | null;
+    if (!entry || typeof entry.name !== 'string' || typeof entry.src !== 'string') return [];
+    return [{
+      id: typeof entry.id === 'string' && entry.id.trim() ? entry.id.trim() : `base_${entry.name}`,
+      name: entry.name.replace(/\.(webp|png|jpe?g)$/i, ''),
+      src: assetUrl(entry.src),
+      imageWidth: typeof entry.imageWidth === 'number' ? entry.imageWidth : undefined,
+      imageHeight: typeof entry.imageHeight === 'number' ? entry.imageHeight : undefined,
+      crop: entry.crop,
+      stretch: entry.stretch,
+      user: entry.user !== false
+    }];
   });
 }
 
@@ -343,8 +365,10 @@ export default function App() {
   const [quickInputOpen, setQuickInputOpen] = useState(false);
   const [quickInputStartStepId, setQuickInputStartStepId] = useState<string | null>(null);
   const [quickInputMemory, setQuickInputMemory] = useState<string[]>([]);
+  const [videoWorkbenchOpen, setVideoWorkbenchOpen] = useState(false);
   const [editorZoom, setEditorZoom] = useState(0.46);
   const [defaultAvatars, setDefaultAvatars] = useState<DefaultAvatarEntry[]>([]);
+  const [defaultBasePresets, setDefaultBasePresets] = useState<DefaultBasePresetEntry[]>([]);
 
   const overlaySettingsRef = useRef(saved.overlaySettings);
   const recorderRef = useRef(new ComboRecorder({ moves, bindings, startTriggerMoveId: 'start_challenge', stopTriggerMoveId: 'stop_recording', startingCharacterSlot }));
@@ -387,6 +411,10 @@ export default function App() {
 
   useEffect(() => {
     fetch(assetUrl('/combo-assets/default-avatars/index.json')).then((res) => res.ok ? res.json() : []).then((items: unknown) => setDefaultAvatars(normalizeAvatarPresets(items))).catch(() => setDefaultAvatars([]));
+  }, []);
+
+  useEffect(() => {
+    fetch(assetUrl('/combo-assets/base-presets/index.json')).then((res) => res.ok ? res.json() : { items: [] }).then((items: unknown) => setDefaultBasePresets(normalizeBasePresets(items))).catch(() => setDefaultBasePresets([]));
   }, []);
 
   useEffect(() => {
@@ -570,6 +598,12 @@ export default function App() {
     setChart(applyFreeFirePeriods({ ...chart, updatedAt: Date.now(), periods: constrainAxisPeriods(periods) }));
   }
 
+  function applyVideoWorkbenchChart(nextChart: ComboChart) {
+    const normalized = applyFreeFirePeriods({ ...nextChart, updatedAt: Date.now(), periods: constrainAxisPeriods(nextChart.periods ?? []), steps: nextChart.steps.map(normalizeStep) });
+    setChart(normalized);
+    setLibrary((current) => current.some((item) => item.id === normalized.id) ? upsertLibraryChart(current, normalized) : current);
+  }
+
   function saveCurrentChart() {
     if (!chart) return;
     const nextChart = { ...chart, title: chartTitle.trim() || chart.title || `连段 ${new Date().toLocaleTimeString()}`, updatedAt: Date.now() };
@@ -738,6 +772,7 @@ export default function App() {
                 <div><h2>{'连段谱编辑'}</h2><p>{'时间轴用于调整操作时机；内容模式用于编辑连段图显示文字。'}</p></div>
                 <div className="editor-title-actions editor-title-actions-v2">
                   <div className="segmented editor-mode-tabs"><button className={editorTab === 'timeline' ? 'active' : ''} onClick={() => setEditorTab('timeline')}>{'时间'}</button><button className={editorTab === 'content' ? 'active' : ''} onClick={() => setEditorTab('content')}>{'内容'}</button></div>
+                  <button onClick={() => setVideoWorkbenchOpen(true)} disabled={!chart}><FileVideo size={18} />{'视频辅助'}</button>
                   <label>{'名称'} <input className="chart-title-input" value={chartTitle} onChange={(event) => setChartTitle(event.target.value)} /></label>
                   <StartingRolePicker value={startingCharacterSlot} style={comboImageStyle} onChange={setStartingCharacterSlot} />
                 </div>
@@ -767,7 +802,7 @@ export default function App() {
             <header className="topbar appearance-preview-bar"><ComboImagePreview chart={practiceChart} practice={practice} style={comboImageStyle} layout="horizontal" bounds={overlaySettings} /></header>
             <div className="panel appearance-page-panel">
               <div className="panel-title"><div><h2>{'连段图外观'}</h2><p>{'这里显示的效果会同步到全局置顶连段图。'}</p></div><div className="overlay-settings-panel inline-overlay-controls"><div className="segmented"><button className={overlaySettings.layout === 'horizontal' ? 'active' : ''} onClick={() => void setOverlayLayout('horizontal')}>{'横排'}</button><button className={overlaySettings.layout === 'vertical' ? 'active' : ''} onClick={() => void setOverlayLayout('vertical')}>{'竖排'}</button></div><button className={overlayMoveMode ? 'active' : ''} onClick={toggleOverlayMoveMode}>{'移动'}</button><button onClick={resetOverlayBounds}>{'复位'}</button><button className="icon-button" onClick={toggleOverlay}>{overlayVisible ? <EyeOff size={18} /> : <Eye size={18} />}</button></div></div>
-              <SimpleAppearanceEditor style={comboImageStyle} avatarPresets={defaultAvatars} onChange={updateComboImageStyle} onRoleChange={updateRoleStyle} onPickAvatar={(slot, file) => void pickAvatar(slot, file)} onPickCapsule={(file) => void pickCapsuleImage(file)} avatarInputRefs={avatarInputRefs} capsuleInputRef={capsuleInputRef} />
+              <SimpleAppearanceEditor style={comboImageStyle} avatarPresets={defaultAvatars} basePresets={defaultBasePresets} onChange={updateComboImageStyle} onRoleChange={updateRoleStyle} onPickAvatar={(slot, file) => void pickAvatar(slot, file)} onPickCapsule={(file) => void pickCapsuleImage(file)} avatarInputRefs={avatarInputRefs} capsuleInputRef={capsuleInputRef} />
             </div>
           </section>
         )}
@@ -775,6 +810,7 @@ export default function App() {
         {page === 'settings' && <SettingsPanel moves={moves} bindings={bindings} onMoveChange={updateMove} onBindingChange={updateBinding} />}
       </main>
       {quickInputOpen && practiceChart && <QuickInputDialog chart={practiceChart} style={comboImageStyle} initialValues={quickInputMemory} startStepId={quickInputStartStepId} onApply={applyQuickInput} onClose={() => setQuickInputOpen(false)} />}
+      {videoWorkbenchOpen && chart && <VideoAxisWorkbench chart={chart} comboImageStyle={comboImageStyle} overlaySettings={overlaySettings} timelineEditor={<TimelineEditor chart={chart} moves={moves} comboImageStyle={comboImageStyle} mode={editorTab} zoom={editorZoom} onZoomChange={setEditorZoom} onUpdate={updateStep} onDelete={deleteStep} onPeriodsChange={updatePeriods} onContentChange={updateComboImageStyle} onQuickInput={(stepId) => { setQuickInputStartStepId(stepId); setQuickInputOpen(true); }} onSave={saveCurrentChart} />} onApplyChart={applyVideoWorkbenchChart} onClose={() => setVideoWorkbenchOpen(false)} onSave={saveCurrentChart} />}
     </div>
   );
 }
@@ -822,11 +858,54 @@ function imageCropBackground(src: string | undefined, crop = { x: 0, y: 0, w: 10
 
 function capsuleImageStyle(style: ComboImageStyle, width: number, height: number): CSSProperties {
   if (style.blockMode !== 'image' || !style.capsuleImage) return {};
-  const image = capsuleBorderImage(style, width, height);
   return {
     backgroundImage: 'none',
     borderColor: 'transparent',
-    '--capsule-render-source': `url("${image.source}")`
+    ...capsuleBackgroundVars(style, width, height)
+  } as CSSProperties;
+}
+
+function cssImageUrl(src: string): string {
+  return `url("${src.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}")`;
+}
+
+function cssPx(value: number): string {
+  return `${Number(value.toFixed(3))}px`;
+}
+
+function capsuleBackgroundVars(style: ComboImageStyle, targetWidthInput: number, targetHeightInput: number): CSSProperties {
+  const source = style.capsuleImage ?? '';
+  const naturalWidth = Math.max(1, style.capsuleImageWidth ?? style.capsuleWidth ?? 200);
+  const naturalHeight = Math.max(1, style.capsuleImageHeight ?? style.capsuleHeight ?? 80);
+  const crop = normalizeRectPercent(style.capsuleCrop, { x: 0, y: 0, w: 100, h: 100 });
+  const cropX = Math.round((crop.x / 100) * naturalWidth);
+  const cropY = Math.round((crop.y / 100) * naturalHeight);
+  const cropWidth = Math.max(1, Math.round((crop.w / 100) * naturalWidth));
+  const cropHeight = Math.max(1, Math.round((crop.h / 100) * naturalHeight));
+  const stretch = style.capsuleStretch ?? { left: 25, right: 75 };
+  const leftLine = Math.round(clamp(((stretch.left ?? 25) / 100) * naturalWidth - cropX, 1, cropWidth - 2));
+  const rightLine = Math.round(clamp(((stretch.right ?? 75) / 100) * naturalWidth - cropX, leftLine + 1, cropWidth - 1));
+  const targetWidth = Math.max(1, Math.round(targetWidthInput));
+  const targetHeight = Math.max(1, Math.round(targetHeightInput));
+  const heightScale = targetHeight / cropHeight;
+  const destLeft = Math.max(0, Math.round(leftLine * heightScale));
+  const destRight = Math.max(0, Math.round((cropWidth - rightLine) * heightScale));
+  const destMiddle = Math.max(0, targetWidth - destLeft - destRight);
+  const stretchWidth = Math.max(1, rightLine - leftLine);
+  const middleScaleX = destMiddle / stretchWidth;
+  return {
+    '--capsule-bg-source': cssImageUrl(source),
+    '--capsule-bg-left-width': cssPx(destLeft),
+    '--capsule-bg-middle-left': cssPx(destLeft),
+    '--capsule-bg-middle-width': cssPx(destMiddle),
+    '--capsule-bg-right-left': cssPx(destLeft + destMiddle),
+    '--capsule-bg-right-width': cssPx(destRight),
+    '--capsule-bg-left-size': `${cssPx(naturalWidth * heightScale)} ${cssPx(naturalHeight * heightScale)}`,
+    '--capsule-bg-left-position': `${cssPx(-cropX * heightScale)} ${cssPx(-cropY * heightScale)}`,
+    '--capsule-bg-middle-size': `${cssPx(naturalWidth * middleScaleX)} ${cssPx(naturalHeight * heightScale)}`,
+    '--capsule-bg-middle-position': `${cssPx(-(cropX + leftLine) * middleScaleX)} ${cssPx(-cropY * heightScale)}`,
+    '--capsule-bg-right-size': `${cssPx(naturalWidth * heightScale)} ${cssPx(naturalHeight * heightScale)}`,
+    '--capsule-bg-right-position': `${cssPx(-(cropX + rightLine) * heightScale)} ${cssPx(-cropY * heightScale)}`
   } as CSSProperties;
 }
 
@@ -1032,6 +1111,7 @@ function TimelineEditor({ chart, moves, comboImageStyle, mode, zoom, onZoomChang
   const total = Math.max(3000, ...chart.steps.map((step) => step.startMax + step.durationMax + 600), ...periods.map((period) => period.endMs + 600));
   const renderTotal = dragRenderTotal ?? total;
   const trackWidth = Math.max(760, Math.ceil(renderTotal * zoom));
+  const timelineBodyStyle = { width: trackWidth + 112, '--timeline-track-width': `${trackWidth}px` } as CSSProperties;
   const lanes: TimelineLane[] = CHARACTER_SLOTS.flatMap((slot) => [
     { slot, lane: 'main' as const, id: `${slot}:main`, laneNumber: 1 as const },
     { slot, lane: 'independent' as const, id: `${slot}:independent`, laneNumber: 2 as const }
@@ -1325,7 +1405,7 @@ function TimelineEditor({ chart, moves, comboImageStyle, mode, zoom, onZoomChang
           {pending?.kind === 'period' && pendingPoint && pendingPoint.slot === undefined && <div className="timeline-placement-ghost period" style={{ left: `${(pendingPoint.startMs / renderTotal) * 100}%`, width: `${Math.max(1.8, (1000 / renderTotal) * 100)}%` }}>待设置时段</div>}
         </div>
         <div className="timeline-editor-ruler" style={{ width: trackWidth }}>{Array.from({ length: Math.ceil(renderTotal / 500) + 1 }, (_, index) => <span key={index} style={{ left: `${((index * 500) / renderTotal) * 100}%` }}>{(index * 0.5).toFixed(index % 2 === 0 ? 0 : 1)}s</span>)}</div>
-        <div className="timeline-editor-body" style={{ width: trackWidth }}>
+        <div className="timeline-editor-body" style={timelineBodyStyle}>
           {lanes.map((lane) => {
             const roleStyle = comboImageStyle.roleStyles[lane.slot];
             const laneSteps = chart.steps.filter((step) => (step.characterSlot ?? 1) === lane.slot && step.lane === lane.lane);
@@ -1432,15 +1512,28 @@ function ComboContentEditor({ chart, style, onChange, onQuickInput }: { chart: C
   );
 }
 
-function SimpleAppearanceEditor({ style, avatarPresets, onChange, onRoleChange, onPickAvatar, onPickCapsule, avatarInputRefs, capsuleInputRef }: { style: ComboImageStyle; avatarPresets: DefaultAvatarEntry[]; onChange: (patch: Partial<ComboImageStyle>) => void; onRoleChange: (slot: CharacterSlot, patch: Partial<ComboImageStyle['roleStyles'][CharacterSlot]>) => void; onPickAvatar: (slot: CharacterSlot, file: File | null) => void; onPickCapsule: (file: File | null) => void; avatarInputRefs: React.MutableRefObject<Record<number, HTMLInputElement | null>>; capsuleInputRef: React.MutableRefObject<HTMLInputElement | null> }) {
+function SimpleAppearanceEditor({ style, avatarPresets, basePresets, onChange, onRoleChange, onPickAvatar, onPickCapsule, avatarInputRefs, capsuleInputRef }: { style: ComboImageStyle; avatarPresets: DefaultAvatarEntry[]; basePresets: DefaultBasePresetEntry[]; onChange: (patch: Partial<ComboImageStyle>) => void; onRoleChange: (slot: CharacterSlot, patch: Partial<ComboImageStyle['roleStyles'][CharacterSlot]>) => void; onPickAvatar: (slot: CharacterSlot, file: File | null) => void; onPickCapsule: (file: File | null) => void; avatarInputRefs: React.MutableRefObject<Record<number, HTMLInputElement | null>>; capsuleInputRef: React.MutableRefObject<HTMLInputElement | null> }) {
   const safeAvatarPresets = normalizeAvatarPresets(avatarPresets);
+  const safeBasePresets = [...basePresets, ...style.basePresets];
   const [avatarPickerSlot, setAvatarPickerSlot] = useState<CharacterSlot | null>(null);
+  const [basePresetOpen, setBasePresetOpen] = useState(false);
   const [capsuleEditorOpen, setCapsuleEditorOpen] = useState(false);
   const [styleSettingsOpen, setStyleSettingsOpen] = useState(false);
   const activeRole = avatarPickerSlot ? style.roleStyles[avatarPickerSlot] : null;
   function applyAvatarPreset(slot: CharacterSlot, preset: DefaultAvatarEntry) {
     onRoleChange(slot, { name: preset.name, avatar: preset.src, avatarCrop: { x: 0, y: 0, w: 100, h: 100 } });
     setAvatarPickerSlot(null);
+  }
+  function applyBasePreset(preset: DefaultBasePresetEntry) {
+    onChange({
+      blockMode: 'image',
+      capsuleImage: preset.src,
+      capsuleImageWidth: preset.imageWidth,
+      capsuleImageHeight: preset.imageHeight,
+      capsuleCrop: preset.crop ?? { x: 0, y: 0, w: 100, h: 100 },
+      capsuleStretch: preset.stretch ?? { left: 25, right: 75 }
+    });
+    setBasePresetOpen(false);
   }
   return (
     <div className="combo-appearance-editor rich-appearance-editor">
@@ -1480,6 +1573,7 @@ function SimpleAppearanceEditor({ style, avatarPresets, onChange, onRoleChange, 
             <button className={style.capsuleWidthMode === 'auto' ? 'active' : ''} onClick={() => onChange({ capsuleWidthMode: 'auto' })}>跟随内容</button>
             <button className={style.capsuleWidthMode === 'fixed' ? 'active' : ''} onClick={() => onChange({ capsuleWidthMode: 'fixed' })}>固定宽度</button>
           </div>
+          {style.blockMode === 'image' && <button className="base-preset-trigger" onClick={() => setBasePresetOpen(true)}>底图预设</button>}
           <div className="segmented appearance-mode-tabs">
             <button className={style.scrollAnchor === 'start' ? 'active' : ''} onClick={() => onChange({ scrollAnchor: 'start' })}>顶端</button>
             <button className={style.scrollAnchor === 'center' ? 'active' : ''} onClick={() => onChange({ scrollAnchor: 'center' })}>居中</button>
@@ -1513,6 +1607,7 @@ function SimpleAppearanceEditor({ style, avatarPresets, onChange, onRoleChange, 
         </div>}
       </section>
 
+      {basePresetOpen && <div className="preset-picker-backdrop" onMouseDown={() => setBasePresetOpen(false)}><div className="preset-picker-panel base-preset-panel" onMouseDown={(event) => event.stopPropagation()}><div className="preset-picker-head"><div><h3>底图预设</h3><p>点击预设即可应用到底图块；导入本地底图后可用裁剪/拉伸继续微调。</p></div><button onClick={() => setBasePresetOpen(false)}>×</button></div><div className="preset-picker-grid base-preset-grid">{safeBasePresets.map((preset) => <button key={`${preset.id}-${preset.src}`} className="preset-tile base-preset-tile" onClick={() => applyBasePreset(preset)}><img src={preset.src} alt="" /><strong>{preset.name}</strong></button>)}</div></div></div>}
       {avatarPickerSlot && <div className="preset-picker-backdrop" onMouseDown={() => setAvatarPickerSlot(null)}><div className="preset-picker-panel avatar-preset-panel" onMouseDown={(event) => event.stopPropagation()}><div className="preset-picker-head"><div><h3>头像设定</h3><p>点击预设即可填入角色名和头像，左上角加号用于导入本地头像。</p></div><button onClick={() => setAvatarPickerSlot(null)}>×</button></div><div className="preset-picker-grid avatar-preset-grid"><button className="preset-tile add-tile" onClick={() => avatarInputRefs.current[avatarPickerSlot]?.click()}><span>+</span><strong>{activeRole?.name || '导入头像'}</strong></button>{safeAvatarPresets.map((preset) => <button key={preset.src} className="preset-tile avatar-preset-tile" onClick={() => applyAvatarPreset(avatarPickerSlot, preset)}><img src={preset.src} alt="" /><strong>{preset.name}</strong></button>)}</div></div></div>}
     </div>
   );
