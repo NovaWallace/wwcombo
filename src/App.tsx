@@ -36,6 +36,7 @@ import {
   comboImageItemSizeForDisplayItem,
   comboTextParts,
   createDefaultComboImageStyle,
+  defaultComboContentLabelForMoveId,
   effectiveCapsuleImageFields,
   effectiveIconMappings,
   maybeConvertTextToIconLabel,
@@ -1329,6 +1330,7 @@ function formatTimelineMs(ms: number): string {
 
 function TimelineEditor({ chart, moves, comboImageStyle, mode, zoom, onZoomChange, onUpdate, onDelete, onPeriodsChange, onContentChange, onQuickInput, onSave, zoomFrameTrack, inspectorPortalTarget, renderTotalOverride }: { chart: ComboChart; moves: MoveDefinition[]; comboImageStyle: ComboImageStyle; mode: EditorTab; zoom: number; onZoomChange: (value: number) => void; onUpdate: (stepId: string, patch: Partial<ComboStep>) => void; onDelete: (stepId: string) => void; onPeriodsChange: (periods: ComboPeriod[]) => void; onContentChange: (patch: Partial<ComboImageStyle>) => void; onQuickInput: (stepId: string | null) => void; onSave: () => void; zoomFrameTrack?: TimelineZoomFrameTrack; inspectorPortalTarget?: HTMLElement | null; renderTotalOverride?: number }) {
   const [selectedId, setSelectedId] = useState(chart.steps[0]?.id ?? '');
+  const scrollRef = useRef<HTMLDivElement | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [selectionBox, setSelectionBox] = useState<SelectionBox | null>(null);
   const [selectedPeriodId, setSelectedPeriodId] = useState('');
@@ -1349,6 +1351,12 @@ function TimelineEditor({ chart, moves, comboImageStyle, mode, zoom, onZoomChang
   const renderTotal = dragRenderTotal ?? total;
   const trackWidth = Math.max(760, Math.ceil(renderTotal * zoom));
   const timelineBodyStyle = { width: trackWidth + 112, '--timeline-track-width': `${trackWidth}px` } as CSSProperties;
+  function scrollToTimelineMs(timeMs: number) {
+    const node = scrollRef.current;
+    if (!node) return;
+    const targetLeft = (clamp(timeMs, 0, renderTotal) / Math.max(1, renderTotal)) * trackWidth;
+    node.scrollTo({ left: Math.max(0, targetLeft - node.clientWidth * 0.45), behavior: 'smooth' });
+  }
   const lanes: TimelineLane[] = CHARACTER_SLOTS.flatMap((slot) => [
     { slot, lane: 'main' as const, id: `${slot}:main`, laneNumber: 1 as const },
     { slot, lane: 'independent' as const, id: `${slot}:independent`, laneNumber: 2 as const }
@@ -1618,7 +1626,8 @@ function TimelineEditor({ chart, moves, comboImageStyle, mode, zoom, onZoomChang
 
   function renderStepLabel(step: ComboStep) {
     if (mode === 'content') {
-      return <label className="timeline-content-label" onPointerDown={(event) => event.stopPropagation()}><input value={comboImageStyle.contentLabels[step.id] ?? ''} placeholder={displayMoveLabel(step)} onChange={(event) => onContentChange({ contentLabels: { ...comboImageStyle.contentLabels, [step.id]: event.target.value } })} onBlur={(event) => setContentLabel(step.id, event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); }} /><span>{displayMoveLabel(step)}</span></label>;
+      const defaultLabel = defaultComboContentLabelForMoveId(step.moveId) ?? displayMoveLabel(step);
+      return <label className="timeline-content-label" onPointerDown={(event) => event.stopPropagation()}><input value={comboImageStyle.contentLabels[step.id] ?? ''} placeholder={defaultLabel} onChange={(event) => onContentChange({ contentLabels: { ...comboImageStyle.contentLabels, [step.id]: event.target.value } })} onBlur={(event) => setContentLabel(step.id, event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); }} /><span>{defaultLabel}</span></label>;
     }
     return <strong>{displayMoveLabel(step)}</strong>;
   }
@@ -1658,7 +1667,7 @@ function TimelineEditor({ chart, moves, comboImageStyle, mode, zoom, onZoomChang
       {selected && (
         <div className="timeline-editor-inspector">
           <strong style={{ color: selected.color }}>{selectedSteps.length > 1 ? `已选 ${selectedSteps.length} 个` : selected.label}</strong>
-          <label className="timeline-label-wide">招式块文本<input value={comboImageStyle.contentLabels[selected.id] ?? ''} placeholder={displayMoveLabel(selected)} onChange={(event) => setContentLabel(selected.id, event.target.value)} /></label>
+          <label className="timeline-label-wide">招式块文本<input value={comboImageStyle.contentLabels[selected.id] ?? ''} placeholder={defaultComboContentLabelForMoveId(selected.moveId) ?? displayMoveLabel(selected)} onChange={(event) => setContentLabel(selected.id, event.target.value)} /></label>
           <label>角色<select value={selected.characterSlot ?? 1} onChange={(event) => selectedSteps.length > 1 ? updateSelectedSteps({ characterSlot: Number(event.target.value) as CharacterSlot }) : onUpdate(selected.id, { characterSlot: Number(event.target.value) as CharacterSlot })}>{CHARACTER_SLOTS.map((slot) => <option key={slot} value={slot}>角色 {slot}</option>)}</select></label>
           <label>轨道<select value={selected.lane} onChange={(event) => selectedSteps.length > 1 ? updateSelectedSteps({ lane: event.target.value as LaneKind }) : onUpdate(selected.id, { lane: event.target.value as LaneKind })}><option value="main">轨道 1</option><option value="independent">轨道 2</option></select></label>
           <label><input type="checkbox" checked={Boolean(selected.manualFree)} onChange={(event) => selectedSteps.length > 1 ? updateSelectedSteps({ manualFree: event.target.checked }) : onUpdate(selected.id, { manualFree: event.target.checked })} />自由</label>
@@ -1677,7 +1686,8 @@ function TimelineEditor({ chart, moves, comboImageStyle, mode, zoom, onZoomChang
       <div className="timeline-editor-toolbar"><div className="timeline-editor-add">
         <button className={pending?.kind === 'step' ? 'active' : ''} onClick={() => setPending({ kind: 'step' })}><Plus size={16} />添加指令</button>
         <button className={pending?.kind === 'period' ? 'active' : ''} onClick={() => setPending({ kind: 'period' })}><Plus size={16} />添加时段</button>
-        <label className="timeline-zoom-control">缩放<input type="range" min="0.05" max="1.6" step="0.01" value={zoom} onChange={(event) => onZoomChange(Number(event.target.value))} /><span>{Math.round(zoom * 100)}%</span></label>
+        {!zoomFrameTrack && <label className="timeline-zoom-control">缩放<input type="range" min="0.05" max="1.6" step="0.01" value={zoom} onChange={(event) => onZoomChange(Number(event.target.value))} /><span>{Math.round(zoom * 100)}%</span></label>}
+        {zoomFrameTrack && <button onClick={() => scrollToTimelineMs(zoomFrameTrack.playbackMs)}>定位到播放进度</button>}
         <button className="primary" onClick={onSave}><Save size={18} />{'保存连段谱'}</button>
         {mode === 'content' && <label className="checkline timeline-icon-convert"><input type="checkbox" checked={comboImageStyle.convertIcons} onChange={(event) => onContentChange({ convertIcons: event.target.checked })} />图标转换</label>}
         {mode === 'content' && <label className="checkline timeline-icon-convert"><input type="checkbox" checked={comboImageStyle.mergeSameRoleSteps} onChange={(event) => onContentChange({ mergeSameRoleSteps: event.target.checked })} />同角色合并</label>}
@@ -1685,7 +1695,7 @@ function TimelineEditor({ chart, moves, comboImageStyle, mode, zoom, onZoomChang
         {pending && <button onClick={() => { setPending(null); setPendingPoint(null); }}>取消放置</button>}
         {pending && <span className="timeline-hint">点击轨道放置{pending.kind === 'step' ? '灰色指令块' : '黑色时段块'}，再右键选择内容</span>}
       </div></div>
-      <div className="timeline-editor-scroll">
+      <div className="timeline-editor-scroll" ref={scrollRef}>
         {renderZoomFrameTrack()}
         <div className={`timeline-editor-period-track ${pending ? 'placing' : ''}`} style={{ width: trackWidth }} onPointerMove={(event) => { if (!pending || pending.kind !== 'period') return; setPendingPoint({ startMs: pointerTime(event) }); }} onClick={(event) => { if (!pending || pending.kind !== 'period') return; placePending({ startMs: pointerTime(event) }); }} onContextMenu={(event) => openPeriodContext(event, null)}>
           <div className="timeline-editor-lane period-lane-label">时段</div>

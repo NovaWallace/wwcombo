@@ -1154,20 +1154,6 @@ export function VideoAxisWorkbench({ chart, comboImageStyle, overlaySettings, ex
                   <div className="video-preview-actions compact">
                     <button className="primary icon-button" title={isPlaying ? '暂停' : '播放'} onClick={togglePlay} disabled={!videoUrl}>{isPlaying ? <Pause size={17} /> : <Play size={17} />}</button>
                     <button className="icon-button" title="重置预览缩放" onClick={() => setPreviewTransform({ scale: 1, x: 0, y: 0 })} disabled={previewTransform.scale <= 1}>1x</button>
-                    <span>{Math.round(previewTransform.scale * 100)}%</span>
-                  </div>
-                  <div className="video-workbench-actions compact">
-                    <div className="video-file-menu">
-                      <button className="icon-button" title="文件" onClick={() => setFileMenuOpen((open) => !open)}><FileIcon size={18} /></button>
-                      {fileMenuOpen && <div className="video-file-menu-panel">
-                        <button onClick={() => { setFileMenuOpen(false); fileInputRef.current?.click(); }}><Upload size={16} />导入视频</button>
-                        <button onClick={() => { setFileMenuOpen(false); void togglePlay(); }} disabled={!videoUrl}>{isPlaying ? <Pause size={16} /> : <Play size={16} />}{isPlaying ? '暂停' : '播放'}</button>
-                        <button onClick={() => { setFileMenuOpen(false); fitChartToVideoDuration(); }} disabled={!videoMeta.durationMs}>匹配视频长度</button>
-                        <button onClick={() => { setFileMenuOpen(false); onSave(); }}><Save size={16} />保存轴</button>
-                        <button onClick={() => { setFileMenuOpen(false); void exportVideo(); }} disabled={!videoUrl || exportStatus.state === 'running'}><Download size={16} />导出视频</button>
-                      </div>}
-                    </div>
-                    <button className="icon-button" title="关闭" onClick={onClose}><X size={18} /></button>
                   </div>
                 </div>
               </div>
@@ -1179,7 +1165,21 @@ export function VideoAxisWorkbench({ chart, comboImageStyle, overlaySettings, ex
             <span>{formatMs(renderTotal)}</span>
           </div>
         </section>
-        <aside className="video-side-inspector" ref={setInspectorPortalTarget} />
+        <aside className="video-side-inspector" ref={setInspectorPortalTarget}>
+          <div className="video-side-toolbar" onPointerDown={(event) => event.stopPropagation()}>
+            <div className="video-file-menu">
+              <button className="icon-button" title="文件" onClick={() => setFileMenuOpen((open) => !open)}><FileIcon size={18} /></button>
+              {fileMenuOpen && <div className="video-file-menu-panel">
+                <button onClick={() => { setFileMenuOpen(false); fileInputRef.current?.click(); }}><Upload size={16} />导入视频</button>
+                <button onClick={() => { setFileMenuOpen(false); void togglePlay(); }} disabled={!videoUrl}>{isPlaying ? <Pause size={16} /> : <Play size={16} />}{isPlaying ? '暂停' : '播放'}</button>
+                <button onClick={() => { setFileMenuOpen(false); fitChartToVideoDuration(); }} disabled={!videoMeta.durationMs}>匹配视频长度</button>
+                <button onClick={() => { setFileMenuOpen(false); onSave(); }}><Save size={16} />保存轴</button>
+                <button onClick={() => { setFileMenuOpen(false); void exportVideo(); }} disabled={!videoUrl || exportStatus.state === 'running'}><Download size={16} />导出视频</button>
+              </div>}
+            </div>
+            <button className="icon-button" title="关闭" onClick={onClose}><X size={18} /></button>
+          </div>
+        </aside>
 
         <section className={`video-edit-panel ${timelineCollapsed ? 'collapsed' : ''}`}>
           <button className="video-timeline-toggle icon-button" title={timelineCollapsed ? '展开时间轴' : '收起时间轴'} onClick={() => setTimelineCollapsed((collapsed) => !collapsed)}>

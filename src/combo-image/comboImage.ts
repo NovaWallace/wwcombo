@@ -258,7 +258,7 @@ export function chartToComboImageItems(chart: ComboChart | null, style: ComboIma
   const items = steps.map((step, index) => {
     const switchSlot = switchSlotForMove(step.moveId);
     const characterSlot = switchSlot ?? step.characterSlot ?? 1;
-    const displayText = style.contentLabels[step.id] ?? step.label;
+    const displayText = style.contentLabels[step.id] ?? defaultComboContentLabelForMoveId(step.moveId) ?? step.label;
     const mappings = effectiveIconMappings(style, characterSlot);
     return {
       step,
@@ -475,6 +475,25 @@ export function parseQuickInputText(value: string): string[] {
     .split(/\s+/)
     .map((part) => part.trim())
     .filter(Boolean);
+}
+
+export function defaultComboContentLabelForMoveId(moveId: string): string | undefined {
+  if (moveId === 'basic_attack') return 'a';
+  if (moveId === 'heavy_attack') return 'z';
+  if (moveId === 'skill') return 'e';
+  if (moveId === 'skill_hold') return 'E';
+  if (moveId === 'echo') return 'q';
+  if (moveId === 'echo_hold') return 'Q';
+  if (moveId === 'liberation') return 'r';
+  if (moveId === 'liberation_hold') return 'R';
+  if (moveId === 'dodge') return 's';
+  if (moveId === 'dodge_hold') return 'S';
+  if (moveId === 'jump') return 'j';
+  if (moveId === 'jump_hold') return 'J';
+  if (moveId === 'switch_1') return 'i';
+  if (moveId === 'switch_2') return 'ii';
+  if (moveId === 'switch_3') return 'iii';
+  return undefined;
 }
 
 export function iconIdForText(value: string, mappings = DEFAULT_ICON_MAPPINGS): string | undefined {
