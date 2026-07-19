@@ -690,7 +690,7 @@ nav button svg { flex: 0 0 auto; margin: 0; }
 .file-input { display: none; }
 .settings-panel { max-width: 1100px; }
 .settings-table { display: grid; gap: 8px; }
-.settings-head, .settings-row { display: grid; grid-template-columns: 140px minmax(210px,1fr) 90px minmax(210px,1fr) 96px 96px; gap: 10px; align-items: center; }
+.settings-head, .settings-row { display: grid; grid-template-columns: 132px minmax(190px,1fr) 82px minmax(220px,1fr) 82px 82px 82px; gap: 10px; align-items: center; }
 .settings-input-mode { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0 14px; }
 .settings-head { color: #9fb0bd; font-size: 12px; padding: 0 10px; }
 .settings-row { min-height: 48px; border: 1px solid #2b3a45; background: #10161b; border-radius: 8px; padding: 8px 10px; }

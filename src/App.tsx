@@ -361,6 +361,18 @@ function gamepadButtonCode(index: number): string {
   return GAMEPAD_BUTTON_CODES[index] ?? `GamepadButton${index}`;
 }
 
+function readPressedGamepadCodes(): Set<string> {
+  const current = new Set<string>();
+  const pads = navigator.getGamepads?.() ?? [];
+  for (const pad of pads) {
+    if (!pad) continue;
+    pad.buttons.forEach((button, index) => {
+      if (button.pressed) current.add(gamepadButtonCode(index));
+    });
+  }
+  return current;
+}
+
 function isPressEvent(event: TrainerLikeInputEvent): boolean {
   return event.type === 'keydown' || event.type === 'mousedown' || event.type === 'gamepadbuttondown';
 }
@@ -510,15 +522,7 @@ export default function App() {
     let frame = 0;
     const pressed = new Set<string>();
     const tick = () => {
-      const pads = navigator.getGamepads?.() ?? [];
-      const current = new Set<string>();
-      for (const pad of pads) {
-        if (!pad) continue;
-        pad.buttons.forEach((button, index) => {
-          if (!button.pressed) return;
-          current.add(gamepadButtonCode(index));
-        });
-      }
+      const current = readPressedGamepadCodes();
       for (const code of current) {
         if (pressed.has(code)) continue;
         const comboCode = code !== GAMEPAD_COMBO_MODIFIER && current.has(GAMEPAD_COMBO_MODIFIER) ? `${GAMEPAD_COMBO_MODIFIER}+${code}` : code;
@@ -2031,6 +2035,7 @@ function CapsuleImageVisualEditor({ style, onChange }: { style: ComboImageStyle;
 
 function SettingsPanel({ moves, bindings, gamepadBindings, inputMode, exportDirectory, onInputModeChange, onExportDirectoryChange, onMoveChange, onBindingChange, onGamepadBindingChange }: { moves: MoveDefinition[]; bindings: KeyBinding[]; gamepadBindings: KeyBinding[]; inputMode: InputMode; exportDirectory: string; onInputModeChange: (value: InputMode) => void; onExportDirectoryChange: (value: string) => void; onMoveChange: (moveId: string, patch: Partial<MoveDefinition>) => void; onBindingChange: (moveId: string, value: string) => void; onGamepadBindingChange: (moveId: string, value: string) => void }) {
   const [capturingMoveId, setCapturingMoveId] = useState<string | null>(null);
+  const [capturingGamepadMoveId, setCapturingGamepadMoveId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!capturingMoveId) return;
@@ -2066,34 +2071,70 @@ function SettingsPanel({ moves, bindings, gamepadBindings, inputMode, exportDire
     };
   }, [capturingMoveId, onBindingChange]);
 
+  useEffect(() => {
+    if (!capturingGamepadMoveId) return;
+    let frame = 0;
+    const initiallyPressed = readPressedGamepadCodes();
+    const tick = () => {
+      const current = readPressedGamepadCodes();
+      const newlyPressed = [...current].filter((code) => !initiallyPressed.has(code));
+      const primary = newlyPressed.find((code) => code !== GAMEPAD_COMBO_MODIFIER);
+      if (primary) {
+        const captured = current.has(GAMEPAD_COMBO_MODIFIER) ? `${GAMEPAD_COMBO_MODIFIER}+${primary}` : primary;
+        onGamepadBindingChange(capturingGamepadMoveId, captured);
+        setCapturingGamepadMoveId(null);
+        return;
+      }
+      if (newlyPressed.includes(GAMEPAD_COMBO_MODIFIER) && current.size === 1) {
+        onGamepadBindingChange(capturingGamepadMoveId, GAMEPAD_COMBO_MODIFIER);
+        setCapturingGamepadMoveId(null);
+        return;
+      }
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    const cancel = (event: KeyboardEvent) => {
+      if (event.code !== 'Backspace' && event.code !== 'Escape') return;
+      event.preventDefault();
+      setCapturingGamepadMoveId(null);
+    };
+    window.addEventListener('keydown', cancel, true);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener('keydown', cancel, true);
+    };
+  }, [capturingGamepadMoveId, onGamepadBindingChange]);
+
   return (
     <section className="panel settings-panel">
-      <div className="panel-title"><div><h2>???????</h2><p>???????????????????????????</p></div><Keyboard size={22} /></div>
+      <div className="panel-title"><div><h2>{'\u952e\u4f4d\u4e0e\u62db\u5f0f\u8bbe\u7f6e'}</h2><p>{'\u8fde\u6bb5\u8c31\u4fdd\u5b58\u62db\u5f0f\u800c\u4e0d\u662f\u56fa\u5b9a\u952e\u4f4d\uff1b\u952e\u9f20\u548c\u624b\u67c4\u53ef\u4ee5\u5206\u522b\u8bbe\u7f6e\u3002'}</p></div><Keyboard size={22} /></div>
       <div className="settings-export-path">
         <label>
-          <span>??????</span>
-          <input value={exportDirectory} placeholder="???????????????? C:\\Users\\?????\\Videos" onChange={(event) => onExportDirectoryChange(event.target.value)} />
+          <span>{'\u89c6\u9891\u5bfc\u51fa\u8def\u5f84'}</span>
+          <input value={exportDirectory} placeholder={'\u7559\u7a7a\u5219\u4f7f\u7528\u7cfb\u7edf\u9ed8\u8ba4\u4e0b\u8f7d\u4f4d\u7f6e\uff0c\u4f8b\u5982 C:\\Users\\\u4f60\u7684\u7528\u6237\u540d\\Videos'} onChange={(event) => onExportDirectoryChange(event.target.value)} />
         </label>
-        <button type="button" onClick={() => onExportDirectoryChange('')}>??</button>
+        <button type="button" onClick={() => onExportDirectoryChange('')}>{'\u9ed8\u8ba4'}</button>
       </div>
       <div className="settings-input-mode">
-        <span>????</span>
-        <div className="segmented"><button className={inputMode === 'keyboard' ? 'active' : ''} type="button" onClick={() => onInputModeChange('keyboard')}><Keyboard size={16} />??</button><button className={inputMode === 'gamepad' ? 'active' : ''} type="button" onClick={() => onInputModeChange('gamepad')}><Gamepad2 size={16} />??</button></div>
+        <span>{'\u8f93\u5165\u6a21\u5f0f'}</span>
+        <div className="segmented"><button className={inputMode === 'keyboard' ? 'active' : ''} type="button" onClick={() => onInputModeChange('keyboard')}><Keyboard size={16} />{'\u952e\u9f20'}</button><button className={inputMode === 'gamepad' ? 'active' : ''} type="button" onClick={() => onInputModeChange('gamepad')}><Gamepad2 size={16} />{'\u624b\u67c4'}</button></div>
       </div>
       <div className="settings-table">
-        <div className="settings-head"><span>??</span><span>????</span><span>??</span><span>????</span><span>??</span><span>????</span></div>
+        <div className="settings-head"><span>{'\u62db\u5f0f'}</span><span>{'\u952e\u9f20\u8f93\u5165'}</span><span>{'\u6355\u83b7'}</span><span>{'\u624b\u67c4\u8f93\u5165'}</span><span>{'\u6355\u83b7'}</span><span>{'\u72ec\u7acb'}</span><span>{'\u63a8\u8fdb'}</span></div>
         {moves.map((move) => {
           const binding = bindings.find((item) => item.moveId === move.id);
           const gamepadBinding = gamepadBindings.find((item) => item.moveId === move.id);
           const isCapturing = capturingMoveId === move.id;
+          const isGamepadCapturing = capturingGamepadMoveId === move.id;
           return (
-            <div className={`settings-row ${isCapturing ? 'capturing' : ''}`} key={move.id}>
+            <div className={`settings-row ${isCapturing || isGamepadCapturing ? 'capturing' : ''}`} key={move.id}>
               <strong style={{ color: move.color }}>{move.label}</strong>
-              <input value={isCapturing ? '??????????????????' : binding?.inputs.map((input) => input.code).join(', ') ?? ''} readOnly={isCapturing} onChange={(event) => onBindingChange(move.id, event.target.value)} />
-              <button className={`binding-capture-button ${isCapturing ? 'active' : ''}`} type="button" onClick={() => setCapturingMoveId(isCapturing ? null : move.id)}><Settings size={16} /><span>{isCapturing ? '???' : '??'}</span></button>
-              <input value={gamepadBinding?.inputs.map((input) => input.code).join(', ') ?? ''} onChange={(event) => onGamepadBindingChange(move.id, event.target.value)} />
-              <label><input type="checkbox" checked={move.independent} onChange={(event) => onMoveChange(move.id, { independent: event.target.checked })} />??</label>
-              <label><input type="checkbox" checked={move.advancesStep} onChange={(event) => onMoveChange(move.id, { advancesStep: event.target.checked })} />??</label>
+              <input value={isCapturing ? '\u8bf7\u6309\u4e0b\u8981\u8bbe\u7f6e\u7684\u952e\u4f4d\u6216\u9f20\u6807\u952e\uff0c\u9000\u683c\u53d6\u6d88' : binding?.inputs.map((input) => input.code).join(', ') ?? ''} readOnly={isCapturing} onChange={(event) => onBindingChange(move.id, event.target.value)} />
+              <button className={`binding-capture-button ${isCapturing ? 'active' : ''}`} type="button" onClick={() => setCapturingMoveId(isCapturing ? null : move.id)}><Settings size={16} /><span>{isCapturing ? '\u7b49\u5f85' : '\u6355\u83b7'}</span></button>
+              <input value={isGamepadCapturing ? '\u6309\u4e0b\u624b\u67c4\u6309\u94ae\uff0cLB+\u5176\u4ed6\u952e\u53ef\u6355\u83b7\u7ec4\u5408' : gamepadBinding?.inputs.map((input) => input.code).join(', ') ?? ''} readOnly={isGamepadCapturing} onChange={(event) => onGamepadBindingChange(move.id, event.target.value)} />
+              <button className={`binding-capture-button ${isGamepadCapturing ? 'active' : ''}`} type="button" onClick={() => setCapturingGamepadMoveId(isGamepadCapturing ? null : move.id)}><Gamepad2 size={16} /><span>{isGamepadCapturing ? '\u7b49\u5f85' : '\u6355\u83b7'}</span></button>
+              <label><input type="checkbox" checked={move.independent} onChange={(event) => onMoveChange(move.id, { independent: event.target.checked })} />{'\u72ec\u7acb'}</label>
+              <label><input type="checkbox" checked={move.advancesStep} onChange={(event) => onMoveChange(move.id, { advancesStep: event.target.checked })} />{'\u63a8\u8fdb'}</label>
             </div>
           );
         })}
