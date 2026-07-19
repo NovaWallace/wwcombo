@@ -17,7 +17,21 @@ export function buildBindingMap(bindings: KeyBinding[]): Map<string, string> {
 export function normalizeInputCode(code: string): string {
   const normalized = String(code || '').trim();
   const lower = normalized.toLowerCase();
+  const comboParts = normalized.split('+').map((part) => part.trim()).filter(Boolean);
+  if (comboParts.length > 1) return comboParts.map((part) => normalizeInputCode(part)).join('+');
   const aliases: Record<string, string> = {
+    gamepada: 'GamepadA',
+    gamepadb: 'GamepadB',
+    gamepadx: 'GamepadX',
+    gamepady: 'GamepadY',
+    gamepadlb: 'GamepadLB',
+    gamepadrb: 'GamepadRB',
+    gamepadlt: 'GamepadLT',
+    gamepadrt: 'GamepadRT',
+    gamepaddpadup: 'GamepadDPadUp',
+    gamepaddpaddown: 'GamepadDPadDown',
+    gamepaddpadleft: 'GamepadDPadLeft',
+    gamepaddpadright: 'GamepadDPadRight',
     esc: 'Escape',
     escape: 'Escape',
     f: 'KeyF',
@@ -47,7 +61,7 @@ export function resolveActivation(
   moves: MoveDefinition[],
   bindings: KeyBinding[]
 ): MoveActivation | null {
-  if (event.type !== 'keydown' && event.type !== 'mousedown') return null;
+  if (event.type !== 'keydown' && event.type !== 'mousedown' && event.type !== 'gamepadbuttondown') return null;
   const moveId = buildBindingMap(bindings).get(normalizeInputCode(event.code));
   if (!moveId) return null;
   const move = buildMoveMap(moves).get(moveId);

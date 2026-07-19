@@ -12,6 +12,7 @@ import {
   ComboRecorder,
   ComboStep,
   DEFAULT_BINDINGS,
+  DEFAULT_GAMEPAD_BINDINGS,
   DEFAULT_MOVES,
   KeyBinding,
   LENIENT_PRACTICE,
@@ -55,6 +56,7 @@ type Page = 'record' | 'practice' | 'appearance' | 'experiment' | 'settings';
 type ExperimentPage = 'home' | 'rhythm' | 'axis' | 'coop' | 'keymap';
 type EditorTab = 'timeline' | 'content';
 type PracticePreset = 'strict' | 'lenient' | 'simple';
+type InputMode = 'keyboard' | 'gamepad';
 type ComboLayout = 'horizontal' | 'vertical';
 type LaneKind = 'main' | 'independent';
 type DefaultAvatarEntry = { name: string; src: string };
@@ -90,6 +92,8 @@ const DEFAULT_FREE_FIRE_DURATION = 15_000;
 const DEFAULT_AXIS_DURATION = 25_000;
 const AXIS_PLACEMENT_WINDOW = 30_000;
 const HEAVY_ATTACK_HOLD_MS = 300;
+const GAMEPAD_BUTTON_CODES = ['GamepadA', 'GamepadB', 'GamepadX', 'GamepadY', 'GamepadLB', 'GamepadRB', 'GamepadLT', 'GamepadRT', 'GamepadView', 'GamepadMenu', 'GamepadLeftStick', 'GamepadRightStick', 'GamepadDPadUp', 'GamepadDPadDown', 'GamepadDPadLeft', 'GamepadDPadRight'];
+const GAMEPAD_COMBO_MODIFIER = 'GamepadLB';
 const DEFAULT_EXPORT_DIRECTORY = '';
 type ComboTrackMetric = { extent: number; start: number; center: number };
 
@@ -113,9 +117,15 @@ function createEmptyPractice(): PracticeSnapshot {
   return { status: 'idle', startedAt: null, currentStepIndex: 0, feedback: [], completedStepIds: [], errorStepIds: [] };
 }
 
-function normalizeBindings(bindings: KeyBinding[]): KeyBinding[] {
+function normalizeMoves(moves: MoveDefinition[]): MoveDefinition[] {
+  const map = new Map(moves.map((move) => [move.id, move]));
+  for (const move of DEFAULT_MOVES) if (!map.has(move.id)) map.set(move.id, move);
+  return [...map.values()];
+}
+
+function normalizeBindings(bindings: KeyBinding[], defaults: KeyBinding[] = DEFAULT_BINDINGS): KeyBinding[] {
   const map = new Map(bindings.map((binding) => [binding.moveId, binding]));
-  for (const binding of DEFAULT_BINDINGS) if (!map.has(binding.moveId)) map.set(binding.moveId, binding);
+  for (const binding of defaults) if (!map.has(binding.moveId)) map.set(binding.moveId, binding);
   return [...map.values()].map((binding) => ({
     moveId: binding.moveId,
     inputs: binding.inputs.map((input) => ({ ...input, code: normalizeInputCode(input.code) }))
@@ -300,7 +310,7 @@ function overlaySettingsForLayout(layout: ComboLayout, bounds: OverlayLayoutBoun
 }
 
 function loadSavedState() {
-  const fallback = { moves: DEFAULT_MOVES, bindings: DEFAULT_BINDINGS, chart: null as ComboChart | null, library: [] as ComboChart[], startingCharacterSlot: 1 as CharacterSlot, overlaySettings: DEFAULT_OVERLAY_SETTINGS, overlayLayoutBounds: DEFAULT_OVERLAY_LAYOUT_BOUNDS, comboImageStyle: createDefaultComboImageStyle(), axisGateEnabled: true, exportDirectory: DEFAULT_EXPORT_DIRECTORY };
+  const fallback = { moves: DEFAULT_MOVES, bindings: DEFAULT_BINDINGS, gamepadBindings: DEFAULT_GAMEPAD_BINDINGS, inputMode: 'keyboard' as InputMode, chart: null as ComboChart | null, library: [] as ComboChart[], startingCharacterSlot: 1 as CharacterSlot, overlaySettings: DEFAULT_OVERLAY_SETTINGS, overlayLayoutBounds: DEFAULT_OVERLAY_LAYOUT_BOUNDS, comboImageStyle: createDefaultComboImageStyle(), axisGateEnabled: true, exportDirectory: DEFAULT_EXPORT_DIRECTORY };
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return fallback;
@@ -308,8 +318,10 @@ function loadSavedState() {
     const layout = parsed.overlaySettings?.layout === 'vertical' ? 'vertical' : 'horizontal';
     const overlayLayoutBounds = normalizeOverlayLayoutBounds(parsed.overlayLayoutBounds, parsed.overlaySettings);
     return {
-      moves: parsed.moves?.length ? parsed.moves : DEFAULT_MOVES,
+      moves: normalizeMoves(parsed.moves?.length ? parsed.moves : DEFAULT_MOVES),
       bindings: normalizeBindings(parsed.bindings?.length ? parsed.bindings : DEFAULT_BINDINGS),
+      gamepadBindings: normalizeBindings(parsed.gamepadBindings?.length ? parsed.gamepadBindings : DEFAULT_GAMEPAD_BINDINGS, DEFAULT_GAMEPAD_BINDINGS),
+      inputMode: parsed.inputMode === 'gamepad' ? 'gamepad' as InputMode : 'keyboard' as InputMode,
       chart: isReasonableChart(parsed.chart) ? normalizeChart(parsed.chart) : null,
       library: parsed.library?.filter(isReasonableChart).map(normalizeChart) ?? [],
       startingCharacterSlot: CHARACTER_SLOTS.includes(parsed.startingCharacterSlot ?? 1) ? parsed.startingCharacterSlot ?? 1 : 1,
@@ -341,15 +353,23 @@ function bindingCodesForMove(bindings: KeyBinding[], moveId: string): string[] {
   return bindings.find((binding) => binding.moveId === moveId)?.inputs.map((input) => normalizeInputCode(input.code)) ?? [];
 }
 
+function isGamepadEvent(event: TrainerLikeInputEvent): boolean {
+  return event.type === 'gamepadbuttondown' || event.type === 'gamepadbuttonup';
+}
+
+function gamepadButtonCode(index: number): string {
+  return GAMEPAD_BUTTON_CODES[index] ?? `GamepadButton${index}`;
+}
+
 function isPressEvent(event: TrainerLikeInputEvent): boolean {
-  return event.type === 'keydown' || event.type === 'mousedown';
+  return event.type === 'keydown' || event.type === 'mousedown' || event.type === 'gamepadbuttondown';
 }
 
 function isReleaseEvent(event: TrainerLikeInputEvent): boolean {
-  return event.type === 'keyup' || event.type === 'mouseup';
+  return event.type === 'keyup' || event.type === 'mouseup' || event.type === 'gamepadbuttonup';
 }
 
-type TrainerLikeInputEvent = { type: 'keydown' | 'keyup' | 'mousedown' | 'mouseup'; code: string; time: number };
+type TrainerLikeInputEvent = { type: 'keydown' | 'keyup' | 'mousedown' | 'mouseup' | 'gamepadbuttondown' | 'gamepadbuttonup'; code: string; time: number };
 
 export default function App() {
   const saved = useMemo(loadSavedState, []);
@@ -359,6 +379,8 @@ export default function App() {
   const [experimentPage, setExperimentPage] = useState<ExperimentPage>('home');
   const [moves, setMoves] = useState<MoveDefinition[]>(saved.moves);
   const [bindings, setBindings] = useState<KeyBinding[]>(saved.bindings);
+  const [gamepadBindings, setGamepadBindings] = useState<KeyBinding[]>(saved.gamepadBindings ?? DEFAULT_GAMEPAD_BINDINGS);
+  const [inputMode, setInputMode] = useState<InputMode>(saved.inputMode ?? 'keyboard');
   const [chart, setChart] = useState<ComboChart | null>(saved.chart);
   const [library, setLibrary] = useState<ComboChart[]>(saved.library);
   const [startingCharacterSlot, setStartingCharacterSlot] = useState<CharacterSlot>(saved.startingCharacterSlot);
@@ -388,7 +410,8 @@ export default function App() {
   const [defaultBasePresets, setDefaultBasePresets] = useState<DefaultBasePresetEntry[]>([]);
 
   const overlaySettingsRef = useRef(saved.overlaySettings);
-  const recorderRef = useRef(new ComboRecorder({ moves, bindings, startTriggerMoveId: 'start_challenge', stopTriggerMoveId: 'stop_recording', startingCharacterSlot }));
+  const activeBindings = inputMode === 'gamepad' ? gamepadBindings : bindings;
+  const recorderRef = useRef(new ComboRecorder({ moves, bindings: activeBindings, startTriggerMoveId: 'start_challenge', stopTriggerMoveId: 'stop_recording', startingCharacterSlot }));
   const practiceRef = useRef<PracticeSession | null>(null);
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const avatarInputRefs = useRef<Record<number, HTMLInputElement | null>>({});
@@ -398,16 +421,17 @@ export default function App() {
   const practiceChart = useMemo(() => sortChartForPractice(chart), [chart]);
   const activeStep = practiceChart?.steps[practice.currentStepIndex] ?? null;
   const practiceSettings = useMemo(() => ({ ...(practicePreset === 'strict' ? STRICT_PRACTICE : practicePreset === 'lenient' ? LENIENT_PRACTICE : SIMPLE_PRACTICE), axisGateEnabled }), [practicePreset, axisGateEnabled]);
-  const basicAttackCodes = useMemo(() => new Set(bindingCodesForMove(bindings, 'basic_attack')), [bindings]);
-  const heavyAttackCode = useMemo(() => bindingCodesForMove(bindings, 'heavy_attack')[0] ?? 'MouseLeftHold', [bindings]);
+  const basicAttackCodes = useMemo(() => new Set(bindingCodesForMove(activeBindings, 'basic_attack')), [activeBindings]);
+  const heavyAttackCode = useMemo(() => bindingCodesForMove(activeBindings, 'heavy_attack')[0] ?? 'MouseLeftHold', [activeBindings]);
+  const keyboardMouseInputSignal = experimentInputSignal && !isGamepadEvent(experimentInputSignal) ? experimentInputSignal as typeof experimentInputSignal & { type: 'keydown' | 'keyup' | 'mousedown' | 'mouseup' } : null;
 
   useEffect(() => {
     overlaySettingsRef.current = overlaySettings;
   }, [overlaySettings]);
 
   useEffect(() => {
-    recorderRef.current = new ComboRecorder({ moves, bindings, startTriggerMoveId: 'start_challenge', stopTriggerMoveId: 'stop_recording', startingCharacterSlot });
-  }, [moves, bindings, startingCharacterSlot]);
+    recorderRef.current = new ComboRecorder({ moves, bindings: activeBindings, startTriggerMoveId: 'start_challenge', stopTriggerMoveId: 'stop_recording', startingCharacterSlot });
+  }, [moves, activeBindings, startingCharacterSlot]);
 
   useEffect(() => {
     if (!practiceChart) {
@@ -415,14 +439,14 @@ export default function App() {
       setPractice(createEmptyPractice());
       return;
     }
-    practiceRef.current = new PracticeSession(practiceChart, moves, bindings, practiceSettings);
+    practiceRef.current = new PracticeSession(practiceChart, moves, activeBindings, practiceSettings);
     setPractice(createEmptyPractice());
-  }, [practiceChart, moves, bindings, practiceSettings]);
+  }, [practiceChart, moves, activeBindings, practiceSettings]);
 
   useEffect(() => {
-    const payload = JSON.stringify({ moves, bindings, chart, library, startingCharacterSlot, overlaySettings, overlayLayoutBounds, comboImageStyle, axisGateEnabled, exportDirectory });
+    const payload = JSON.stringify({ moves, bindings, gamepadBindings, inputMode, chart, library, startingCharacterSlot, overlaySettings, overlayLayoutBounds, comboImageStyle, axisGateEnabled, exportDirectory });
     if (payload.length < LOCAL_STORAGE_SOFT_LIMIT) localStorage.setItem(STORAGE_KEY, payload);
-  }, [moves, bindings, chart, library, startingCharacterSlot, overlaySettings, overlayLayoutBounds, comboImageStyle, axisGateEnabled, exportDirectory]);
+  }, [moves, bindings, gamepadBindings, inputMode, chart, library, startingCharacterSlot, overlaySettings, overlayLayoutBounds, comboImageStyle, axisGateEnabled, exportDirectory]);
 
   useEffect(() => setChartTitle(chart?.title ?? ''), [chart?.id]);
 
@@ -448,6 +472,7 @@ export default function App() {
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
       const normalized = normalizeDomKeyboardEvent(event, event.type as 'keydown' | 'keyup');
+      if (inputMode === 'gamepad') return;
       if (event.type === 'keydown') {
         if (page === 'record' && normalized.code === 'Escape' && recorderRef.current.isRecording) {
           event.preventDefault();
@@ -464,12 +489,12 @@ export default function App() {
       }
       acceptTrainerInput(normalized);
     };
-    const handleMouse = (event: MouseEvent) => acceptTrainerInput(normalizeDomMouseEvent(event, event.type as 'mousedown' | 'mouseup'));
+    const handleMouse = (event: MouseEvent) => { if (inputMode !== 'gamepad') acceptTrainerInput(normalizeDomMouseEvent(event, event.type as 'mousedown' | 'mouseup')); };
     window.addEventListener('keydown', handleKey, true);
     window.addEventListener('keyup', handleKey, true);
     window.addEventListener('mousedown', handleMouse, true);
     window.addEventListener('mouseup', handleMouse, true);
-    const disposeGlobal = desktop?.onGlobalInput((event) => acceptTrainerInput(event));
+    const disposeGlobal = desktop?.onGlobalInput((event) => { if (inputMode !== 'gamepad' || isGamepadEvent(event)) acceptTrainerInput(event); });
     return () => {
       window.removeEventListener('keydown', handleKey, true);
       window.removeEventListener('keyup', handleKey, true);
@@ -478,7 +503,38 @@ export default function App() {
       disposeGlobal?.();
       clearBasicAttackHoldState();
     };
-  }, [page, experimentPage, desktop, basicAttackCodes, heavyAttackCode]);
+  }, [page, experimentPage, desktop, basicAttackCodes, heavyAttackCode, inputMode]);
+
+  useEffect(() => {
+    if (inputMode !== 'gamepad') return;
+    let frame = 0;
+    const pressed = new Set<string>();
+    const tick = () => {
+      const pads = navigator.getGamepads?.() ?? [];
+      const current = new Set<string>();
+      for (const pad of pads) {
+        if (!pad) continue;
+        pad.buttons.forEach((button, index) => {
+          if (!button.pressed) return;
+          current.add(gamepadButtonCode(index));
+        });
+      }
+      for (const code of current) {
+        if (pressed.has(code)) continue;
+        const comboCode = code !== GAMEPAD_COMBO_MODIFIER && current.has(GAMEPAD_COMBO_MODIFIER) ? `${GAMEPAD_COMBO_MODIFIER}+${code}` : code;
+        acceptTrainerInput({ type: 'gamepadbuttondown', code: comboCode, time: performance.now() });
+      }
+      for (const code of pressed) {
+        if (current.has(code)) continue;
+        acceptTrainerInput({ type: 'gamepadbuttonup', code, time: performance.now() });
+      }
+      pressed.clear();
+      current.forEach((code) => pressed.add(code));
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [inputMode, basicAttackCodes, heavyAttackCode, page, experimentPage]);
 
   function acceptTrainerInput(event: TrainerLikeInputEvent) {
     const normalizedCode = normalizeInputCode(event.code);
@@ -645,9 +701,17 @@ export default function App() {
     setMoves((current) => current.map((move) => move.id === moveId ? { ...move, ...patch } : move));
   }
 
-  function updateBinding(moveId: string, value: string) {
+  function updateBindingList(setter: typeof setBindings, moveId: string, value: string) {
     const inputs = value.split(',').map((part) => part.trim()).filter(Boolean).map((code) => ({ code: normalizeInputCode(code), label: code }));
-    setBindings((current) => current.some((binding) => binding.moveId === moveId) ? current.map((binding) => binding.moveId === moveId ? { moveId, inputs } : binding) : [...current, { moveId, inputs }]);
+    setter((current) => current.some((binding) => binding.moveId === moveId) ? current.map((binding) => binding.moveId === moveId ? { moveId, inputs } : binding) : [...current, { moveId, inputs }]);
+  }
+
+  function updateBinding(moveId: string, value: string) {
+    updateBindingList(setBindings, moveId, value);
+  }
+
+  function updateGamepadBinding(moveId: string, value: string) {
+    updateBindingList(setGamepadBindings, moveId, value);
   }
 
   function updateComboImageStyle(patch: Partial<ComboImageStyle>) {
@@ -854,25 +918,25 @@ export default function App() {
             {experimentPage === 'axis' && (
               <div className="experiment-axis-page">
                 <div className="panel-title experiment-subtitle"><div><h2>{'节奏合轴'}</h2><p>{'按连段时间生成三轨判定玩法。'}</p></div><button className="icon-button experiment-back-button" onClick={() => setExperimentPage('home')} title="返回"><ArrowLeft size={18} /></button></div>
-                <AxisRhythmGame chart={practiceChart} style={comboImageStyle} moves={moves} bindings={bindings} inputSignal={experimentInputSignal} iconStorageKey="ww-combo-axis-rhythm-icons-v1" />
+                <AxisRhythmGame chart={practiceChart} style={comboImageStyle} moves={moves} bindings={activeBindings} inputSignal={experimentInputSignal} iconStorageKey="ww-combo-axis-rhythm-icons-v1" />
               </div>
             )}
             {experimentPage === 'coop' && (
               <div className="experiment-coop-page">
                 <div className="panel-title experiment-subtitle"><div><h2>{'协同事件'}</h2><p>{'给连段事件绑定音频和图片触发。'}</p></div><button className="icon-button experiment-back-button" onClick={() => setExperimentPage('home')} title="返回"><ArrowLeft size={18} /></button></div>
-                <CoopEventLab sourceChart={chart} library={library} moves={moves} bindings={bindings} comboImageStyle={comboImageStyle} inputSignal={experimentInputSignal} />
+                <CoopEventLab sourceChart={chart} library={library} moves={moves} bindings={activeBindings} comboImageStyle={comboImageStyle} inputSignal={keyboardMouseInputSignal} />
               </div>
             )}
             {experimentPage === 'keymap' && (
               <div className="experiment-keymap-page">
                 <div className="panel-title experiment-subtitle"><div><h2>{'按键映射'}</h2><p>{'按下键位时显示对应图片。'}</p></div><button className="icon-button experiment-back-button" onClick={() => setExperimentPage('home')} title="返回"><ArrowLeft size={18} /></button></div>
-                <KeyMappingLab inputSignal={experimentInputSignal} onRequestGlobalInput={startGlobalInput} />
+                <KeyMappingLab inputSignal={keyboardMouseInputSignal} onRequestGlobalInput={startGlobalInput} />
               </div>
             )}
           </section>
         )}
 
-        {page === 'settings' && <SettingsPanel moves={moves} bindings={bindings} exportDirectory={exportDirectory} onExportDirectoryChange={setExportDirectory} onMoveChange={updateMove} onBindingChange={updateBinding} />}
+        {page === 'settings' && <SettingsPanel moves={moves} bindings={bindings} gamepadBindings={gamepadBindings} inputMode={inputMode} exportDirectory={exportDirectory} onInputModeChange={setInputMode} onExportDirectoryChange={setExportDirectory} onMoveChange={updateMove} onBindingChange={updateBinding} onGamepadBindingChange={updateGamepadBinding} />}
       </main>
       {quickInputOpen && practiceChart && <QuickInputDialog chart={practiceChart} style={comboImageStyle} initialValues={quickInputMemory} startStepId={quickInputStartStepId} onApply={applyQuickInput} onClose={() => setQuickInputOpen(false)} />}
       {videoWorkbenchOpen && chart && <VideoAxisWorkbench chart={chart} comboImageStyle={comboImageStyle} overlaySettings={overlaySettings} exportDirectory={exportDirectory} timelineEditor={<TimelineEditor chart={chart} moves={moves} comboImageStyle={comboImageStyle} mode={editorTab} zoom={editorZoom} onZoomChange={setEditorZoom} onUpdate={updateStep} onDelete={deleteStep} onPeriodsChange={updatePeriods} onContentChange={updateComboImageStyle} onQuickInput={(stepId) => { setQuickInputStartStepId(stepId); setQuickInputOpen(true); }} onSave={saveCurrentChart} />} onApplyChart={applyVideoWorkbenchChart} onClose={() => setVideoWorkbenchOpen(false)} onSave={saveCurrentChart} getDisplaySize={getDisplaySize} />}
@@ -1965,7 +2029,7 @@ function CapsuleImageVisualEditor({ style, onChange }: { style: ComboImageStyle;
   );
 }
 
-function SettingsPanel({ moves, bindings, exportDirectory, onExportDirectoryChange, onMoveChange, onBindingChange }: { moves: MoveDefinition[]; bindings: KeyBinding[]; exportDirectory: string; onExportDirectoryChange: (value: string) => void; onMoveChange: (moveId: string, patch: Partial<MoveDefinition>) => void; onBindingChange: (moveId: string, value: string) => void }) {
+function SettingsPanel({ moves, bindings, gamepadBindings, inputMode, exportDirectory, onInputModeChange, onExportDirectoryChange, onMoveChange, onBindingChange, onGamepadBindingChange }: { moves: MoveDefinition[]; bindings: KeyBinding[]; gamepadBindings: KeyBinding[]; inputMode: InputMode; exportDirectory: string; onInputModeChange: (value: InputMode) => void; onExportDirectoryChange: (value: string) => void; onMoveChange: (moveId: string, patch: Partial<MoveDefinition>) => void; onBindingChange: (moveId: string, value: string) => void; onGamepadBindingChange: (moveId: string, value: string) => void }) {
   const [capturingMoveId, setCapturingMoveId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -2004,26 +2068,32 @@ function SettingsPanel({ moves, bindings, exportDirectory, onExportDirectoryChan
 
   return (
     <section className="panel settings-panel">
-      <div className="panel-title"><div><h2>键位与招式设置</h2><p>连段谱保存招式而不是固定键位；开始默认 F，结束默认 Esc。</p></div><Keyboard size={22} /></div>
+      <div className="panel-title"><div><h2>???????</h2><p>???????????????????????????</p></div><Keyboard size={22} /></div>
       <div className="settings-export-path">
         <label>
-          <span>视频导出路径</span>
-          <input value={exportDirectory} placeholder="留空则使用系统默认下载位置，例如 C:\\Users\\你的用户名\\Videos" onChange={(event) => onExportDirectoryChange(event.target.value)} />
+          <span>??????</span>
+          <input value={exportDirectory} placeholder="???????????????? C:\\Users\\?????\\Videos" onChange={(event) => onExportDirectoryChange(event.target.value)} />
         </label>
-        <button type="button" onClick={() => onExportDirectoryChange('')}>默认</button>
+        <button type="button" onClick={() => onExportDirectoryChange('')}>??</button>
+      </div>
+      <div className="settings-input-mode">
+        <span>????</span>
+        <div className="segmented"><button className={inputMode === 'keyboard' ? 'active' : ''} type="button" onClick={() => onInputModeChange('keyboard')}><Keyboard size={16} />??</button><button className={inputMode === 'gamepad' ? 'active' : ''} type="button" onClick={() => onInputModeChange('gamepad')}><Gamepad2 size={16} />??</button></div>
       </div>
       <div className="settings-table">
-        <div className="settings-head"><span>招式</span><span>输入代码</span><span>设置</span><span>独立</span><span>推进练习</span></div>
+        <div className="settings-head"><span>??</span><span>????</span><span>??</span><span>????</span><span>??</span><span>????</span></div>
         {moves.map((move) => {
           const binding = bindings.find((item) => item.moveId === move.id);
+          const gamepadBinding = gamepadBindings.find((item) => item.moveId === move.id);
           const isCapturing = capturingMoveId === move.id;
           return (
             <div className={`settings-row ${isCapturing ? 'capturing' : ''}`} key={move.id}>
               <strong style={{ color: move.color }}>{move.label}</strong>
-              <input value={isCapturing ? '请按下要设置的键位或鼠标键，退格取消' : binding?.inputs.map((input) => input.code).join(', ') ?? ''} readOnly={isCapturing} onChange={(event) => onBindingChange(move.id, event.target.value)} />
-              <button className={`binding-capture-button ${isCapturing ? 'active' : ''}`} type="button" onClick={() => setCapturingMoveId(isCapturing ? null : move.id)}><Settings size={16} /><span>{isCapturing ? '设置中' : '设置'}</span></button>
-              <label><input type="checkbox" checked={move.independent} onChange={(event) => onMoveChange(move.id, { independent: event.target.checked })} />独立</label>
-              <label><input type="checkbox" checked={move.advancesStep} onChange={(event) => onMoveChange(move.id, { advancesStep: event.target.checked })} />推进</label>
+              <input value={isCapturing ? '??????????????????' : binding?.inputs.map((input) => input.code).join(', ') ?? ''} readOnly={isCapturing} onChange={(event) => onBindingChange(move.id, event.target.value)} />
+              <button className={`binding-capture-button ${isCapturing ? 'active' : ''}`} type="button" onClick={() => setCapturingMoveId(isCapturing ? null : move.id)}><Settings size={16} /><span>{isCapturing ? '???' : '??'}</span></button>
+              <input value={gamepadBinding?.inputs.map((input) => input.code).join(', ') ?? ''} onChange={(event) => onGamepadBindingChange(move.id, event.target.value)} />
+              <label><input type="checkbox" checked={move.independent} onChange={(event) => onMoveChange(move.id, { independent: event.target.checked })} />??</label>
+              <label><input type="checkbox" checked={move.advancesStep} onChange={(event) => onMoveChange(move.id, { advancesStep: event.target.checked })} />??</label>
             </div>
           );
         })}
@@ -2031,7 +2101,6 @@ function SettingsPanel({ moves, bindings, exportDirectory, onExportDirectoryChan
     </section>
   );
 }
-
 
 
 function PracticeErrorSummary({ chart, practice }: { chart: ComboChart; practice: PracticeSnapshot }) {

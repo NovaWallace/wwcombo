@@ -690,7 +690,8 @@ nav button svg { flex: 0 0 auto; margin: 0; }
 .file-input { display: none; }
 .settings-panel { max-width: 1100px; }
 .settings-table { display: grid; gap: 8px; }
-.settings-head, .settings-row { display: grid; grid-template-columns: 160px minmax(280px,1fr) 104px 120px 120px; gap: 10px; align-items: center; }
+.settings-head, .settings-row { display: grid; grid-template-columns: 140px minmax(210px,1fr) 90px minmax(210px,1fr) 96px 96px; gap: 10px; align-items: center; }
+.settings-input-mode { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0 14px; }
 .settings-head { color: #9fb0bd; font-size: 12px; padding: 0 10px; }
 .settings-row { min-height: 48px; border: 1px solid #2b3a45; background: #10161b; border-radius: 8px; padding: 8px 10px; }
 .settings-row.capturing { border-color: #ff4b3d; background: rgba(90,8,8,.34); }
@@ -932,4 +933,5 @@ body[data-theme='day']::after {
 .theme-day .role-avatar-preview, .theme-day .starting-role-avatar, .theme-day .content-timeline-lane span, .theme-day .base-preset-targets span { background-color: rgba(236,243,239,.92); border-color: rgba(20,43,45,.22); color: var(--text); }
 .theme-day .practice-error-summary { background: rgba(255,235,235,.72); }
 .theme-day .practice-error-summary b, .theme-day .practice-error-summary em, .theme-day .timeline-period span:not(.period-edge) { color: rgba(23,32,34,.72); }
+
 

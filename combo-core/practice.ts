@@ -338,7 +338,8 @@ export class PracticeSession {
   }
 
   private isInterruptibleTimedStep(step: ComboStep): boolean {
-    return step.moveId === 'basic_attack';
+    const move = this.moves.find((item) => item.id === step.moveId);
+    return Boolean(step.independent || step.lane === 'independent' || move?.independent);
   }
 
   private isBlockingPracticeStep(step: ComboStep): boolean {

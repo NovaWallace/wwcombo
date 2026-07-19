@@ -66,6 +66,14 @@ export const DEFAULT_MOVES: MoveDefinition[] = [
     advancesStep: true
   },
   {
+    id: 'tool',
+    label: '工具',
+    color: '#2dd4bf',
+    independent: false,
+    priority: 57,
+    advancesStep: true
+  },
+  {
     id: 'liberation',
     label: '共鸣解放',
     color: '#ff6b6b',
@@ -148,6 +156,7 @@ export const DEFAULT_BINDINGS: KeyBinding[] = [
   { moveId: 'skill_hold', inputs: [{ code: 'KeyEHold', label: 'E长按' }] },
   { moveId: 'echo', inputs: [{ code: 'KeyQ', label: 'Q' }] },
   { moveId: 'echo_hold', inputs: [{ code: 'KeyQHold', label: 'Q长按' }] },
+  { moveId: 'tool', inputs: [{ code: 'KeyT', label: 'T' }] },
   { moveId: 'liberation', inputs: [{ code: 'KeyR', label: 'R' }] },
   { moveId: 'liberation_hold', inputs: [{ code: 'KeyRHold', label: 'R长按' }] },
   { moveId: 'dodge', inputs: [{ code: 'ShiftLeft', label: 'Shift' }, { code: 'MouseRight', label: '鼠标右键' }] },
@@ -157,4 +166,25 @@ export const DEFAULT_BINDINGS: KeyBinding[] = [
   { moveId: 'switch_1', inputs: [{ code: 'Digit1', label: '1' }] },
   { moveId: 'switch_2', inputs: [{ code: 'Digit2', label: '2' }] },
   { moveId: 'switch_3', inputs: [{ code: 'Digit3', label: '3' }] }
+];
+
+export const DEFAULT_GAMEPAD_BINDINGS: KeyBinding[] = [
+  { moveId: 'start_challenge', inputs: [{ code: 'GamepadB', label: 'B' }] },
+  { moveId: 'stop_recording', inputs: [{ code: 'GamepadMenu', label: 'Menu' }] },
+  { moveId: 'basic_attack', inputs: [{ code: 'GamepadX', label: 'X' }] },
+  { moveId: 'heavy_attack', inputs: [{ code: 'GamepadXHold', label: 'X长按' }] },
+  { moveId: 'skill', inputs: [{ code: 'GamepadY', label: 'Y' }] },
+  { moveId: 'skill_hold', inputs: [{ code: 'GamepadYHold', label: 'Y长按' }] },
+  { moveId: 'echo', inputs: [{ code: 'GamepadLT', label: 'LT' }] },
+  { moveId: 'echo_hold', inputs: [{ code: 'GamepadLTHold', label: 'LT长按' }] },
+  { moveId: 'tool', inputs: [{ code: 'GamepadLB+GamepadX', label: 'LB+X' }] },
+  { moveId: 'liberation', inputs: [{ code: 'GamepadRB', label: 'RB' }] },
+  { moveId: 'liberation_hold', inputs: [{ code: 'GamepadRBHold', label: 'RB长按' }] },
+  { moveId: 'dodge', inputs: [{ code: 'GamepadRT', label: 'RT' }] },
+  { moveId: 'dodge_hold', inputs: [{ code: 'GamepadRTHold', label: 'RT长按' }] },
+  { moveId: 'jump', inputs: [{ code: 'GamepadA', label: 'A' }] },
+  { moveId: 'jump_hold', inputs: [{ code: 'GamepadAHold', label: 'A长按' }] },
+  { moveId: 'switch_1', inputs: [{ code: 'GamepadDPadUp', label: '十字上' }] },
+  { moveId: 'switch_2', inputs: [{ code: 'GamepadDPadRight', label: '十字右' }] },
+  { moveId: 'switch_3', inputs: [{ code: 'GamepadDPadDown', label: '十字下' }] }
 ];

@@ -1,7 +1,7 @@
 export type MoveId = string;
 export type CharacterSlot = 1 | 2 | 3;
 
-export type InputEventType = 'keydown' | 'keyup' | 'mousedown' | 'mouseup';
+export type InputEventType = 'keydown' | 'keyup' | 'mousedown' | 'mouseup' | 'gamepadbuttondown' | 'gamepadbuttonup';
 export type HoldConversionEvent = {
   sourceCode: string;
   holdCode: string;
