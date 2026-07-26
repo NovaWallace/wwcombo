@@ -87,7 +87,7 @@ html, body, #overlay-root { margin: 0; width: 100%; height: 100%; background: rg
 .rhythm-overlay-scale-frame { position: relative; overflow: visible; pointer-events: none; }
 .rhythm-overlay-shell { position: relative; width: 100%; height: 100%; background: transparent; overflow: visible; pointer-events: none; transform-origin: left top; }
 .overlay-shell.move-mode .rhythm-overlay-shell { pointer-events: auto; }
-.rhythm-overlay-lanes { position: absolute; inset: 0 10px 78px; display: grid; grid-template-columns: repeat(3, 1fr); column-gap: var(--rhythm-lane-gap, 7px); overflow: hidden; }
+.rhythm-overlay-lanes { position: absolute; left: 50%; top: 0; bottom: 78px; width: min(calc(var(--rhythm-role-spacing, 120px) * 2 + 96px), calc(100% - 20px)); transform: translateX(-50%); display: grid; grid-template-columns: repeat(3, minmax(0, 96px)); justify-content: space-between; column-gap: var(--rhythm-lane-gap, 7px); overflow: hidden; }
 .rhythm-overlay-lane { position: relative; min-width: 0; }
 .rhythm-overlay-active-role-gradient { position: absolute; left: 3px; right: 3px; bottom: 0; height: 76%; z-index: 1; border-radius: 3px 3px 0 0; background: linear-gradient(0deg, rgba(255,224,55,.34) 0%, rgba(255,224,55,.18) 52%, rgba(255,224,55,0) 100%); pointer-events: none; }
 .rhythm-overlay-note { position: absolute; left: 50%; z-index: 3; width: min(78px, calc(100% - 4px)); min-height: 34px; transform: translateX(-50%); border: 0; border-radius: 4px; display: grid; place-items: center; padding: 0; color: #fff; font-size: 20px; font-weight: 950; line-height: 1; overflow: visible; text-shadow: 0 2px 4px rgba(0,0,0,.72); background: transparent; }
@@ -109,8 +109,14 @@ html, body, #overlay-root { margin: 0; width: 100%; height: 100%; background: rg
 .rhythm-overlay-note-content .combo-inline-icon-mark { width: calc(1.78em * var(--icon-scale, 1)); height: calc(1.78em * var(--icon-scale, 1)); }
 .rhythm-overlay-note-content .combo-inline-icon { width: calc(1.6em * var(--icon-scale, 1)); height: calc(1.6em * var(--icon-scale, 1)); }
 .rhythm-overlay-judge { position: absolute; left: 0; right: 0; top: var(--rhythm-judge-y); height: 5px; background: #d50000; box-shadow: 0 0 0 1px rgba(0,0,0,.72), 0 0 12px rgba(213,0,0,.55); }
-.rhythm-overlay-avatars { position: absolute; left: 0; right: 0; bottom: 0; height: 78px; display: grid; grid-template-columns: repeat(3, 1fr); }
+.rhythm-overlay-avatars { position: absolute; left: 50%; bottom: 0; width: min(calc(var(--rhythm-role-spacing, 120px) * 2 + 96px), calc(100% - 20px)); transform: translateX(-50%); height: 78px; display: grid; grid-template-columns: repeat(3, minmax(0, 96px)); justify-content: space-between; }
 .rhythm-overlay-avatar-cell { position: relative; display: grid; place-items: center; align-content: center; gap: 2px; color: #fff; font-size: 20px; font-weight: 950; text-shadow: 0 2px 5px rgba(0,0,0,.86); }
 .rhythm-overlay-lane-prompt { position: absolute; bottom: 88px; left: 4px; right: 4px; z-index: 8; color: #fff; font-size: 18px; font-weight: 950; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; text-shadow: 0 2px 6px rgba(0,0,0,.92); pointer-events: none; }
 .rhythm-overlay-switch-ring { position: absolute; z-index: 7; width: 62px; height: 62px; left: calc(50% + var(--switch-ring-x, 0px)); bottom: calc(15px + var(--switch-ring-y, 0px)); background: url('/rhythm-switch-ring.png') center / contain no-repeat; transform: translateX(-50%) scale(var(--switch-ring-scale, 1.25)); opacity: var(--switch-ring-opacity, 1); pointer-events: none; filter: drop-shadow(0 0 2px rgba(0,0,0,.8)) drop-shadow(0 0 8px rgba(255,255,255,.38)); }
 .rhythm-overlay-avatar { width: 58px; height: 58px; border-radius: 50%; border: 2px solid rgba(255,255,255,.8); background-color: rgba(0,0,0,.35); background-position: center; background-repeat: no-repeat; display: grid; place-items: center; overflow: hidden; }
+
+.rhythm-overlay-resize-handle { position: absolute; z-index: 30; width: 14px; height: 14px; border: 1px solid rgba(255,255,255,.9); background: rgba(12,12,12,.78); }
+.rhythm-overlay-resize-handle.n, .rhythm-overlay-resize-handle.s { left: 50%; transform: translateX(-50%); cursor: ns-resize; }
+.rhythm-overlay-resize-handle.e, .rhythm-overlay-resize-handle.w { top: 50%; transform: translateY(-50%); cursor: ew-resize; }
+.rhythm-overlay-resize-handle.n { top: 3px; } .rhythm-overlay-resize-handle.s { bottom: 3px; } .rhythm-overlay-resize-handle.e { right: 3px; } .rhythm-overlay-resize-handle.w { left: 3px; }
+.rhythm-overlay-resize-handle.ne { top: 3px; right: 3px; cursor: nesw-resize; } .rhythm-overlay-resize-handle.nw { top: 3px; left: 3px; cursor: nwse-resize; } .rhythm-overlay-resize-handle.se { right: 3px; bottom: 3px; cursor: nwse-resize; } .rhythm-overlay-resize-handle.sw { left: 3px; bottom: 3px; cursor: nesw-resize; }

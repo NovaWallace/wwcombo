@@ -21,7 +21,7 @@ export const DEFAULT_MOVES: MoveDefinition[] = [
     id: 'basic_attack',
     label: '普攻',
     color: '#7fd1ae',
-    independent: true,
+    independent: false,
     priority: 10,
     advancesStep: false
   },
@@ -120,6 +120,15 @@ export const DEFAULT_MOVES: MoveDefinition[] = [
     independent: false,
     priority: 41,
     advancesStep: true
+  },
+  {
+    id: 'empty_action',
+    label: '空招式',
+    color: '#f5c542',
+    displayOnly: true,
+    independent: false,
+    priority: 0,
+    advancesStep: false
   },
   {
     id: 'switch_1',

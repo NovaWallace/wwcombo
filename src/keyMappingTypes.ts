@@ -1,4 +1,6 @@
 import type { CSSProperties } from 'react';
+import type { KeyBinding } from '../combo-core/types';
+import { normalizeInputCode } from '../combo-core/input';
 
 export type KeyMappingBounds = { x: number; y: number; width: number; height: number };
 export type KeyMappingTransform = { x: number; y: number; width: number; height: number; opacity: number; rotate: number };
@@ -7,6 +9,8 @@ export type KeyMappingBinding = {
   id: string;
   name: string;
   code: string;
+  moveId?: string;
+  codes?: string[];
   src?: string;
   transform: KeyMappingTransform;
 };
@@ -55,21 +59,21 @@ export const KEY_MAPPING_MAX_SCALE = 3;
 export const DEFAULT_KEY_MAPPING_TRANSFORM: KeyMappingTransform = { x: 0, y: 0, width: 100, height: 100, opacity: 1, rotate: 0 };
 
 const DEFAULT_CODES = [
-  ['T', 'KeyT'],
-  ['E', 'KeyE'],
-  ['Q', 'KeyQ'],
-  ['R', 'KeyR'],
-  ['Space', 'Space'],
-  ['Mouse L', 'MouseLeft'],
-  ['Mouse R', 'MouseRight'],
-  ['F', 'KeyF'],
-  ['W', 'KeyW'],
-  ['A', 'KeyA'],
-  ['S', 'KeyS'],
-  ['D', 'KeyD'],
-  ['1', 'Digit1'],
-  ['2', 'Digit2'],
-  ['3', 'Digit3']
+  ['工具', 'KeyT', 'tool'],
+  ['技能', 'KeyE', 'skill'],
+  ['声骸', 'KeyQ', 'echo'],
+  ['解放', 'KeyR', 'liberation'],
+  ['跳跃', 'Space', 'jump'],
+  ['普攻', 'MouseLeft', 'basic_attack'],
+  ['闪避', 'MouseRight', 'dodge'],
+  ['交互', 'KeyF', 'start_challenge'],
+  ['W', 'KeyW', ''],
+  ['A', 'KeyA', ''],
+  ['S', 'KeyS', ''],
+  ['D', 'KeyD', ''],
+  ['1', 'Digit1', 'switch_1'],
+  ['2', 'Digit2', 'switch_2'],
+  ['3', 'Digit3', 'switch_3']
 ] as const;
 
 function clamp(value: number, min: number, max: number): number {
@@ -122,6 +126,22 @@ export function assetUrl(path: string | undefined): string | undefined {
   return new URL(clean, window.location.href).toString();
 }
 
+function defaultKeyImageSrc(index: number): string {
+  return `/key-mapping/default/keyboard/${index}.png`;
+}
+
+function defaultKeyIndexFromId(id: string): number | null {
+  const match = /^default-key-(\d+)$/.exec(id);
+  if (!match) return null;
+  const index = Number(match[1]);
+  return Number.isInteger(index) && index >= 0 && index < DEFAULT_CODES.length ? index : null;
+}
+
+function isLikelyBrokenKeyMappingSrc(src: string | undefined): boolean {
+  if (!src) return true;
+  return /^blob:/i.test(src);
+}
+
 export function normalizeKeyMappingBounds(value: unknown, fallback: KeyMappingBounds = KEY_MAPPING_DEFAULT_BOUNDS): KeyMappingBounds {
   const record = value as Partial<KeyMappingBounds> | null;
   return {
@@ -148,11 +168,13 @@ export function normalizeKeyMappingTransform(value: unknown, fallback: KeyMappin
 }
 
 export function createDefaultKeyBindings(): KeyMappingBinding[] {
-  return DEFAULT_CODES.map(([name, code], index) => ({
+  return DEFAULT_CODES.map(([name, code, moveId], index) => ({
     id: `default-key-${index}`,
     name,
     code,
-    src: `/key-mapping/default/keyboard/${index}.png`,
+    codes: [code],
+    moveId: moveId || undefined,
+    src: defaultKeyImageSrc(index),
     transform: { ...DEFAULT_KEY_MAPPING_TRANSFORM }
   }));
 }
@@ -167,7 +189,7 @@ export function createDefaultKeyMappingConfig(): KeyMappingConfig {
       {
         id: 'default-mousebg',
         kind: 'image',
-        name: 'mousebg',
+        name: '鼠标底图',
         src: '/key-mapping/default/mousebg.png',
         transform: { ...DEFAULT_KEY_MAPPING_TRANSFORM }
       },
@@ -187,12 +209,39 @@ export function createDefaultKeyMappingConfig(): KeyMappingConfig {
 function normalizeBinding(value: unknown, index: number): KeyMappingBinding | null {
   const record = value as Partial<KeyMappingBinding> | null;
   if (!record || typeof record !== 'object') return null;
-  const code = typeof record.code === 'string' && record.code.trim() ? record.code.trim() : '';
+
+  const storedCode = typeof record.code === 'string' && record.code.trim() ? record.code.trim() : '';
+  const storedCodes = Array.isArray(record.codes)
+    ? record.codes.map((item) => String(item || '').trim()).filter(Boolean)
+    : undefined;
+  const id = typeof record.id === 'string' && record.id ? record.id : crypto.randomUUID();
+  const migratedDefaultDodge = id === 'default-key-6' && (
+    storedCode === 'MouseLeftHold'
+    || storedCodes?.includes('MouseLeftHold')
+    || record.moveId === 'heavy_attack'
+    || record.name === '重击'
+    || record.name === '长按普攻'
+  );
+  const code = migratedDefaultDodge ? 'MouseRight' : storedCode;
+  const defaultIndex = defaultKeyIndexFromId(id) ?? DEFAULT_CODES.findIndex(([, defaultCode]) => defaultCode === code);
+  const fallbackSrc = defaultIndex >= 0 ? defaultKeyImageSrc(defaultIndex) : undefined;
+  const defaultMoveId = migratedDefaultDodge ? 'dodge' : defaultIndex >= 0 ? (DEFAULT_CODES[defaultIndex][2] || undefined) : undefined;
+  const moveId = typeof record.moveId === 'string' && record.moveId.trim()
+    ? (migratedDefaultDodge ? 'dodge' : record.moveId.trim())
+    : defaultMoveId || undefined;
+  const codes = migratedDefaultDodge ? ['MouseRight'] : code ? [code] : storedCodes;
+  const primaryCode = code || codes?.[0] || '';
+  const defaultName = defaultIndex >= 0 ? DEFAULT_CODES[defaultIndex][0] : undefined;
+  const storedName = typeof record.name === 'string' && record.name.trim() ? record.name.trim() : '';
+  const name = migratedDefaultDodge ? '闪避' : storedName || defaultName || primaryCode || `按键 ${index + 1}`;
+
   return {
-    id: typeof record.id === 'string' && record.id ? record.id : crypto.randomUUID(),
-    name: typeof record.name === 'string' && record.name.trim() ? record.name.trim() : code || `按键 ${index + 1}`,
-    code,
-    src: typeof record.src === 'string' ? record.src : undefined,
+    id,
+    name,
+    code: primaryCode,
+    moveId,
+    codes: codes?.length ? codes : primaryCode ? [primaryCode] : undefined,
+    src: isLikelyBrokenKeyMappingSrc(record.src) ? fallbackSrc : typeof record.src === 'string' ? record.src : fallbackSrc,
     transform: normalizeKeyMappingTransform(record.transform)
   };
 }
@@ -211,7 +260,8 @@ function normalizeLayer(value: unknown, index: number): KeyMappingLayer | null {
       : [];
     return { ...base, kind: 'keys', bindings };
   }
-  return { ...base, kind: 'image', src: typeof (record as Partial<KeyMappingImageLayer>).src === 'string' ? (record as Partial<KeyMappingImageLayer>).src : undefined };
+  const imageSrc = typeof (record as Partial<KeyMappingImageLayer>).src === 'string' ? (record as Partial<KeyMappingImageLayer>).src : undefined;
+  return { ...base, kind: 'image', src: base.id === 'default-mousebg' && isLikelyBrokenKeyMappingSrc(imageSrc) ? '/key-mapping/default/mousebg.png' : imageSrc };
 }
 
 export function normalizeKeyMappingConfig(value: unknown): KeyMappingConfig {
@@ -255,14 +305,121 @@ export function normalizeKeyMappingPayload(value: unknown): KeyMappingPayload {
   };
 }
 
-export function keyMappingCodeLabel(code: string): string {
-  if (code === 'MouseLeft') return '鼠标左键';
-  if (code === 'MouseRight') return '鼠标右键';
-  if (code === 'MouseMiddle') return '鼠标中键';
-  if (code === 'Space') return '空格';
-  if (code.startsWith('Key')) return code.slice(3);
-  if (code.startsWith('Digit')) return code.slice(5);
-  return code;
+type KeyMappingLabelTranslator = (chinese: string, english: string) => string;
+
+export function keyMappingCodeLabel(code: string, translate?: KeyMappingLabelTranslator): string {
+  const normalized = normalizeInputCode(code);
+  const label = (chinese: string, english: string) => translate?.(chinese, english) ?? chinese;
+  if (!normalized) return '';
+  if (normalized.includes('+')) return normalized.split('+').map((part) => keyMappingCodeLabel(part, translate)).join('+');
+  if (normalized === 'MouseLeft') return label('鼠标左键', 'Left Mouse Button');
+  if (normalized === 'MouseRight') return label('鼠标右键', 'Right Mouse Button');
+  if (normalized === 'MouseMiddle') return label('鼠标中键', 'Middle Mouse Button');
+  if (normalized === 'Space') return label('空格', 'Space');
+  if (normalized === 'ShiftLeft' || normalized === 'ShiftRight') return 'Shift';
+  if (normalized === 'ControlLeft' || normalized === 'ControlRight') return 'Ctrl';
+  if (normalized === 'AltLeft' || normalized === 'AltRight') return 'Alt';
+  if (normalized.startsWith('Key')) return normalized.slice(3);
+  if (normalized.startsWith('Digit')) return normalized.slice(5);
+  if (normalized.startsWith('Gamepad')) {
+    const body = normalized.slice('Gamepad'.length);
+    const hold = body.endsWith('Hold');
+    const core = hold ? body.slice(0, -4) : body;
+    const map: Record<string, string> = {
+      A: 'A',
+      B: 'B',
+      X: 'X',
+      Y: 'Y',
+      LB: 'LB',
+      RB: 'RB',
+      LT: 'LT',
+      RT: 'RT',
+      Menu: 'Menu',
+      View: 'View',
+      DPadUp: label('十字上', 'D-pad Up'),
+      DPadDown: label('十字下', 'D-pad Down'),
+      DPadLeft: label('十字左', 'D-pad Left'),
+      DPadRight: label('十字右', 'D-pad Right')
+    };
+    const coreLabel = map[core] ?? core;
+    return hold ? label(`${coreLabel}长按`, `${coreLabel} Hold`) : coreLabel;
+  }
+  if (normalized.endsWith('Hold')) {
+    const coreLabel = keyMappingCodeLabel(normalized.slice(0, -4), translate);
+    return label(`${coreLabel}长按`, `${coreLabel} Hold`);
+  }
+  return normalized;
+}
+
+export function keyMappingBindingCodes(binding: Pick<KeyMappingBinding, 'code' | 'codes'>): string[] {
+  const raw = binding.code ? [binding.code] : binding.codes?.length ? binding.codes : [];
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const item of raw) {
+    const normalized = normalizeInputCode(item);
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    result.push(normalized);
+  }
+  return result;
+}
+
+export function keyMappingBindingIsActive(binding: Pick<KeyMappingBinding, 'code' | 'codes'>, pressedCodes: Set<string>): boolean {
+  return keyMappingBindingCodes(binding).some((code) => pressedCodes.has(code));
+}
+
+export function resolveMoveBindingCodes(bindings: KeyBinding[], moveId: string): string[] {
+  const found = bindings.find((item) => item.moveId === moveId);
+  if (!found) return [];
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const input of found.inputs) {
+    const normalized = normalizeInputCode(input.code);
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    result.push(normalized);
+  }
+  return result;
+}
+
+export function keyMappingBindingLabel(binding: Pick<KeyMappingBinding, 'code' | 'codes'>, translate?: KeyMappingLabelTranslator): string {
+  const codes = keyMappingBindingCodes(binding);
+  if (!codes.length) return translate?.('未绑定', 'Unbound') ?? '未绑定';
+  return codes.map((code) => keyMappingCodeLabel(code, translate)).join(' / ');
+}
+
+export function withSettingsSyncedKeyMappingBindings(
+  config: KeyMappingConfig,
+  settingsBindings: KeyBinding[],
+  inputMode: 'keyboard' | 'gamepad' = 'keyboard'
+): KeyMappingConfig {
+  const layers = config.layers.map((layer) => {
+    if (layer.kind !== 'keys') return layer;
+    const bindings: KeyMappingBinding[] = [];
+    for (const binding of layer.bindings) {
+      if (!binding.moveId) {
+        if (inputMode === 'gamepad') continue;
+        const codes = keyMappingBindingCodes(binding);
+        bindings.push({
+          ...binding,
+          code: codes[0] ?? binding.code,
+          codes: codes.length ? codes : undefined
+        });
+        continue;
+      }
+      const ownCodes = keyMappingBindingCodes(binding);
+      const settingsBinding = settingsBindings.find((item) => item.moveId === binding.moveId);
+      const codes = settingsBinding ? resolveMoveBindingCodes(settingsBindings, binding.moveId) : ownCodes;
+      if (!codes.length) continue;
+      bindings.push({
+        ...binding,
+        code: codes[0],
+        codes
+      });
+    }
+    return { ...layer, bindings };
+  });
+  return { ...config, layers };
 }
 
 export function transformStyle(transform: KeyMappingTransform): CSSProperties {

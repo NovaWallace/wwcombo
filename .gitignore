@@ -11,4 +11,31 @@ release-test-*/
 *.local
 .env
 .env.*
-!.env.example
+/community/
+/community-test/
+/community-check/
+/community-final-check/
+/community-smoke/
+/community-auto-check/
+/community-pages-check/
+/community-new-json-check/
+
+# Local reference material and generated packages, not project source
+CODEX_WORKLOG_*.md
+!CODEX_WORKLOG_CURRENT.md
+CODEx_WORKLOG_*.md
+!CODEX_WORKLOG_CURRENT.md
+base/
+head/
+hifi/
+public/hifi/
+docs/
+release-packages/
+verification-screenshots/
+Bongo Cat Mver鸣潮/
+wwcombo-v0.1.zip
+
+# Separate community tooling and local migration helpers
+/scripts/
+_tmp_*
+CODEX_WORKLOG_CURRENT.md

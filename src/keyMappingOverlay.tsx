@@ -3,9 +3,11 @@ import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 import ReactDOM from 'react-dom/client';
 import { normalizeInputCode } from '../combo-core/input';
 import { createKeyMappingBridge } from './desktopBridge';
+import { I18nProvider, useI18n } from './i18n';
 import {
   KEY_MAPPING_DEFAULT_BOUNDS,
   assetUrl,
+  keyMappingBindingIsActive,
   keyMappingDisplayBounds,
   normalizeKeyMappingPayload,
   transformStyle,
@@ -16,6 +18,7 @@ import './keyMappingOverlay.css';
 type PayloadPatch = Partial<KeyMappingPayload> & { pressedCodes?: string[] };
 
 function KeyMappingOverlayApp() {
+  const { text } = useI18n();
   const bridge = useMemo(createKeyMappingBridge, []);
   const [payload, setPayload] = useState<KeyMappingPayload>(() => normalizeKeyMappingPayload({ bounds: KEY_MAPPING_DEFAULT_BOUNDS }));
   const [pressedCodes, setPressedCodes] = useState<Set<string>>(() => new Set());
@@ -107,14 +110,14 @@ function KeyMappingOverlayApp() {
           {payload.layers.map((layer, index) => (
             <div key={layer.id} className="keymap-overlay-layer" style={{ ...transformStyle(layer.transform), zIndex: payload.layers.length - index }}>
               {layer.kind === 'image' && layer.src && <img src={assetUrl(layer.src)} alt="" />}
-              {layer.kind === 'keys' && layer.bindings.map((binding) => pressedCodes.has(normalizeInputCode(binding.code)) && binding.src ? <img key={binding.id} className="keymap-overlay-key" src={assetUrl(binding.src)} alt="" style={transformStyle(binding.transform)} /> : null)}
+              {layer.kind === 'keys' && layer.bindings.map((binding) => keyMappingBindingIsActive(binding, pressedCodes) && binding.src ? <img key={binding.id} className="keymap-overlay-key" src={assetUrl(binding.src)} alt="" style={transformStyle(binding.transform)} /> : null)}
             </div>
           ))}
         </div>
-        {payload.moveMode && <div className="keymap-overlay-frame"><span>按键映射区域</span></div>}
+        {payload.moveMode && <div className="keymap-overlay-frame"><span>{text('按键映射区域', 'Key Mapping Area') }</span></div>}
       </div>}
     </div>
   );
 }
 
-ReactDOM.createRoot(document.getElementById('key-mapping-root')!).render(<React.StrictMode><KeyMappingOverlayApp /></React.StrictMode>);
+ReactDOM.createRoot(document.getElementById('key-mapping-root')!).render(<React.StrictMode><I18nProvider><KeyMappingOverlayApp /></I18nProvider></React.StrictMode>);

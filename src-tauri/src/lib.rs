@@ -1,18 +1,23 @@
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::fs;
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{
     AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, PhysicalSize, Size, WebviewWindow,
     WindowEvent,
 };
 
 static INPUT_HOOK_STARTED: AtomicBool = AtomicBool::new(false);
+static VIDEO_EXPORT_CANCELLED: AtomicBool = AtomicBool::new(false);
 static INPUT_HOOK_STATUS: Lazy<Mutex<String>> = Lazy::new(|| Mutex::new(String::from("idle")));
 static INPUT_EVENT_COUNT: Lazy<Mutex<u64>> = Lazy::new(|| Mutex::new(0));
+static INPUT_PRESSED_CODES: Lazy<Mutex<HashSet<String>>> = Lazy::new(|| Mutex::new(HashSet::new()));
 static APP_HANDLE: Lazy<Mutex<Option<AppHandle>>> = Lazy::new(|| Mutex::new(None));
 static RHYTHM_FEEDBACK_STATE: Lazy<Mutex<serde_json::Value>> =
     Lazy::new(|| Mutex::new(serde_json::json!({ "visible": false, "moveMode": false })));
@@ -59,6 +64,12 @@ struct ExportVideoResult {
     path: String,
 }
 
+#[derive(Clone, Serialize)]
+struct PickedVideoFile {
+    path: String,
+    name: String,
+}
+
 type FeedbackBounds = OverlayBounds;
 
 const FEEDBACK_MIN_WIDTH: u32 = 160;
@@ -69,6 +80,23 @@ const KEY_MAPPING_MIN_WIDTH: u32 = 160;
 const KEY_MAPPING_MIN_HEIGHT: u32 = 120;
 const KEY_MAPPING_MAX_WIDTH: u32 = 2400;
 const KEY_MAPPING_MAX_HEIGHT: u32 = 2000;
+const REMOTE_CHARACTER_AVATAR_API: &str = "https://wuwa-hpyg-tool.200503.xyz/api/v1/icons/character";
+
+#[tauri::command]
+async fn fetch_remote_character_avatars() -> Result<serde_json::Value, String> {
+    let response = reqwest::Client::new()
+        .get(REMOTE_CHARACTER_AVATAR_API)
+        .send()
+        .await
+        .map_err(|error| format!("请求角色头像清单失败：{error}"))?;
+    if !response.status().is_success() {
+        return Err(format!("角色头像清单返回异常状态：{}", response.status()));
+    }
+    response
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|error| format!("解析角色头像清单失败：{error}"))
+}
 
 #[tauri::command]
 fn set_overlay_visible(app: AppHandle, visible: bool) -> Result<(), String> {
@@ -566,17 +594,27 @@ fn request_overlay_move_mode(app: AppHandle, enabled: bool) -> Result<(), String
 }
 
 #[tauri::command]
-fn start_global_input(app: AppHandle) -> Result<serde_json::Value, String> {
+fn start_global_input(app: AppHandle) -> serde_json::Value {
     *APP_HANDLE.lock() = Some(app.clone());
 
     if INPUT_HOOK_STARTED.swap(true, Ordering::SeqCst) {
-        return Ok(serde_json::json!({ "ok": true }));
+        return serde_json::json!({ "ok": true });
     }
 
     *INPUT_HOOK_STATUS.lock() = String::from("starting");
-    start_windows_global_input(app)?;
-    *INPUT_HOOK_STATUS.lock() = String::from("running");
-    Ok(serde_json::json!({ "ok": true }))
+    match start_windows_global_input(app) {
+        Ok(()) => {
+            if INPUT_HOOK_STATUS.lock().as_str() == "starting" {
+                *INPUT_HOOK_STATUS.lock() = String::from("running");
+            }
+            serde_json::json!({ "ok": true })
+        }
+        Err(error) => {
+            INPUT_HOOK_STARTED.store(false, Ordering::SeqCst);
+            *INPUT_HOOK_STATUS.lock() = format!("failed: {error}");
+            serde_json::json!({ "ok": false, "reason": error })
+        }
+    }
 }
 
 #[tauri::command]
@@ -592,28 +630,145 @@ fn global_input_status() -> serde_json::Value {
 
 #[tauri::command]
 fn save_export_file(
+    app: AppHandle,
     directory: String,
     filename: String,
     bytes: Vec<u8>,
 ) -> Result<SaveExportResult, String> {
-    let directory_path = Path::new(directory.trim());
-    if directory_path.as_os_str().is_empty() {
-        return Err(String::from("导出路径为空"));
-    }
-    fs::create_dir_all(directory_path).map_err(|error| error.to_string())?;
-    if !directory_path.is_dir() {
-        return Err(String::from("导出路径不是文件夹"));
-    }
-    let safe_name = Path::new(&filename)
-        .file_name()
-        .and_then(|name| name.to_str())
-        .filter(|name| !name.trim().is_empty())
-        .ok_or_else(|| String::from("导出文件名无效"))?;
-    let path = directory_path.join(safe_name);
+    let path = export_file_path(&app, &directory, &filename)?;
     fs::write(&path, bytes).map_err(|error| error.to_string())?;
     Ok(SaveExportResult {
         path: path.to_string_lossy().to_string(),
     })
+}
+
+#[tauri::command]
+fn pick_video_file() -> Option<PickedVideoFile> {
+    rfd::FileDialog::new()
+        .add_filter("视频文件", &["mp4", "mov", "mkv", "webm", "avi", "m4v"])
+        .pick_file()
+        .map(|path| PickedVideoFile {
+            name: path.file_name().and_then(|name| name.to_str()).unwrap_or("video").to_string(),
+            path: path.to_string_lossy().to_string(),
+        })
+}
+
+#[tauri::command]
+fn cancel_video_export() {
+    VIDEO_EXPORT_CANCELLED.store(true, Ordering::SeqCst);
+}
+
+#[tauri::command]
+async fn export_video_with_overlay(
+    app: AppHandle,
+    directory: String,
+    filename: String,
+    source_path: String,
+    overlay_x: i32,
+    overlay_y: i32,
+    duration_ms: u64,
+    overlay_bytes: Vec<u8>,
+) -> Result<ExportVideoResult, String> {
+    VIDEO_EXPORT_CANCELLED.store(false, Ordering::SeqCst);
+    tauri::async_runtime::spawn_blocking(move || {
+        let source = PathBuf::from(source_path.trim());
+        if !source.is_file() {
+            return Err(String::from("\u{539f}\u{89c6}\u{9891}\u{6587}\u{4ef6}\u{4e0d}\u{5b58}\u{5728}\u{ff0c}\u{8bf7}\u{91cd}\u{65b0}\u{9009}\u{62e9}\u{89c6}\u{9891}\u{540e}\u{518d}\u{5bfc}\u{51fa}\u{3002}"));
+        }
+        let output_path = unique_export_path(export_file_path(&app, &directory, &filename)?);
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|value| value.as_millis())
+            .unwrap_or_default();
+        let temp_dir = std::env::temp_dir().join(format!("wwcombo-video-export-{}-{nonce}", std::process::id()));
+        fs::create_dir_all(&temp_dir).map_err(|error| error.to_string())?;
+        let overlay_path = temp_dir.join("overlay.webm");
+        let temp_output_path = temp_dir.join("output.mp4");
+        let error_log_path = temp_dir.join("ffmpeg-error.log");
+        fs::write(&overlay_path, overlay_bytes).map_err(|error| error.to_string())?;
+        let ffmpeg = find_ffmpeg(&app).ok_or_else(|| String::from("\u{672a}\u{627e}\u{5230} ffmpeg\u{ff0c}\u{65e0}\u{6cd5}\u{5408}\u{6210} MP4\u{3002}"))?;
+        let error_log = fs::File::create(&error_log_path).map_err(|error| format!("\u{65e0}\u{6cd5}\u{521b}\u{5efa}\u{5bfc}\u{51fa}\u{65e5}\u{5fd7}\u{ff1a}{error}"))?;
+        let mut child = Command::new(ffmpeg)
+            .arg("-y")
+            .arg("-i").arg(&source)
+            .arg("-c:v").arg("libvpx-vp9")
+            .arg("-i").arg(&overlay_path)
+            .arg("-filter_complex").arg(format!("[1:v]format=rgba[overlay];[0:v][overlay]overlay={}:{}:format=auto:eof_action=pass[v]", overlay_x.max(0), overlay_y.max(0)))
+            .arg("-map").arg("[v]")
+            .arg("-map").arg("0:a?")
+            .arg("-map_metadata").arg("0")
+            .arg("-c:v").arg("libx264")
+            .arg("-preset").arg("medium")
+            .arg("-crf").arg("16")
+            .arg("-pix_fmt").arg("yuv420p")
+            .arg("-colorspace").arg("bt709")
+            .arg("-color_primaries").arg("bt709")
+            .arg("-color_trc").arg("bt709")
+            .arg("-color_range").arg("tv")
+            .arg("-c:a").arg("aac")
+            .arg("-b:a").arg("320k")
+            .arg("-movflags").arg("+faststart")
+            .arg("-progress").arg("pipe:1")
+            .arg("-nostats")
+            .arg(&temp_output_path)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::from(error_log))
+            .spawn()
+            .map_err(|error| format!("\u{542f}\u{52a8} ffmpeg \u{5931}\u{8d25}\u{ff1a}{error}"))?;
+        if let Some(stdout) = child.stdout.take() {
+            for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+                if VIDEO_EXPORT_CANCELLED.load(Ordering::SeqCst) {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    let _ = fs::remove_dir_all(&temp_dir);
+                    return Err(String::from("\u{89c6}\u{9891}\u{5bfc}\u{51fa}\u{5df2}\u{53d6}\u{6d88}"));
+                }
+                if let Some(value) = line.strip_prefix("out_time_ms=") {
+                    if let Ok(microseconds) = value.parse::<u64>() {
+                        let processed_ms = microseconds / 1000;
+                        let progress = if duration_ms > 0 {
+                            (processed_ms as f64 / duration_ms as f64).clamp(0.0, 1.0)
+                        } else {
+                            0.0
+                        };
+                        let _ = app.emit("video-export-progress", serde_json::json!({
+                            "progress": progress,
+                            "processedMs": processed_ms,
+                            "durationMs": duration_ms
+                        }));
+                    }
+                }
+            }
+        }
+        if VIDEO_EXPORT_CANCELLED.load(Ordering::SeqCst) {
+            let _ = child.kill();
+            let _ = child.wait();
+            let _ = fs::remove_dir_all(&temp_dir);
+            return Err(String::from("\u{89c6}\u{9891}\u{5bfc}\u{51fa}\u{5df2}\u{53d6}\u{6d88}"));
+        }
+        let status = child.wait().map_err(|error| format!("\u{7b49}\u{5f85} ffmpeg \u{7ed3}\u{675f}\u{5931}\u{8d25}\u{ff1a}{error}"))?;
+        if !status.success() {
+            let details = ffmpeg_error_summary(&error_log_path);
+            let _ = fs::remove_dir_all(&temp_dir);
+            return Err(format!(
+                "ffmpeg \u{5408}\u{6210} MP4 \u{5931}\u{8d25}\u{ff0c}\u{9000}\u{51fa}\u{7801}\u{ff1a}{}{}",
+                status.code().unwrap_or(-1),
+                details
+            ));
+        }
+        if !temp_output_path.is_file() {
+            let _ = fs::remove_dir_all(&temp_dir);
+            return Err(String::from("ffmpeg \u{5df2}\u{7ed3}\u{675f}\u{ff0c}\u{4f46}\u{6ca1}\u{6709}\u{751f}\u{6210} MP4 \u{6587}\u{4ef6}\u{3002}"));
+        }
+        if let Err(rename_error) = fs::rename(&temp_output_path, &output_path) {
+            fs::copy(&temp_output_path, &output_path)
+                .map_err(|copy_error| format!("\u{5bfc}\u{51fa}\u{89c6}\u{9891}\u{5199}\u{5165}\u{5931}\u{8d25}\u{ff1a}{copy_error}\u{ff08}\u{79fb}\u{52a8}\u{5931}\u{8d25}\u{ff1a}{rename_error}\u{ff09}"))?;
+        }
+        let _ = fs::remove_dir_all(&temp_dir);
+        Ok(ExportVideoResult { path: output_path.to_string_lossy().to_string() })
+    })
+    .await
+    .map_err(|error| format!("\u{89c6}\u{9891}\u{5bfc}\u{51fa}\u{4efb}\u{52a1}\u{5f02}\u{5e38}\u{7ed3}\u{675f}\u{ff1a}{error}"))?
 }
 
 #[tauri::command]
@@ -623,7 +778,7 @@ fn save_export_mp4(
     filename: String,
     bytes: Vec<u8>,
 ) -> Result<ExportVideoResult, String> {
-    let output_path = export_file_path(&directory, &filename)?;
+    let output_path = unique_export_path(export_file_path(&app, &directory, &filename)?);
     let temp_webm_path = output_path.with_extension("exporting.webm");
     fs::write(&temp_webm_path, bytes).map_err(|error| error.to_string())?;
     let ffmpeg = find_ffmpeg(&app).ok_or_else(|| String::from("未找到 ffmpeg，无法转出 MP4。请把 ffmpeg.exe 放到 src-tauri/resources/ffmpeg.exe 后重新打包，或安装 ffmpeg 到 PATH。"))?;
@@ -661,21 +816,85 @@ fn save_export_mp4(
     })
 }
 
-fn export_file_path(directory: &str, filename: &str) -> Result<PathBuf, String> {
-    let directory_path = Path::new(directory.trim());
-    if directory_path.as_os_str().is_empty() {
-        return Err(String::from("导出路径为空"));
-    }
-    fs::create_dir_all(directory_path).map_err(|error| error.to_string())?;
-    if !directory_path.is_dir() {
-        return Err(String::from("导出路径不是文件夹"));
-    }
+fn export_file_path(app: &AppHandle, directory: &str, filename: &str) -> Result<PathBuf, String> {
     let safe_name = Path::new(filename)
         .file_name()
         .and_then(|name| name.to_str())
         .filter(|name| !name.trim().is_empty())
         .ok_or_else(|| String::from("导出文件名无效"))?;
+    let directory_path = if directory.trim().is_empty() {
+        app.path()
+            .download_dir()
+            .or_else(|_| app.path().document_dir())
+            .map_err(|error| format!("无法获取系统下载目录：{error}"))?
+    } else {
+        PathBuf::from(directory.trim())
+    };
+    fs::create_dir_all(&directory_path).map_err(|error| error.to_string())?;
+    if !directory_path.is_dir() {
+        return Err(String::from("导出路径不是文件夹"));
+    }
     Ok(directory_path.join(safe_name))
+}
+
+fn unique_export_path(path: PathBuf) -> PathBuf {
+    if !path.exists() {
+        return path;
+    }
+    let parent = path.parent().unwrap_or_else(|| Path::new(""));
+    let stem = path.file_stem().and_then(|value| value.to_str()).unwrap_or("video");
+    let extension = path.extension().and_then(|value| value.to_str());
+    for index in 1..10_000 {
+        let name = match extension {
+            Some(extension) if !extension.is_empty() => format!("{stem} ({index}).{extension}"),
+            _ => format!("{stem} ({index})"),
+        };
+        let candidate = parent.join(name);
+        if !candidate.exists() {
+            return candidate;
+        }
+    }
+    parent.join(format!("{stem}-{}{}", current_time_ms() as u64, extension.map(|value| format!(".{value}")).unwrap_or_default()))
+}
+
+fn ffmpeg_error_summary(path: &Path) -> String {
+    let Ok(contents) = fs::read_to_string(path) else {
+        return String::new();
+    };
+    let lines = contents
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .collect::<Vec<_>>();
+    let start = lines.len().saturating_sub(8);
+    let summary = lines[start..].join(" | ");
+    if summary.is_empty() {
+        String::new()
+    } else {
+        format!("\u{ff1a}{summary}")
+    }
+}
+
+#[cfg(test)]
+mod export_path_tests {
+    use super::unique_export_path;
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn chooses_next_available_export_name() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let directory = std::env::temp_dir().join(format!("wwcombo-export-path-test-{nonce}"));
+        fs::create_dir_all(&directory).unwrap();
+        let base = directory.join("video.mp4");
+        let first = directory.join("video (1).mp4");
+        fs::write(&base, b"base").unwrap();
+        fs::write(&first, b"first").unwrap();
+        assert_eq!(unique_export_path(base), directory.join("video (2).mp4"));
+        fs::remove_dir_all(directory).unwrap();
+    }
 }
 
 fn find_ffmpeg(app: &AppHandle) -> Option<PathBuf> {
@@ -700,6 +919,23 @@ fn find_ffmpeg(app: &AppHandle) -> Option<PathBuf> {
 }
 
 fn emit_input(event_type: &str, code: String) {
+    let is_pressed = event_type == "keydown" || event_type == "mousedown";
+    let is_released = event_type == "keyup" || event_type == "mouseup";
+    if !is_pressed && !is_released {
+        return;
+    }
+
+    {
+        let mut pressed_codes = INPUT_PRESSED_CODES.lock();
+        if is_pressed {
+            if !pressed_codes.insert(code.clone()) {
+                return;
+            }
+        } else if !pressed_codes.remove(&code) {
+            return;
+        }
+    }
+
     *INPUT_EVENT_COUNT.lock() += 1;
     let event = DesktopInputEvent {
         source: "desktop",
@@ -796,7 +1032,9 @@ mod winhook {
     }
 
     pub fn start() -> Result<(), String> {
-        std::thread::Builder::new()
+        start_polling_fallback()?;
+
+        if let Err(error) = std::thread::Builder::new()
             .name(String::from("windows-global-input-hook"))
             .spawn(|| unsafe {
                 let keyboard_hook = SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard_proc), 0, 0);
@@ -805,26 +1043,15 @@ mod winhook {
                 let mouse_error = io::Error::last_os_error();
 
                 if keyboard_hook == 0 || mouse_hook == 0 {
-                    match start_polling_fallback() {
-                        Ok(()) => {
-                            *INPUT_HOOK_STATUS.lock() = format!(
-                                "windows hooks unavailable; using polling fallback: keyboard={:?}, mouse={:?}",
-                                keyboard_error, mouse_error
-                            );
-                            INPUT_HOOK_STARTED.store(true, Ordering::SeqCst);
-                        }
-                        Err(error) => {
-                            *INPUT_HOOK_STATUS.lock() = format!(
-                                "failed to install Windows hooks: keyboard={:?}, mouse={:?}; polling fallback failed: {}",
-                                keyboard_error, mouse_error, error
-                            );
-                            INPUT_HOOK_STARTED.store(false, Ordering::SeqCst);
-                        }
-                    }
+                    *INPUT_HOOK_STATUS.lock() = format!(
+                        "windows hooks unavailable; polling fallback active: keyboard={:?}, mouse={:?}",
+                        keyboard_error, mouse_error
+                    );
+                    INPUT_HOOK_STARTED.store(true, Ordering::SeqCst);
                     return;
                 }
 
-                *INPUT_HOOK_STATUS.lock() = String::from("windows hooks installed");
+                *INPUT_HOOK_STATUS.lock() = String::from("windows hooks installed; polling fallback active");
 
                 let mut msg = Msg::default();
                 while GetMessageW(&mut msg, 0, 0, 0) > 0 {
@@ -832,10 +1059,10 @@ mod winhook {
                     let _ = DispatchMessageW(&msg);
                 }
             })
-            .map_err(|error| {
-                INPUT_HOOK_STARTED.store(false, Ordering::SeqCst);
-                error.to_string()
-            })?;
+        {
+            *INPUT_HOOK_STATUS.lock() = format!("polling fallback active; hook thread unavailable: {error}");
+            INPUT_HOOK_STARTED.store(true, Ordering::SeqCst);
+        }
 
         Ok(())
     }
@@ -1103,7 +1330,11 @@ pub fn run() {
             notify_key_mapping_bounds_changed,
             start_global_input,
             global_input_status,
+            fetch_remote_character_avatars,
             save_export_file,
+            pick_video_file,
+            cancel_video_export,
+            export_video_with_overlay,
             save_export_mp4
         ])
         .run(tauri::generate_context!())

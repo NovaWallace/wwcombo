@@ -180,6 +180,7 @@ export class PracticeSession {
     const target = this.findInputTarget(activation.move.id, inputElapsed);
     if (!target) {
       const active = this.chart.steps[this.currentStepIndex];
+      if (active && this.isDisplayOnlyStep(active)) return this.snapshot();
       const feedback: PracticeFeedback = active
         ? { level: 'error', stepId: active.id, message: TEXT.wrongInputNeeds(active.label) }
         : { level: 'error', message: TEXT.wrongInputEnded };
@@ -231,7 +232,7 @@ export class PracticeSession {
     }
     const nextIndex = this.findActiveIndex(elapsed);
     const completed = this.chart.steps
-      .filter((step) => elapsed >= this.stepEnd(step))
+      .filter((step) => this.isTimedPracticeStep(step) && elapsed >= this.stepEnd(step))
       .map((step) => step.id);
 
     this.completedStepIds = Array.from(new Set([...completed, ...this.completedStepIds.filter((id) => this.matchedStepIds.has(id))]));
@@ -280,6 +281,8 @@ export class PracticeSession {
 
     const target = this.findLenientInputTarget(moveId, active);
     if (!target) {
+      // Independent inputs and independent-timed active steps do not fail the practice flow.
+      if (this.isIndependentMoveId(moveId) || (active && this.isInterruptibleTimedStep(active))) return this.snapshot();
       const feedback: PracticeFeedback = active
         ? { level: 'error', stepId: active.id, message: TEXT.wrongInputNeeds(active.label) }
         : { level: 'error', message: TEXT.wrongInputEnded };
@@ -309,7 +312,7 @@ export class PracticeSession {
       const step = this.chart.steps[index];
       if (this.matchedStepIds.has(step.id)) continue;
       if (this.isTimedPracticeStep(step)) {
-        if (this.isInterruptibleTimedStep(step) && elapsed < this.stepEnd(step)) return index;
+        if (elapsed < this.stepEnd(step)) return index;
         this.markStepMatched(step, false);
         continue;
       }
@@ -322,6 +325,15 @@ export class PracticeSession {
   private findLenientInputTarget(moveId: string, active: ComboStep | undefined): ComboStep | null {
     if (active && this.isBlockingPracticeStep(active) && !this.matchedStepIds.has(active.id) && active.moveId === moveId) return active;
     const activeIndex = active ? this.chart.steps.findIndex((step) => step.id === active.id) : this.currentStepIndex;
+    if (active && this.isInterruptibleTimedStep(active)) {
+      for (let index = activeIndex + 1; index < this.chart.steps.length; index += 1) {
+        const step = this.chart.steps[index];
+        if (this.matchedStepIds.has(step.id)) continue;
+        if (!this.isBlockingPracticeStep(step)) continue;
+        return step.moveId === moveId ? step : null;
+      }
+      return null;
+    }
     const searchStart = active && this.isInterruptibleTimedStep(active) ? activeIndex + 1 : Math.max(0, activeIndex - 2);
     const searchEnd = Math.min(this.chart.steps.length, Math.max(activeIndex + 4, this.currentStepIndex + 4));
     for (let index = searchStart; index < searchEnd; index += 1) {
@@ -334,17 +346,26 @@ export class PracticeSession {
   }
 
   private isTimedPracticeStep(step: ComboStep): boolean {
-    return step.free || !this.isBlockingPracticeStep(step);
+    return step.free || this.isInterruptibleTimedStep(step);
   }
 
   private isInterruptibleTimedStep(step: ComboStep): boolean {
     const move = this.moves.find((item) => item.id === step.moveId);
-    return Boolean(step.independent || step.lane === 'independent' || move?.independent);
+    return Boolean(step.independent || move?.independent || move?.displayOnly);
+  }
+
+  private isIndependentMoveId(moveId: string): boolean {
+    const move = this.moves.find((item) => item.id === moveId);
+    return Boolean(move?.independent);
   }
 
   private isBlockingPracticeStep(step: ComboStep): boolean {
     const move = this.moves.find((item) => item.id === step.moveId);
-    return !step.free && !step.independent && step.lane !== 'independent' && step.advancesStep !== false && move?.independent !== true && move?.advancesStep !== false;
+    return !step.free && !step.independent && move?.independent !== true && move?.displayOnly !== true;
+  }
+
+  private isDisplayOnlyStep(step: ComboStep): boolean {
+    return this.moves.find((item) => item.id === step.moveId)?.displayOnly === true;
   }
 
   private markStepMatched(step: ComboStep, pushFeedback = true): void {
@@ -375,7 +396,7 @@ export class PracticeSession {
     }
     const candidates = this.chart.steps
       .map((step, index) => ({ step, index }))
-      .filter(({ step }) => !step.free && !this.matchedStepIds.has(step.id) && step.moveId === moveId)
+      .filter(({ step }) => !step.free && !this.isDisplayOnlyStep(step) && !this.matchedStepIds.has(step.id) && step.moveId === moveId)
       .filter(({ step }) => elapsed >= this.inputStart(step) && elapsed <= this.inputEnd(step))
       .sort((left, right) => right.index - left.index);
     return candidates[0]?.step ?? null;
@@ -425,14 +446,14 @@ export class PracticeSession {
 
   private firstStepInRange(startMs: number, endMs: number): ComboStep | null {
     return [...this.chart.steps]
-      .filter((step) => step.startMin >= startMs && step.startMin <= endMs)
+      .filter((step) => !this.isDisplayOnlyStep(step) && step.startMin >= startMs && step.startMin <= endMs)
       .sort((left, right) => left.startMin - right.startMin || left.startMax - right.startMax || left.id.localeCompare(right.id))[0] ?? null;
   }
 
   private finalizeMissedSteps(elapsed: number): void {
     if (this.settings.mode === 'free') return;
     for (const step of this.chart.steps) {
-    if (step.free || this.matchedStepIds.has(step.id) || this.missedStepIds.has(step.id)) continue;
+    if (!this.isBlockingPracticeStep(step) || this.matchedStepIds.has(step.id) || this.missedStepIds.has(step.id)) continue;
       if (this.inputEnd(step) <= this.startedFromElapsed) continue;
       if (elapsed <= this.inputEnd(step)) continue;
       this.missedStepIds.add(step.id);

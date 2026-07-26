@@ -26,6 +26,7 @@ export type MoveDefinition = {
   label: string;
   color: string;
   icon?: string;
+  displayOnly?: boolean;
   independent: boolean;
   priority: number;
   advancesStep: boolean;
@@ -94,6 +95,18 @@ export type ComboPeriod = {
   endMs: number;
   loopIndex?: number;
 };
+export type ComboCommunityMetadata = {
+  id: string;
+  name: string;
+  tags: string[];
+  description: string;
+  characters: string[];
+  rounds: number;
+  link: string;
+  wheelchairEligible: boolean;
+  exportedAt: number;
+};
+
 
 export type ComboChart = {
   id: string;
@@ -101,6 +114,7 @@ export type ComboChart = {
   character?: string;
   author?: string;
   tags: string[];
+  community?: ComboCommunityMetadata;
   contentLabels?: Record<string, string>;
   timelineDurationMs?: number;
   version: number;
@@ -159,6 +173,14 @@ export type ComboBasePreset = {
   user?: boolean;
 };
 
+export type ComboAvatarPreset = {
+  id: string;
+  name: string;
+  src: string;
+  crop?: RectPercent;
+  user?: boolean;
+};
+
 export type ComboImageStyle = {
   roleStyles: Record<CharacterSlot, ComboImageRoleStyle>;
   blockMode: 'capsule' | 'image';
@@ -169,6 +191,7 @@ export type ComboImageStyle = {
   capsuleImageWidth?: number;
   capsuleImageHeight?: number;
   capsuleImageScale: number;
+  overallScale: number;
   capsuleCrop?: RectPercent;
   capsuleStretch?: StretchPercent;
   capsuleColor: string;
@@ -192,8 +215,10 @@ export type ComboImageStyle = {
   prePromptEnabled: boolean;
   convertIcons: boolean;
   mergeSameRoleSteps: boolean;
+  mergeSameRoleLimit: number;
   iconMappings: ComboIconMapping[];
   basePresets: ComboBasePreset[];
+  avatarPresets: ComboAvatarPreset[];
   contentLabels: Record<string, string>;
 };
 

@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
-import { createPortal } from 'react-dom';
-import { Activity, ArrowLeft, Bug, Download, Eye, EyeOff, FileVideo, FlaskConical, Gamepad2, Keyboard, Layers, Music2, Palette, Plus, Play, Save, Settings, Square, Target, Trash2, Upload } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState  } from 'react';
+import type { CSSProperties, DragEvent as ReactDragEvent, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactNode  } from 'react';
+import { createPortal  } from 'react-dom';
+import { Activity, ArrowLeft, Bug, ChevronLeft, ChevronRight, Eye, EyeOff, FileVideo, FlaskConical, Gamepad2, GripVertical, Keyboard, Layers, Music2, Move, Palette, Pencil, Plus, Play, Repeat2, Save, Scissors, Settings, Share2, Square, Stamp, Target, Trash2, Upload, X  } from 'lucide-react';
 import {
   CharacterSlot,
   ComboChart,
+  ComboCommunityMetadata,
   ComboBasePreset,
   ComboImageStyle,
   ComboPeriod,
@@ -25,9 +26,9 @@ import {
   STRICT_PRACTICE,
   normalizeDomKeyboardEvent,
   normalizeDomMouseEvent
-} from '../combo-core';
-import { normalizeInputCode } from '../combo-core/input';
-import { createDesktopBridge } from './desktopBridge';
+ } from '../combo-core';
+import { normalizeInputCode  } from '../combo-core/input';
+import { createDesktopBridge  } from './desktopBridge';
 import {
   chartToComboImageItems,
   comboImageBackgroundSource,
@@ -40,29 +41,46 @@ import {
   defaultComboContentLabelForMoveId,
   effectiveCapsuleImageFields,
   effectiveIconMappings,
+  effectiveComboImageStyle,
   maybeConvertTextToIconLabel,
   normalizeComboImageStyle,
   normalizeRectPercent,
   parseQuickInputText,
   visibleComboImageItems
-} from './combo-image/comboImage';
-import { AxisRhythmGame } from './AxisRhythmGame';
-import { CoopEventLab } from './CoopEventLab';
-import { KeyMappingLab } from './KeyMappingLab';
-import { VideoAxisWorkbench } from './VideoAxisWorkbench';
+ } from './combo-image/comboImage';
+import { AxisRhythmGame  } from './AxisRhythmGame';
+import { FullChartExportLab  } from './FullChartExportLab';
+import { HomeSpineStage  } from './HomeSpineStage';
+import { KeyMappingLab  } from './KeyMappingLab';
+import { VideoAxisWorkbench  } from './VideoAxisWorkbench';
+import { localizeDefaultCharacterName, localizeEnglish, useI18n  } from './i18n';
+import type { AppLanguage } from './i18n';
+import { ENGLISH_MOVE_LABELS, localizedDefaultMoveLabel, localizedMovePrompt  } from './moveLabels';
 import './styles.css';
 
-type Page = 'record' | 'practice' | 'appearance' | 'experiment' | 'settings';
-type ExperimentPage = 'home' | 'rhythm' | 'axis' | 'coop' | 'keymap';
+type Page = 'home' | 'record' | 'practice' | 'appearance' | 'experiment' | 'settings';
+type ExperimentPage = 'home' | 'axis' | 'keymap' | 'export-axis';
+type HomeDestination = 'record' | 'practice' | 'appearance' | 'keymap' | 'export-axis' | 'settings';
+type HomeSpineDestination = Extract<HomeDestination, 'record' | 'practice' | 'appearance' | 'keymap' | 'export-axis' | 'settings'>;
 type EditorTab = 'timeline' | 'content';
 type PracticePreset = 'strict' | 'lenient' | 'simple';
 type InputMode = 'keyboard' | 'gamepad';
-type ComboLayout = 'horizontal' | 'vertical';
+type ComboLayout = 'horizontal' | 'vertical' | 'waterfall';
 type LaneKind = 'main' | 'independent';
-type DefaultAvatarEntry = { name: string; src: string };
+type DefaultAvatarEntry = { name: string; src: string; remote?: boolean  };
 type DefaultBasePresetEntry = ComboBasePreset;
-type PendingPlacement = { kind: 'step' } | { kind: 'period' };
-type SelectionBox = { x: number; y: number; width: number; height: number };
+type CopiedTimelineSelection = { steps: ComboStep[]; periods: ComboPeriod[]; contentLabels: Record<string, string>; anchorMs: number  };
+type PendingPlacement = { kind: 'step'  } | { kind: 'period'  } | { kind: 'zoom'  } | { kind: 'move'; moveId: string  } | { kind: 'cut'  } | ({ kind: 'copy'  } & CopiedTimelineSelection);
+type SelectionBox = { x: number; y: number; width: number; height: number  };
+type CharacterSlotMap = Record<CharacterSlot, CharacterSlot>;
+type LocalizedMessage = { chinese: string; english: string };
+
+function localizedMessage(chinese: string, english: string): LocalizedMessage {
+  return { chinese, english };
+}
+
+type CommunityTag = '\u8f6e\u6905' | '\u57fa\u7840' | '\u6807\u51c6' | '\u8fdb\u9636' | '\u5192\u70df' | '\u5168\u5c40';
+type CommunityShareDraft = Omit<ComboCommunityMetadata, 'exportedAt'>;
 
 type OverlaySettings = {
   layout: ComboLayout;
@@ -70,23 +88,35 @@ type OverlaySettings = {
   y: number;
   width: number;
   height: number;
-};
+ };
 type OverlayBounds = Omit<OverlaySettings, 'layout'>;
 type OverlayLayoutBounds = Record<ComboLayout, OverlayBounds>;
-type RhythmUiSettings = { width: number; height: number; laneGap: number; fallSpeed: number; judgeLineOffset: number; ringStartScale: number; ringEndScale: number; ringOffsetX: number; ringOffsetY: number; ringDurationMs: number; feedbackX: number; feedbackY: number };
+type RhythmUiSettings = { width: number; height: number; scale: number; laneGap: number; roleSpacing: number; fallSpeed: number; judgeLineOffset: number; ringStartScale: number; ringEndScale: number; ringOffsetX: number; ringOffsetY: number; ringDurationMs: number; feedbackX: number; feedbackY: number  };
+type TimelineHistorySnapshot = { chart: ComboChart | null; contentLabels: Record<string, string>  };
+type TimelineHistoryControl = { canUndo: boolean; canRedo: boolean; onCaptureHistory: () => void; onUndo: () => void; onRedo: () => void  };
 
 const STORAGE_KEY = 'ww-combo-trainer-state-v2';
 const MIN_EDITOR_DURATION = 35;
+const COMMUNITY_TAGS: CommunityTag[] = ['\u8f6e\u6905', '\u57fa\u7840', '\u6807\u51c6', '\u8fdb\u9636', '\u5192\u70df', '\u5168\u5c40'];
+const SWITCH_MOVE_PATTERN = /^switch_[123]$/;
+const MAX_TIMELINE_HISTORY = 80;
 const CHARACTER_SLOTS: CharacterSlot[] = [1, 2, 3];
-const HORIZONTAL_OVERLAY_SIZE = { width: 2000, height: 120 };
-const VERTICAL_OVERLAY_SIZE = { width: 400, height: 1000 };
+const HORIZONTAL_OVERLAY_SIZE = { width: 2000, height: 120  };
+const VERTICAL_OVERLAY_SIZE = { width: 400, height: 1000  };
+const WATERFALL_OVERLAY_SIZE = { width: 1739, height: 221  };
 const DEFAULT_OVERLAY_LAYOUT_BOUNDS: OverlayLayoutBounds = {
-  horizontal: { x: 160, y: 36, ...HORIZONTAL_OVERLAY_SIZE },
-  vertical: { x: 160, y: 36, ...VERTICAL_OVERLAY_SIZE }
-};
-const DEFAULT_OVERLAY_SETTINGS: OverlaySettings = { layout: 'horizontal', ...DEFAULT_OVERLAY_LAYOUT_BOUNDS.horizontal };
-const DEFAULT_RHYTHM_UI: RhythmUiSettings = { width: 430, height: 700, laneGap: 7, fallSpeed: 0.18, judgeLineOffset: 200, ringStartScale: 1.78, ringEndScale: 1.25, ringOffsetX: 0, ringOffsetY: -9, ringDurationMs: 420, feedbackX: 50, feedbackY: 64 };
+  horizontal: { x: 160, y: 36, ...HORIZONTAL_OVERLAY_SIZE  },
+  vertical: { x: 160, y: 36, ...VERTICAL_OVERLAY_SIZE  },
+  waterfall: { x: 280, y: 63, ...WATERFALL_OVERLAY_SIZE  }
+ };
+const DEFAULT_OVERLAY_SETTINGS: OverlaySettings = { layout: 'horizontal', ...DEFAULT_OVERLAY_LAYOUT_BOUNDS.horizontal  };
+const DEFAULT_RHYTHM_UI: RhythmUiSettings = { width: 1739, height: 240, scale: 1, laneGap: 7, roleSpacing: 120, fallSpeed: 0.18, judgeLineOffset: 200, ringStartScale: 1.78, ringEndScale: 1.25, ringOffsetX: 0, ringOffsetY: -9, ringDurationMs: 420, feedbackX: 50, feedbackY: 64  };
+const WATERFALL_STYLE_DEFAULTS: Partial<ComboImageStyle> = { blockMode: 'capsule', capsuleShape: 'rect', capsuleWidthMode: 'fixed', capsuleWidth: 78, capsuleHeight: 34, capsuleGap: 6, fontSize: 20, avatarSize: 58, avatarOffsetX: 0, avatarOffsetY: 0, scrollAnchor: 'center', convertIcons: true, prePromptEnabled: false, mergeSameRoleSteps: false  };
 const LOCAL_STORAGE_SOFT_LIMIT = 4_200_000;
+const REMOTE_CHARACTER_AVATAR_API = 'https://wuwa-hpyg-tool.200503.xyz/api/v1/icons/character';
+const REMOTE_AVATAR_DB_NAME = 'ww-combo-remote-avatar-cache-v1';
+const REMOTE_AVATAR_STORE = 'avatars';
+const REMOTE_AVATAR_MANIFEST_KEY = 'ww-combo-remote-avatar-manifest-v1';
 const DRAFT_MOVE_ID = '__draft__';
 const DEFAULT_FREE_FIRE_DURATION = 15_000;
 const DEFAULT_AXIS_DURATION = 25_000;
@@ -95,84 +125,288 @@ const HEAVY_ATTACK_HOLD_MS = 300;
 const GAMEPAD_BUTTON_CODES = ['GamepadA', 'GamepadB', 'GamepadX', 'GamepadY', 'GamepadLB', 'GamepadRB', 'GamepadLT', 'GamepadRT', 'GamepadView', 'GamepadMenu', 'GamepadLeftStick', 'GamepadRightStick', 'GamepadDPadUp', 'GamepadDPadDown', 'GamepadDPadLeft', 'GamepadDPadRight'];
 const GAMEPAD_COMBO_MODIFIER = 'GamepadLB';
 const DEFAULT_EXPORT_DIRECTORY = '';
-type ComboTrackMetric = { extent: number; start: number; center: number };
+type ComboTrackMetric = { extent: number; start: number; center: number  };
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
-}
+ }
 
 function clampNumber(value: unknown, min: number, max: number, fallback: number): number {
   return Number.isFinite(value) ? Math.min(max, Math.max(min, Number(value))) : fallback;
-}
+ }
 
 function nowEventTime() {
   return performance.now();
-}
+ }
 
 function createEmptySnapshot(): RecordingSnapshot {
-  return { isRecording: false, startedAt: null, elapsed: 0, activeMain: null, activeIndependent: [], units: [] };
-}
+  return { isRecording: false, startedAt: null, elapsed: 0, activeMain: null, activeIndependent: [], units: []  };
+ }
 
 function createEmptyPractice(): PracticeSnapshot {
-  return { status: 'idle', startedAt: null, currentStepIndex: 0, feedback: [], completedStepIds: [], errorStepIds: [] };
-}
+  return { status: 'idle', startedAt: null, currentStepIndex: 0, feedback: [], completedStepIds: [], errorStepIds: []  };
+ }
+
+function previewPracticeAtTime(chart: ComboChart | null, timeMs: number): PracticeSnapshot {
+  if (!chart?.steps.length) return createEmptyPractice();
+  const elapsedMs = Math.max(0, Math.round(timeMs));
+  const currentStepIndex = chart.steps.reduce((best, step, index) => elapsedMs >= step.startMin && step.startMin >= chart.steps[best].startMin ? index : best, 0);
+  const completedStepIds = chart.steps.filter((step) => step.startMin + step.durationMax < elapsedMs).map((step) => step.id);
+  return { status: 'idle', startedAt: null, elapsedMs, currentStepIndex, feedback: [], matchedStepIds: completedStepIds, completedStepIds, errorStepIds: []  };
+ }
 
 function normalizeMoves(moves: MoveDefinition[]): MoveDefinition[] {
   const map = new Map(moves.map((move) => [move.id, move]));
   for (const move of DEFAULT_MOVES) if (!map.has(move.id)) map.set(move.id, move);
-  return [...map.values()];
-}
+  return [...map.values()].map((move) => move.id === 'basic_attack'
+    ? { ...move, independent: false  }
+    : move.id === 'empty_action'
+      ? { ...move, displayOnly: true, independent: false, advancesStep: false  }
+      : move);
+ }
 
 function normalizeBindings(bindings: KeyBinding[], defaults: KeyBinding[] = DEFAULT_BINDINGS): KeyBinding[] {
   const map = new Map(bindings.map((binding) => [binding.moveId, binding]));
   for (const binding of defaults) if (!map.has(binding.moveId)) map.set(binding.moveId, binding);
   return [...map.values()].map((binding) => ({
     moveId: binding.moveId,
-    inputs: binding.inputs.map((input) => ({ ...input, code: normalizeInputCode(input.code) }))
-  }));
-}
+    inputs: binding.inputs.map((input) => ({ ...input, code: normalizeInputCode(input.code)  }))
+   }));
+ }
+
+function mergeRuntimeBindings(...bindingSets: KeyBinding[][]): KeyBinding[] {
+  const merged = new Map<string, KeyBinding['inputs']>();
+  for (const bindings of bindingSets) {
+    for (const binding of bindings) {
+      const inputs = merged.get(binding.moveId) ?? [];
+      const knownCodes = new Set(inputs.map((input) => normalizeInputCode(input.code)));
+      for (const input of binding.inputs) {
+        const code = normalizeInputCode(input.code);
+        if (!code || knownCodes.has(code)) continue;
+        inputs.push({ ...input, code });
+        knownCodes.add(code);
+      }
+      merged.set(binding.moveId, inputs);
+    }
+  }
+  return [...merged.entries()].map(([moveId, inputs]) => ({ moveId, inputs }));
+ }
 
 function normalizeAvatarPresets(value: unknown): DefaultAvatarEntry[] {
-  const objectValue = value as { avatars?: unknown[]; items?: unknown[]; data?: unknown[] } | null;
+  const objectValue = value as { avatars?: unknown[]; items?: unknown[]; data?: unknown[]  } | null;
   const source = Array.isArray(value) ? value : Array.isArray(objectValue?.avatars) ? objectValue.avatars : Array.isArray(objectValue?.items) ? objectValue.items : Array.isArray(objectValue?.data) ? objectValue.data : [];
   return source.flatMap((item) => {
     const entry = item as Partial<DefaultAvatarEntry> | null;
     if (!entry || typeof entry.name !== 'string' || typeof entry.src !== 'string') return [];
-    return [{ name: entry.name.replace(/\.(webp|png|jpe?g)$/i, ''), src: assetUrl(entry.src) }];
-  });
-}
+    return [{ name: normalizeCharacterName(entry.name), src: assetUrl(entry.src), remote: entry.remote === true  }];
+   });
+ }
 
 function normalizeBasePresets(value: unknown): DefaultBasePresetEntry[] {
-  const objectValue = value as { items?: unknown[]; data?: unknown[] } | null;
+  const objectValue = value as { items?: unknown[]; data?: unknown[]  } | null;
   const source = Array.isArray(value) ? value : Array.isArray(objectValue?.items) ? objectValue.items : Array.isArray(objectValue?.data) ? objectValue.data : [];
   return source.flatMap((item) => {
     const entry = item as Partial<DefaultBasePresetEntry> | null;
     if (!entry || typeof entry.name !== 'string' || typeof entry.src !== 'string') return [];
     return [{
-      id: typeof entry.id === 'string' && entry.id.trim() ? entry.id.trim() : `base_${entry.name}`,
-      name: entry.name.replace(/\.(webp|png|jpe?g)$/i, ''),
+      id: typeof entry.id === 'string' && entry.id.trim() ? entry.id.trim() : `base_${entry.name }`,
+      name: normalizeCharacterName(entry.name),
       src: assetUrl(entry.src),
       imageWidth: typeof entry.imageWidth === 'number' ? entry.imageWidth : undefined,
       imageHeight: typeof entry.imageHeight === 'number' ? entry.imageHeight : undefined,
       crop: entry.crop,
       stretch: entry.stretch,
       user: entry.user !== false
-    }];
-  });
+     }];
+   });
+ }
+const BASE_PRESET_COLLATOR = new Intl.Collator('zh-CN-u-co-pinyin', { sensitivity: 'base', numeric: true  });
+const CHARACTER_NAME_ALIASES: Record<string, string> = {
+  '风主': '漂泊者·气动',
+  '雷主': '漂泊者·导电',
+  '暗主': '漂泊者·湮灭',
+  '光主': '漂泊者·衍射',
+  '卡提': '卡提希娅',
+  '嘉贝丽娜': '嘉贝莉娜',
+  '洛瑟拉': '洛瑟菈',
+  '陆赫斯': '陆·赫斯',
+  '玄翎': '秧秧·玄翎',
+  '茜格莉卡': '西格莉卡'
+};
+
+function normalizeCharacterName(name: string): string {
+  const normalized = name.replace(/\.(webp|png|jpe?g)$/i, '').trim();
+  return CHARACTER_NAME_ALIASES[normalized] ?? normalized;
 }
+
+function avatarPresetSortName(name: string): string {
+  const normalized = normalizeCharacterName(name);
+  if (normalized === '长离') return '昌离';
+  if (normalized === '仇远') return '秋远';
+  if (normalized === '西格莉卡' || normalized === '茜格莉卡') return '希格莉卡';
+  return normalized;
+}
+
+function sortAvatarPresets<T extends { name: string  }>(presets: T[]): T[] {
+  return presets
+    .map((preset, index) => ({ preset, index  }))
+    .sort((left, right) => BASE_PRESET_COLLATOR.compare(avatarPresetSortName(left.preset.name), avatarPresetSortName(right.preset.name)) || left.index - right.index)
+    .map(({ preset  }) => preset);
+}
+
+function basePresetSortName(name: string): string {
+  const normalized = name.trim();
+  if (normalized === '长离') return '昌离';
+  if (normalized === '仇远') return '秋远';
+  return normalized;
+ }
+
+function sortBasePresets(presets: DefaultBasePresetEntry[]): DefaultBasePresetEntry[] {
+  return presets
+    .map((preset, index) => ({ preset, index  }))
+    .sort((left, right) => {
+      const leftIsCommon = left.preset.name.trim() === '通用';
+      const rightIsCommon = right.preset.name.trim() === '通用';
+      if (leftIsCommon !== rightIsCommon) return leftIsCommon ? -1 : 1;
+      const nameOrder = BASE_PRESET_COLLATOR.compare(basePresetSortName(left.preset.name), basePresetSortName(right.preset.name));
+      if (nameOrder) return nameOrder;
+      const idOrder = BASE_PRESET_COLLATOR.compare(left.preset.id, right.preset.id);
+      return idOrder || left.index - right.index;
+     })
+    .map(({ preset  }) => preset);
+ }
+
+function remoteAvatarCacheKey(name: string, url: string): string {
+  return `${name.trim()}::${url.trim()}`;
+ }
+
+function travelerFormKey(name: string): string | null {
+  const normalized = name.trim();
+  if (!normalized.includes('漂泊者')) return null;
+  const form = normalized.split('·')[1]?.trim() || '默认';
+  return form;
+ }
+
+function normalizeRemoteAvatarList(value: unknown): DefaultAvatarEntry[] {
+  if (!Array.isArray(value)) return [];
+  const travelerGroups = new Map<string, DefaultAvatarEntry[]>();
+  const regularItems: DefaultAvatarEntry[] = [];
+  const seen = new Set<string>();
+  value.forEach((item) => {
+    if (!Array.isArray(item) || typeof item[0] !== 'string' || typeof item[1] !== 'string') return [];
+    const name = normalizeCharacterName(item[0]);
+    const src = item[1].trim();
+    if (!name || !/^https?:\/\//i.test(src)) return [];
+    const key = remoteAvatarCacheKey(name, src);
+    if (seen.has(key)) return [];
+    seen.add(key);
+    const entry = { name, src, remote: true  };
+    const formKey = travelerFormKey(name);
+    if (formKey) travelerGroups.set(formKey, [...(travelerGroups.get(formKey) ?? []), entry]);
+    else regularItems.push(entry);
+   });
+  const travelerItems = Array.from(travelerGroups.values()).map((items) => items[0]).filter(Boolean);
+  return sortAvatarPresets([...regularItems, ...travelerItems]);
+ }
+
+function openRemoteAvatarDb(): Promise<IDBDatabase | null> {
+  if (typeof indexedDB === 'undefined') return Promise.resolve(null);
+  return new Promise((resolve) => {
+    const request = indexedDB.open(REMOTE_AVATAR_DB_NAME, 1);
+    request.onupgradeneeded = () => request.result.createObjectStore(REMOTE_AVATAR_STORE);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => resolve(null);
+   });
+ }
+
+function readRemoteAvatarCache(db: IDBDatabase, key: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    const request = db.transaction(REMOTE_AVATAR_STORE, 'readonly').objectStore(REMOTE_AVATAR_STORE).get(key);
+    request.onsuccess = () => resolve(typeof request.result === 'string' ? request.result : null);
+    request.onerror = () => resolve(null);
+   });
+ }
+
+function writeRemoteAvatarCache(db: IDBDatabase, key: string, value: string): Promise<void> {
+  return new Promise((resolve) => {
+    const request = db.transaction(REMOTE_AVATAR_STORE, 'readwrite').objectStore(REMOTE_AVATAR_STORE).put(value, key);
+    request.onsuccess = () => resolve();
+    request.onerror = () => resolve();
+   });
+ }
+
+async function imageUrlToDataUrl(url: string): Promise<string | null> {
+  try {
+    const response = await fetch(url, { cache: 'force-cache'  });
+    if (!response.ok) return null;
+    const blob = await response.blob();
+    return await new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : null);
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(blob);
+     });
+   } catch {
+    return null;
+   }
+ }
+
+async function fetchRemoteAvatarPresets(): Promise<DefaultAvatarEntry[]> {
+  const db = await openRemoteAvatarDb();
+  let payload: unknown;
+  if (window.trainerDesktop?.fetchRemoteCharacterAvatars) payload = await window.trainerDesktop.fetchRemoteCharacterAvatars();
+  else {
+    const response = await fetch(REMOTE_CHARACTER_AVATAR_API, { cache: 'no-cache'  });
+    if (!response.ok) return [];
+    payload = await response.json();
+  }
+  const remoteItems = normalizeRemoteAvatarList(payload);
+  try {
+    localStorage.setItem(REMOTE_AVATAR_MANIFEST_KEY, JSON.stringify(remoteItems.map((item) => ({ name: item.name, src: item.src  }))));
+   } catch {
+    // Cache is opportunistic; presets still work without a stored manifest.
+   }
+  return Promise.all(remoteItems.map(async (preset) => {
+    if (!db) return preset;
+    const key = remoteAvatarCacheKey(preset.name, preset.src);
+    const cached = await readRemoteAvatarCache(db, key);
+    if (cached) return { ...preset, src: cached  };
+    const dataUrl = await imageUrlToDataUrl(preset.src);
+    if (!dataUrl) return preset;
+    await writeRemoteAvatarCache(db, key, dataUrl);
+    return { ...preset, src: dataUrl  };
+   }));
+ }
+
+async function loadCachedRemoteAvatarPresets(): Promise<DefaultAvatarEntry[]> {
+  let manifest: DefaultAvatarEntry[] = [];
+  try {
+    manifest = normalizeAvatarPresets(JSON.parse(localStorage.getItem(REMOTE_AVATAR_MANIFEST_KEY) ?? '[]')).map((item) => ({ ...item, remote: true  }));
+   } catch {
+    manifest = [];
+   }
+  if (!manifest.length) return [];
+  const db = await openRemoteAvatarDb();
+  if (!db) return manifest;
+  const cachedItems = await Promise.all(manifest.map(async (preset) => {
+    const cached = await readRemoteAvatarCache(db, remoteAvatarCacheKey(preset.name, preset.src));
+    return cached ? { ...preset, src: cached  } : preset;
+   }));
+  return sortAvatarPresets(cachedItems);
+ }
 
 function assetUrl(path: string): string {
   if (/^(data:|blob:|https?:)/i.test(path)) return path;
   const clean = path.replace(/^\/+/, '');
   return new URL(clean, window.location.href).toString();
-}
+ }
 
 function defaultPeriodLabel(kind: ComboPeriodKind, loopIndex = 1): string {
   if (kind === 'draft_period') return '待设置时段';
   if (kind === 'startup_axis') return '启动轴';
-  if (kind === 'loop_axis') return `循环轴${loopIndex}`;
+  if (kind === 'loop_axis') return `循环轴${loopIndex }`;
   return '自由开火';
-}
+ }
 
 function normalizePeriod(period: ComboPeriod): ComboPeriod {
   const startMs = clampNumber(period.startMs, 0, 10 * 60 * 1000, 0);
@@ -181,13 +415,13 @@ function normalizePeriod(period: ComboPeriod): ComboPeriod {
   const kind: ComboPeriodKind = validKinds.includes(period.kind) ? period.kind : 'free_fire';
   const loopIndex = kind === 'loop_axis' ? Math.max(1, Math.round(period.loopIndex ?? 1)) : undefined;
   const label = period.label?.trim() || defaultPeriodLabel(kind, loopIndex);
-  return { id: period.id || crypto.randomUUID(), kind, label, characterSlot: period.characterSlot, lane: period.lane, startMs, endMs, loopIndex };
-}
+  return { id: period.id || crypto.randomUUID(), kind, label, characterSlot: period.characterSlot, lane: period.lane, startMs, endMs, loopIndex  };
+ }
 
 function normalizePeriods(periods: ComboPeriod[] | undefined): ComboPeriod[] {
   if (!Array.isArray(periods)) return [];
   return periods.map((period) => normalizePeriod(period)).filter((period) => period.endMs > period.startMs);
-}
+ }
 
 function constrainAxisPeriods(periods: ComboPeriod[]): ComboPeriod[] {
   const normalized = normalizePeriods(periods);
@@ -198,17 +432,17 @@ function constrainAxisPeriods(periods: ComboPeriod[]): ComboPeriod[] {
   let cursor = 0;
   if (startup) {
     const length = Math.max(MIN_EDITOR_DURATION, startup.endMs - startup.startMs);
-    axis.push(normalizePeriod({ ...startup, startMs: 0, endMs: length, label: defaultPeriodLabel('startup_axis') }));
+    axis.push(normalizePeriod({ ...startup, startMs: 0, endMs: length, label: defaultPeriodLabel('startup_axis')  }));
     cursor = length;
-  }
+   }
   loops.forEach((period, index) => {
     const length = Math.max(MIN_EDITOR_DURATION, period.endMs - period.startMs);
     const loopIndex = index + 1;
-    axis.push(normalizePeriod({ ...period, startMs: cursor, endMs: cursor + length, loopIndex, label: defaultPeriodLabel('loop_axis', loopIndex) }));
+    axis.push(normalizePeriod({ ...period, startMs: cursor, endMs: cursor + length, loopIndex, label: defaultPeriodLabel('loop_axis', loopIndex)  }));
     cursor += length;
-  });
+   });
   return [...floating, ...axis].sort((a, b) => a.startMs - b.startMs || a.id.localeCompare(b.id));
-}
+ }
 
 function applyFreeFirePeriods(chart: ComboChart): ComboChart {
   const periods = constrainAxisPeriods(chart.periods ?? []);
@@ -216,9 +450,9 @@ function applyFreeFirePeriods(chart: ComboChart): ComboChart {
   return {
     ...chart,
     periods,
-    steps: chart.steps.map((step) => ({ ...step, free: Boolean(step.manualFree) || isStepInFreeFire(step, freeRanges) }))
-  };
-}
+    steps: chart.steps.map((step) => ({ ...step, free: Boolean(step.manualFree) || isStepInFreeFire(step, freeRanges)  }))
+   };
+ }
 
 function isStepInFreeFire(step: ComboStep, freeRanges: ComboPeriod[]): boolean {
   const start = step.startMin;
@@ -228,8 +462,8 @@ function isStepInFreeFire(step: ComboStep, freeRanges: ComboPeriod[]): boolean {
     const sameSlot = period.characterSlot === undefined || period.characterSlot === (step.characterSlot ?? 1);
     const sameLane = period.lane === undefined || period.lane === step.lane;
     return sameTime && sameSlot && sameLane;
-  });
-}
+   });
+ }
 
 function normalizeStep(step: ComboStep): ComboStep {
   const startMin = Math.max(0, Math.round(step.startMin));
@@ -239,8 +473,9 @@ function normalizeStep(step: ComboStep): ComboStep {
   const preheatMs = clamp(Math.round(step.preheatMs ?? 0), 0, durationMax - MIN_EDITOR_DURATION);
   const recoveryMs = clamp(Math.round(step.recoveryMs ?? 0), 0, durationMax - preheatMs - MIN_EDITOR_DURATION);
   const manualFree = Boolean(step.manualFree ?? step.free);
-  return { ...step, startMin, startMax, durationMin, durationMax, preheatMs, recoveryMs, manualFree, free: manualFree };
-}
+  if (step.moveId === 'basic_attack') return { ...step, independent: false, startMin, startMax, durationMin, durationMax, preheatMs, recoveryMs, manualFree, free: manualFree  };
+  return { ...step, startMin, startMax, durationMin, durationMax, preheatMs, recoveryMs, manualFree, free: manualFree  };
+ }
 
 function createStepFromMove(move: MoveDefinition, startAt: number): ComboStep {
   return {
@@ -248,7 +483,7 @@ function createStepFromMove(move: MoveDefinition, startAt: number): ComboStep {
     moveId: move.id,
     label: move.label,
     characterSlot: 1,
-    lane: move.independent ? 'independent' : 'main',
+    lane: move.id === 'basic_attack' || move.independent ? 'independent' : 'main',
     independent: move.independent,
     startMin: Math.max(0, Math.round(startAt)),
     startMax: Math.max(0, Math.round(startAt + 120)),
@@ -258,31 +493,168 @@ function createStepFromMove(move: MoveDefinition, startAt: number): ComboStep {
     advancesStep: move.advancesStep,
     free: false,
     samples: []
-  };
-}
+   };
+ }
 
 function isReasonableChart(chart: ComboChart | null | undefined): chart is ComboChart {
   if (!chart || !Array.isArray(chart.steps)) return false;
   return chart.steps.every((step) => [step.startMin, step.startMax, step.durationMin, step.durationMax].every((value) => Number.isFinite(value) && value >= 0 && value < 10 * 60 * 1000));
-}
+ }
 
 function normalizeChart(chart: ComboChart): ComboChart {
-  return applyFreeFirePeriods({ ...chart, periods: constrainAxisPeriods(chart.periods ?? []), steps: chart.steps.map(normalizeStep) });
-}
+  const normalized = applyFreeFirePeriods({ ...chart, periods: constrainAxisPeriods(chart.periods ?? []), steps: chart.steps.map(normalizeStep)  });
+  return { ...normalized, community: normalizeCommunityMetadata(chart.community, normalized)  };
+ }
+function normalizeCommunityTags(value: unknown, wheelchairEligible: boolean): CommunityTag[] {
+  if (!Array.isArray(value)) return [];
+  return COMMUNITY_TAGS.filter((tag) => value.includes(tag) && (tag !== '\u8f6e\u6905' || wheelchairEligible));
+ }
 
+function communityCharacters(chart: ComboChart, style: ComboImageStyle): string[] {
+  const usedSlots = Array.from(new Set(chart.steps.map((step) => (step.characterSlot ?? 1) as CharacterSlot))).sort((left, right) => left - right);
+  return usedSlots.map((slot) => style.roleStyles[slot].name.trim() || `\u89d2\u8272${slot}`);
+ }
+
+function communityRoundCount(chart: ComboChart): number {
+  const periods = constrainAxisPeriods(chart.periods ?? []);
+  const loopCount = periods.filter((period) => period.kind === 'loop_axis').length;
+  return 1 + loopCount;
+ }
+
+function isWheelchairEligible(chart: ComboChart): boolean {
+  const loopPeriods = constrainAxisPeriods(chart.periods ?? []).filter((period) => period.kind === 'loop_axis');
+  if (!loopPeriods.length) return false;
+  return loopPeriods.every((period) => chart.steps.filter((step) => step.startMin >= period.startMs && step.startMin < period.endMs && SWITCH_MOVE_PATTERN.test(step.moveId)).length <= 3);
+ }
+
+function uniqueCommunityId(existingIds: Iterable<string>): string {
+  const existing = new Set(existingIds);
+  let id = '';
+  do id = `wwc_${crypto.randomUUID()}`;
+  while (existing.has(id));
+  return id;
+ }
+
+function communityShareDraft(chart: ComboChart, style: ComboImageStyle, existingIds: Iterable<string>): CommunityShareDraft {
+  const wheelchairEligible = isWheelchairEligible(chart);
+  const previous = chart.community;
+  const reservedIds = new Set(existingIds);
+  const previousId = previous?.id?.trim() ?? '';
+  const id = previousId && !reservedIds.has(previousId) ? previousId : uniqueCommunityId(reservedIds);
+  return {
+    id,
+    name: previous?.name?.trim() || chart.title.trim() || '\u672a\u547d\u540d\u8fde\u6bb5',
+    tags: normalizeCommunityTags(previous?.tags ?? chart.tags, wheelchairEligible),
+    description: previous?.description ?? '',
+    link: previous?.link ?? '',
+    characters: communityCharacters(chart, style),
+    rounds: communityRoundCount(chart),
+    wheelchairEligible
+   };
+ }
+
+function normalizeCommunityMetadata(value: unknown, chart: ComboChart): ComboCommunityMetadata | undefined {
+  const record = value as Partial<ComboCommunityMetadata> | null;
+  if (!record || typeof record !== 'object') return undefined;
+  const wheelchairEligible = isWheelchairEligible(chart);
+  const characters = Array.isArray(record.characters) ? record.characters.filter((item): item is string => typeof item === 'string' && Boolean(item.trim())).map((item) => item.trim()) : [];
+  return {
+    id: typeof record.id === 'string' && record.id.trim() ? record.id.trim() : uniqueCommunityId([]),
+    name: typeof record.name === 'string' && record.name.trim() ? record.name.trim() : chart.title,
+    tags: normalizeCommunityTags(record.tags, wheelchairEligible),
+    description: typeof record.description === 'string' ? record.description : '',
+    link: typeof record.link === 'string' ? record.link : '',
+    characters,
+    rounds: Number.isFinite(record.rounds) ? Math.max(1, Math.round(record.rounds!)) : communityRoundCount(chart),
+    wheelchairEligible,
+    exportedAt: Number.isFinite(record.exportedAt) ? Number(record.exportedAt) : Date.now()
+   };
+ }
+
+function normalizeCharacterOrder(value: unknown): CharacterSlot[] {
+  if (!Array.isArray(value)) return [...CHARACTER_SLOTS];
+  const order = value.map(Number) as CharacterSlot[];
+  if (order.length !== CHARACTER_SLOTS.length || new Set(order).size !== CHARACTER_SLOTS.length || order.some((slot) => !CHARACTER_SLOTS.includes(slot))) return [...CHARACTER_SLOTS];
+  return order;
+ }
+
+function characterPositionMap(previousOrder: CharacterSlot[], nextOrder: CharacterSlot[]): CharacterSlotMap | null {
+  const previous = normalizeCharacterOrder(previousOrder);
+  const next = normalizeCharacterOrder(nextOrder);
+  const result: CharacterSlotMap = { 1: 1, 2: 2, 3: 3  };
+  for (const roleSlot of CHARACTER_SLOTS) {
+    const previousPosition = (previous.indexOf(roleSlot) + 1) as CharacterSlot;
+    const nextPosition = (next.indexOf(roleSlot) + 1) as CharacterSlot;
+    if (!CHARACTER_SLOTS.includes(previousPosition) || !CHARACTER_SLOTS.includes(nextPosition)) return null;
+    result[previousPosition] = nextPosition;
+   }
+  return result;
+ }
+
+function switchSlotFromMoveId(moveId: string): CharacterSlot | null {
+  if (moveId === 'switch_1') return 1;
+  if (moveId === 'switch_2') return 2;
+  if (moveId === 'switch_3') return 3;
+  return null;
+ }
+
+function switchIconText(slot: CharacterSlot): string {
+  if (slot === 1) return 'i';
+  if (slot === 2) return 'ii';
+  return 'iii';
+ }
+
+function remapSwitchText(value: string, previousSlot: CharacterSlot, nextSlot: CharacterSlot): string {
+  const trimmed = value.trim();
+  if (trimmed === `切人${previousSlot }`) return `切人${nextSlot }`;
+  if (trimmed === String(previousSlot)) return String(nextSlot);
+  if (trimmed.toLowerCase() === switchIconText(previousSlot)) return switchIconText(nextSlot);
+  return value;
+ }
+
+function remapChartSwitchTargets(chart: ComboChart, slotMap: CharacterSlotMap, updatedAt: number): ComboChart {
+  return {
+    ...chart,
+    updatedAt,
+    steps: chart.steps.map((step) => {
+      const previousSlot = switchSlotFromMoveId(step.moveId);
+      if (!previousSlot) return step;
+      const nextSlot = slotMap[previousSlot];
+      return {
+        ...step,
+        moveId: `switch_${nextSlot }`,
+        label: remapSwitchText(step.label, previousSlot, nextSlot),
+        note: step.note ? remapSwitchText(step.note, previousSlot, nextSlot) : step.note
+       };
+     })
+   };
+ }
+
+function remapSwitchContentLabels(contentLabels: ComboImageStyle['contentLabels'], charts: ComboChart[], slotMap: CharacterSlotMap): ComboImageStyle['contentLabels'] {
+  const next = { ...contentLabels  };
+  for (const chart of charts) {
+    for (const step of chart.steps) {
+      const previousSlot = switchSlotFromMoveId(step.moveId);
+      const value = next[step.id];
+      if (!previousSlot || typeof value !== 'string') continue;
+      next[step.id] = remapSwitchText(value, previousSlot, slotMap[previousSlot]);
+     }
+   }
+  return next;
+ }
 function sortChartForPractice(chart: ComboChart | null): ComboChart | null {
   if (!chart) return null;
   const normalized = normalizeChart(chart);
   return {
     ...normalized,
     steps: [...normalized.steps].sort((a, b) => a.startMin - b.startMin || a.startMax - b.startMax || (a.characterSlot ?? 1) - (b.characterSlot ?? 1) || a.id.localeCompare(b.id))
-  };
-}
+   };
+ }
 
-function createChartFromRecording(snapshot: RecordingSnapshot, recorder: ComboRecorder, title = `录制连段 ${new Date().toLocaleTimeString()}`): ComboChart | null {
+function createChartFromRecording(snapshot: RecordingSnapshot, recorder: ComboRecorder, title = `录制连段 ${new Date().toLocaleTimeString() }`): ComboChart | null {
   if (!snapshot.units.length) return null;
   return normalizeChart(recorder.toChart(title));
-}
+ }
 
 function normalizeOverlayBounds(value: unknown, fallback: OverlayBounds): OverlayBounds {
   const bounds = value as Partial<OverlayBounds> | null;
@@ -291,32 +663,67 @@ function normalizeOverlayBounds(value: unknown, fallback: OverlayBounds): Overla
     y: clampNumber(bounds?.y, 0, 100000, fallback.y),
     width: clampNumber(bounds?.width, 1, 100000, fallback.width),
     height: clampNumber(bounds?.height, 1, 100000, fallback.height)
-  };
-}
+   };
+ }
+
+function createDefaultWaterfallComboImageStyle(source?: Partial<ComboImageStyle> | null): ComboImageStyle {
+  const base = normalizeComboImageStyle(source ?? createDefaultComboImageStyle());
+  return normalizeComboImageStyle({ ...base, ...WATERFALL_STYLE_DEFAULTS, roleStyles: base.roleStyles, contentLabels: base.contentLabels, iconMappings: base.iconMappings, basePresets: base.basePresets, avatarPresets: base.avatarPresets  });
+ }
+
+function normalizeWaterfallComboImageStyle(value: unknown, fallbackSource?: Partial<ComboImageStyle> | null): ComboImageStyle {
+  return value ? normalizeComboImageStyle(value as Partial<ComboImageStyle>) : createDefaultWaterfallComboImageStyle(fallbackSource);
+ }
+
+function normalizeVerticalComboImageStyle(value: unknown, fallbackSource?: Partial<ComboImageStyle> | null): ComboImageStyle {
+  return value ? normalizeComboImageStyle(value as Partial<ComboImageStyle>) : normalizeComboImageStyle(fallbackSource ?? createDefaultComboImageStyle());
+ }
+
+function normalizeRhythmUiSettings(value: unknown): RhythmUiSettings {
+  const settings = value as Partial<RhythmUiSettings> | null;
+  return {
+    width: clampNumber(settings?.width, 120, 6000, DEFAULT_RHYTHM_UI.width),
+    height: clampNumber(settings?.height, 120, 4000, DEFAULT_RHYTHM_UI.height),
+    scale: clampNumber(settings?.scale, 0.3, 3, DEFAULT_RHYTHM_UI.scale),
+    laneGap: clampNumber(settings?.laneGap, 0, 120, DEFAULT_RHYTHM_UI.laneGap),
+    roleSpacing: clampNumber(settings?.roleSpacing, 24, 1200, DEFAULT_RHYTHM_UI.roleSpacing),
+    fallSpeed: clampNumber(settings?.fallSpeed, 0.03, 2, DEFAULT_RHYTHM_UI.fallSpeed),
+    judgeLineOffset: clampNumber(settings?.judgeLineOffset, 20, 2000, DEFAULT_RHYTHM_UI.judgeLineOffset),
+    ringStartScale: clampNumber(settings?.ringStartScale, 0.2, 5, DEFAULT_RHYTHM_UI.ringStartScale),
+    ringEndScale: clampNumber(settings?.ringEndScale, 0.2, 5, DEFAULT_RHYTHM_UI.ringEndScale),
+    ringOffsetX: clampNumber(settings?.ringOffsetX, -1000, 1000, DEFAULT_RHYTHM_UI.ringOffsetX),
+    ringOffsetY: clampNumber(settings?.ringOffsetY, -1000, 1000, DEFAULT_RHYTHM_UI.ringOffsetY),
+    ringDurationMs: clampNumber(settings?.ringDurationMs, 80, 3000, DEFAULT_RHYTHM_UI.ringDurationMs),
+    feedbackX: clampNumber(settings?.feedbackX, 0, 100, DEFAULT_RHYTHM_UI.feedbackX),
+    feedbackY: clampNumber(settings?.feedbackY, 0, 100, DEFAULT_RHYTHM_UI.feedbackY)
+   };
+ }
 
 function normalizeOverlayLayoutBounds(value: unknown, legacySettings?: unknown): OverlayLayoutBounds {
   const record = value as Partial<Record<ComboLayout, unknown>> | null;
   const legacy = legacySettings as Partial<OverlaySettings> | null;
-  const legacyLayout = legacy?.layout === 'vertical' ? 'vertical' : 'horizontal';
+  const legacyLayout: ComboLayout = legacy?.layout === 'vertical' ? 'vertical' : legacy?.layout === 'waterfall' ? 'waterfall' : 'horizontal';
   const defaults = DEFAULT_OVERLAY_LAYOUT_BOUNDS;
   return {
     horizontal: normalizeOverlayBounds(record?.horizontal ?? (legacyLayout === 'horizontal' ? legacy : null), defaults.horizontal),
-    vertical: normalizeOverlayBounds(record?.vertical ?? (legacyLayout === 'vertical' ? legacy : null), defaults.vertical)
-  };
-}
+    vertical: normalizeOverlayBounds(record?.vertical ?? (legacyLayout === 'vertical' ? legacy : null), defaults.vertical),
+    waterfall: normalizeOverlayBounds(record?.waterfall ?? (legacyLayout === 'waterfall' ? legacy : null), defaults.waterfall)
+   };
+ }
 
 function overlaySettingsForLayout(layout: ComboLayout, bounds: OverlayLayoutBounds): OverlaySettings {
-  return { layout, ...bounds[layout] };
-}
+  return { layout, ...bounds[layout]  };
+ }
 
 function loadSavedState() {
-  const fallback = { moves: DEFAULT_MOVES, bindings: DEFAULT_BINDINGS, gamepadBindings: DEFAULT_GAMEPAD_BINDINGS, inputMode: 'keyboard' as InputMode, chart: null as ComboChart | null, library: [] as ComboChart[], startingCharacterSlot: 1 as CharacterSlot, overlaySettings: DEFAULT_OVERLAY_SETTINGS, overlayLayoutBounds: DEFAULT_OVERLAY_LAYOUT_BOUNDS, comboImageStyle: createDefaultComboImageStyle(), axisGateEnabled: true, exportDirectory: DEFAULT_EXPORT_DIRECTORY };
+  const fallback = { moves: DEFAULT_MOVES, bindings: DEFAULT_BINDINGS, gamepadBindings: DEFAULT_GAMEPAD_BINDINGS, inputMode: 'keyboard' as InputMode, chart: null as ComboChart | null, library: [] as ComboChart[], startingCharacterSlot: 1 as CharacterSlot, practiceRoleOrder: [...CHARACTER_SLOTS], overlaySettings: DEFAULT_OVERLAY_SETTINGS, overlayLayoutBounds: DEFAULT_OVERLAY_LAYOUT_BOUNDS, comboImageStyle: createDefaultComboImageStyle(), verticalComboImageStyle: createDefaultComboImageStyle(), waterfallComboImageStyle: createDefaultWaterfallComboImageStyle(), rhythmUiSettings: DEFAULT_RHYTHM_UI, axisGateEnabled: true, exportDirectory: DEFAULT_EXPORT_DIRECTORY  };
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return fallback;
     const parsed = JSON.parse(raw);
-    const layout = parsed.overlaySettings?.layout === 'vertical' ? 'vertical' : 'horizontal';
+    const layout: ComboLayout = parsed.overlaySettings?.layout === 'vertical' ? 'vertical' : parsed.overlaySettings?.layout === 'waterfall' ? 'waterfall' : 'horizontal';
     const overlayLayoutBounds = normalizeOverlayLayoutBounds(parsed.overlayLayoutBounds, parsed.overlaySettings);
+    const comboImageStyle = normalizeComboImageStyle(parsed.comboImageStyle);
     return {
       moves: normalizeMoves(parsed.moves?.length ? parsed.moves : DEFAULT_MOVES),
       bindings: normalizeBindings(parsed.bindings?.length ? parsed.bindings : DEFAULT_BINDINGS),
@@ -325,41 +732,67 @@ function loadSavedState() {
       chart: isReasonableChart(parsed.chart) ? normalizeChart(parsed.chart) : null,
       library: parsed.library?.filter(isReasonableChart).map(normalizeChart) ?? [],
       startingCharacterSlot: CHARACTER_SLOTS.includes(parsed.startingCharacterSlot ?? 1) ? parsed.startingCharacterSlot ?? 1 : 1,
+      practiceRoleOrder: normalizeCharacterOrder(parsed.practiceRoleOrder),
       overlaySettings: overlaySettingsForLayout(layout, overlayLayoutBounds),
       overlayLayoutBounds,
-      comboImageStyle: normalizeComboImageStyle(parsed.comboImageStyle),
+      comboImageStyle,
+      verticalComboImageStyle: normalizeVerticalComboImageStyle(parsed.verticalComboImageStyle, comboImageStyle),
+      waterfallComboImageStyle: normalizeWaterfallComboImageStyle(parsed.waterfallComboImageStyle, comboImageStyle),
+      rhythmUiSettings: normalizeRhythmUiSettings(parsed.rhythmUiSettings),
       axisGateEnabled: parsed.axisGateEnabled !== false,
       exportDirectory: typeof parsed.exportDirectory === 'string' ? parsed.exportDirectory : DEFAULT_EXPORT_DIRECTORY
-    };
-  } catch {
+     };
+   } catch {
     return fallback;
-  }
-}
+   }
+ }
 
 function upsertLibraryChart(library: ComboChart[], chart: ComboChart): ComboChart[] {
   const next = [chart, ...library.filter((item) => item.id !== chart.id)];
   return next.slice(0, 30);
-}
+ }
 
-function currentPeriodLabel(chart: ComboChart | null, stepIndex: number): string {
+function currentPeriodLabel(chart: ComboChart | null, stepIndex: number, language: AppLanguage): string {
   if (!chart) return '';
   const step = chart.steps[Math.max(0, Math.min(stepIndex, Math.max(0, chart.steps.length - 1)))];
   const time = step?.startMin ?? 0;
   const period = normalizePeriods(chart.periods).filter((candidate) => candidate.kind !== 'free_fire' && time >= candidate.startMs && time <= candidate.endMs).sort((a, b) => a.startMs - b.startMs)[0];
-  return period ? `当前：${period.label}` : '';
-}
+  if (!period) return '';
+  return language === 'zh-CN' ? `当前：${period.label }` : localizeEnglish(`Current: ${period.label }`, language);
+ }
 
 function bindingCodesForMove(bindings: KeyBinding[], moveId: string): string[] {
   return bindings.find((binding) => binding.moveId === moveId)?.inputs.map((input) => normalizeInputCode(input.code)) ?? [];
-}
+ }
+
+function holdBindingPairs(bindings: KeyBinding[]): Map<string, string> {
+  const pairs = new Map<string, string>();
+  const movePairs = [
+    ['basic_attack', 'heavy_attack'],
+    ['skill', 'skill_hold'],
+    ['echo', 'echo_hold'],
+    ['liberation', 'liberation_hold'],
+    ['dodge', 'dodge_hold'],
+    ['jump', 'jump_hold']
+  ] as const;
+  for (const [sourceMoveId, holdMoveId] of movePairs) {
+    const sourceCodes = bindingCodesForMove(bindings, sourceMoveId);
+    const holdCodes = bindingCodesForMove(bindings, holdMoveId);
+    sourceCodes.forEach((sourceCode, index) => {
+      const matchingHoldCode = holdCodes.find((holdCode) => holdCode === `${sourceCode}Hold`) ?? holdCodes[index] ?? holdCodes[0];
+      if (sourceCode && matchingHoldCode) pairs.set(sourceCode, matchingHoldCode);
+    });
+  }
+  return pairs;
+ }
 
 function isGamepadEvent(event: TrainerLikeInputEvent): boolean {
   return event.type === 'gamepadbuttondown' || event.type === 'gamepadbuttonup';
-}
+ }
 
 function gamepadButtonCode(index: number): string {
-  return GAMEPAD_BUTTON_CODES[index] ?? `GamepadButton${index}`;
-}
+  return GAMEPAD_BUTTON_CODES[index] ?? `GamepadButton${index }`;
+ }
 
 function readPressedGamepadCodes(): Set<string> {
   const current = new Set<string>();
@@ -368,27 +801,29 @@ function readPressedGamepadCodes(): Set<string> {
     if (!pad) continue;
     pad.buttons.forEach((button, index) => {
       if (button.pressed) current.add(gamepadButtonCode(index));
-    });
-  }
+     });
+   }
   return current;
-}
+ }
 
 function isPressEvent(event: TrainerLikeInputEvent): boolean {
   return event.type === 'keydown' || event.type === 'mousedown' || event.type === 'gamepadbuttondown';
-}
+ }
 
 function isReleaseEvent(event: TrainerLikeInputEvent): boolean {
   return event.type === 'keyup' || event.type === 'mouseup' || event.type === 'gamepadbuttonup';
-}
+ }
 
-type TrainerLikeInputEvent = { type: 'keydown' | 'keyup' | 'mousedown' | 'mouseup' | 'gamepadbuttondown' | 'gamepadbuttonup'; code: string; time: number };
+type TrainerLikeInputEvent = { type: 'keydown' | 'keyup' | 'mousedown' | 'mouseup' | 'gamepadbuttondown' | 'gamepadbuttonup'; code: string; time: number; source?: 'dom' | 'desktop' | 'gamepad'  };
 
 export default function App() {
+  const { language, text  } = useI18n();
   const saved = useMemo(loadSavedState, []);
   const desktop = useMemo(() => createDesktopBridge(), []);
   const getDisplaySize = useMemo(() => desktop?.getDisplaySize ? () => desktop.getDisplaySize!() : undefined, [desktop]);
-  const [page, setPage] = useState<Page>('record');
+  const [page, setPage] = useState<Page>('home');
   const [experimentPage, setExperimentPage] = useState<ExperimentPage>('home');
+  const [experimentOpenedFromHome, setExperimentOpenedFromHome] = useState(false);
   const [moves, setMoves] = useState<MoveDefinition[]>(saved.moves);
   const [bindings, setBindings] = useState<KeyBinding[]>(saved.bindings);
   const [gamepadBindings, setGamepadBindings] = useState<KeyBinding[]>(saved.gamepadBindings ?? DEFAULT_GAMEPAD_BINDINGS);
@@ -396,15 +831,19 @@ export default function App() {
   const [chart, setChart] = useState<ComboChart | null>(saved.chart);
   const [library, setLibrary] = useState<ComboChart[]>(saved.library);
   const [startingCharacterSlot, setStartingCharacterSlot] = useState<CharacterSlot>(saved.startingCharacterSlot);
+  const [practiceRoleOrder, setPracticeRoleOrder] = useState<CharacterSlot[]>(saved.practiceRoleOrder);
   const [overlaySettings, setOverlaySettings] = useState<OverlaySettings>(saved.overlaySettings);
   const [overlayLayoutBounds, setOverlayLayoutBounds] = useState<OverlayLayoutBounds>(saved.overlayLayoutBounds);
   const [comboImageStyle, setComboImageStyle] = useState<ComboImageStyle>(saved.comboImageStyle);
+  const [verticalComboImageStyle, setVerticalComboImageStyle] = useState<ComboImageStyle>(saved.verticalComboImageStyle);
+  const [waterfallComboImageStyle, setWaterfallComboImageStyle] = useState<ComboImageStyle>(saved.waterfallComboImageStyle);
+  const [rhythmUiSettings, setRhythmUiSettings] = useState<RhythmUiSettings>(saved.rhythmUiSettings);
   const [editorTab, setEditorTab] = useState<EditorTab>('timeline');
   const [snapshot, setSnapshot] = useState<RecordingSnapshot>(createEmptySnapshot);
   const [debugSnapshot, setDebugSnapshot] = useState<RecordingSnapshot | null>(null);
-  const [debugMessage, setDebugMessage] = useState('录制结束后，可以选择覆盖当前编辑区或调试当前连段。');
+  const [debugMessage, setDebugMessage] = useState(() => localizedMessage('录制结束后，可以选择覆盖当前编辑区或调试当前连段。', 'After recording, replace the editor chart or test the current combo.'));
   const [globalInputEnabled, setGlobalInputEnabled] = useState(false);
-  const [globalInputStatus, setGlobalInputStatus] = useState('窗口内监听');
+  const [globalInputStatus, setGlobalInputStatus] = useState(() => localizedMessage('窗口内监听', 'In-window input'));
   const [practicePreset, setPracticePreset] = useState<PracticePreset>('strict');
   const [practice, setPractice] = useState<PracticeSnapshot>(createEmptyPractice);
   const [axisGateEnabled, setAxisGateEnabled] = useState(saved.axisGateEnabled);
@@ -416,97 +855,190 @@ export default function App() {
   const [quickInputStartStepId, setQuickInputStartStepId] = useState<string | null>(null);
   const [quickInputMemory, setQuickInputMemory] = useState<string[]>([]);
   const [videoWorkbenchOpen, setVideoWorkbenchOpen] = useState(false);
-  const [experimentInputSignal, setExperimentInputSignal] = useState<(TrainerLikeInputEvent & { id: string }) | null>(null);
+  const [videoWorkbenchMounted, setVideoWorkbenchMounted] = useState(false);
+  const [experimentInputSignal, setExperimentInputSignal] = useState<(TrainerLikeInputEvent & { id: string  }) | null>(null);
+  const [keyMappingInputSignal, setKeyMappingInputSignal] = useState<(TrainerLikeInputEvent & { id: string  }) | null>(null);
+  const [keyMappingVisible, setKeyMappingVisible] = useState(false);
+  const [keyMappingPressedCodes, setKeyMappingPressedCodes] = useState<string[]>([]);
   const [editorZoom, setEditorZoom] = useState(0.46);
+  const [editorPlaybackMs, setEditorPlaybackMs] = useState(0);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [defaultAvatars, setDefaultAvatars] = useState<DefaultAvatarEntry[]>([]);
   const [defaultBasePresets, setDefaultBasePresets] = useState<DefaultBasePresetEntry[]>([]);
+  const [timelineUndoStack, setTimelineUndoStack] = useState<TimelineHistorySnapshot[]>([]);
+  const [shareDraft, setShareDraft] = useState<CommunityShareDraft | null>(null);
+  const [timelineRedoStack, setTimelineRedoStack] = useState<TimelineHistorySnapshot[]>([]);
 
   const overlaySettingsRef = useRef(saved.overlaySettings);
   const activeBindings = inputMode === 'gamepad' ? gamepadBindings : bindings;
-  const recorderRef = useRef(new ComboRecorder({ moves, bindings: activeBindings, startTriggerMoveId: 'start_challenge', stopTriggerMoveId: 'stop_recording', startingCharacterSlot }));
+  const runtimeBindings = useMemo(() => mergeRuntimeBindings(bindings, gamepadBindings), [bindings, gamepadBindings]);
+  const recorderRef = useRef(new ComboRecorder({ moves, bindings: runtimeBindings, startTriggerMoveId: 'start_challenge', stopTriggerMoveId: 'stop_recording', startingCharacterSlot  }));
   const practiceRef = useRef<PracticeSession | null>(null);
   const importInputRef = useRef<HTMLInputElement | null>(null);
-  const avatarInputRefs = useRef<Record<number, HTMLInputElement | null>>({});
-  const capsuleInputRef = useRef<HTMLInputElement | null>(null);
-  const basicAttackHoldRef = useRef(new Map<string, { pressEvent: TrainerLikeInputEvent; heavyCode: string; timer: number; fired: boolean }>());
+  const avatarInputRefs = useRef<Record<number, HTMLInputElement | null>>({ });
+  const holdPressRef = useRef(new Map<string, { pressEvent: TrainerLikeInputEvent; holdCode: string; timer: number | null; holdTriggered: boolean  }>());
+  const recentInputTransitionsRef = useRef(new Map<string, { source: NonNullable<TrainerLikeInputEvent['source']>; receivedAt: number  }>());
+  const toastTimerRef = useRef<number | null>(null);
+  const chartRef = useRef<ComboChart | null>(chart);
+  const comboImageStyleRef = useRef(comboImageStyle);
 
   const practiceChart = useMemo(() => sortChartForPractice(chart), [chart]);
+  const renderComboImageStyle = useMemo(() => effectiveComboImageStyle(comboImageStyle), [comboImageStyle]);
+  const renderVerticalComboImageStyle = useMemo(() => effectiveComboImageStyle(verticalComboImageStyle), [verticalComboImageStyle]);
+  const renderWaterfallComboImageStyle = useMemo(() => effectiveComboImageStyle(waterfallComboImageStyle), [waterfallComboImageStyle]);
+  const activeOverlayComboImageStyle = overlaySettings.layout === 'waterfall' ? waterfallComboImageStyle : overlaySettings.layout === 'vertical' ? verticalComboImageStyle : comboImageStyle;
+  const activeRenderComboImageStyle = overlaySettings.layout === 'waterfall' ? renderWaterfallComboImageStyle : overlaySettings.layout === 'vertical' ? renderVerticalComboImageStyle : renderComboImageStyle;
+  const appearanceComboImageStyle = overlaySettings.layout === 'waterfall' ? waterfallComboImageStyle : overlaySettings.layout === 'vertical' ? verticalComboImageStyle : comboImageStyle;
+  const updateAppearanceComboImageStyle = overlaySettings.layout === 'waterfall' ? updateWaterfallComboImageStyle : overlaySettings.layout === 'vertical' ? updateVerticalComboImageStyle : updateComboImageStyle;
+  const updateAppearanceRoleStyle = overlaySettings.layout === 'waterfall' ? updateWaterfallRoleStyle : overlaySettings.layout === 'vertical' ? updateVerticalRoleStyle : updateRoleStyle;
   const activeStep = practiceChart?.steps[practice.currentStepIndex] ?? null;
-  const practiceSettings = useMemo(() => ({ ...(practicePreset === 'strict' ? STRICT_PRACTICE : practicePreset === 'lenient' ? LENIENT_PRACTICE : SIMPLE_PRACTICE), axisGateEnabled }), [practicePreset, axisGateEnabled]);
-  const basicAttackCodes = useMemo(() => new Set(bindingCodesForMove(activeBindings, 'basic_attack')), [activeBindings]);
-  const heavyAttackCode = useMemo(() => bindingCodesForMove(activeBindings, 'heavy_attack')[0] ?? 'MouseLeftHold', [activeBindings]);
-  const keyboardMouseInputSignal = experimentInputSignal && !isGamepadEvent(experimentInputSignal) ? experimentInputSignal as typeof experimentInputSignal & { type: 'keydown' | 'keyup' | 'mousedown' | 'mouseup' } : null;
+  const editorPreviewPractice = useMemo(() => previewPracticeAtTime(chart, editorPlaybackMs), [chart, editorPlaybackMs]);
+  const practiceSettings = useMemo(() => ({ ...(practicePreset === 'strict' ? STRICT_PRACTICE : practicePreset === 'lenient' ? LENIENT_PRACTICE : SIMPLE_PRACTICE), axisGateEnabled  }), [practicePreset, axisGateEnabled]);
+  const holdBindings = useMemo(() => holdBindingPairs(runtimeBindings), [runtimeBindings]);
+  const keyboardMouseInputSignal = experimentInputSignal && !isGamepadEvent(experimentInputSignal) ? experimentInputSignal as typeof experimentInputSignal & { type: 'keydown' | 'keyup' | 'mousedown' | 'mouseup'  } : null;
 
   useEffect(() => {
     overlaySettingsRef.current = overlaySettings;
-  }, [overlaySettings]);
+   }, [overlaySettings]);
+  useEffect(() => { chartRef.current = chart;  }, [chart]);
+  useEffect(() => { comboImageStyleRef.current = comboImageStyle;  }, [comboImageStyle]);
 
   useEffect(() => {
-    recorderRef.current = new ComboRecorder({ moves, bindings: activeBindings, startTriggerMoveId: 'start_challenge', stopTriggerMoveId: 'stop_recording', startingCharacterSlot });
-  }, [moves, activeBindings, startingCharacterSlot]);
+    recorderRef.current = new ComboRecorder({ moves, bindings: runtimeBindings, startTriggerMoveId: 'start_challenge', stopTriggerMoveId: 'stop_recording', startingCharacterSlot  });
+   }, [moves, runtimeBindings, startingCharacterSlot]);
 
   useEffect(() => {
     if (!practiceChart) {
       practiceRef.current = null;
       setPractice(createEmptyPractice());
       return;
-    }
-    practiceRef.current = new PracticeSession(practiceChart, moves, activeBindings, practiceSettings);
+     }
+    practiceRef.current = new PracticeSession(practiceChart, moves, runtimeBindings, practiceSettings);
     setPractice(createEmptyPractice());
-  }, [practiceChart, moves, activeBindings, practiceSettings]);
+   }, [practiceChart, moves, runtimeBindings, practiceSettings]);
 
   useEffect(() => {
-    const payload = JSON.stringify({ moves, bindings, gamepadBindings, inputMode, chart, library, startingCharacterSlot, overlaySettings, overlayLayoutBounds, comboImageStyle, axisGateEnabled, exportDirectory });
+    const payload = JSON.stringify({ moves, bindings, gamepadBindings, inputMode, chart, library, startingCharacterSlot, practiceRoleOrder, overlaySettings, overlayLayoutBounds, comboImageStyle, verticalComboImageStyle, waterfallComboImageStyle, rhythmUiSettings, axisGateEnabled, exportDirectory  });
     if (payload.length < LOCAL_STORAGE_SOFT_LIMIT) localStorage.setItem(STORAGE_KEY, payload);
-  }, [moves, bindings, gamepadBindings, inputMode, chart, library, startingCharacterSlot, overlaySettings, overlayLayoutBounds, comboImageStyle, axisGateEnabled, exportDirectory]);
+   }, [moves, bindings, gamepadBindings, inputMode, chart, library, startingCharacterSlot, practiceRoleOrder, overlaySettings, overlayLayoutBounds, comboImageStyle, verticalComboImageStyle, waterfallComboImageStyle, rhythmUiSettings, axisGateEnabled, exportDirectory]);
 
   useEffect(() => setChartTitle(chart?.title ?? ''), [chart?.id]);
+  useEffect(() => {
+    setTimelineUndoStack([]);
+    setTimelineRedoStack([]);
+   }, [chart?.id]);
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (page !== 'record' || videoWorkbenchOpen || !(event.ctrlKey || event.metaKey)) return;
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('input, textarea, select, [contenteditable="true"]')) return;
+      const key = event.key.toLowerCase();
+      if (key === 'z' && !event.shiftKey) {
+        event.preventDefault();
+        undoTimeline();
+       } else if (key === 'y' || (key === 'z' && event.shiftKey)) {
+        event.preventDefault();
+        redoTimeline();
+       }
+     };
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
+   }, [page, videoWorkbenchOpen, timelineUndoStack, timelineRedoStack]);
+  useEffect(() => {
+    if (!chart) {
+      setEditorPlaybackMs(0);
+      return;
+    }
+    const total = Math.max(0, ...chart.steps.map((step) => step.startMin + step.durationMax));
+    setEditorPlaybackMs((current) => clamp(current, 0, total));
+   }, [chart?.id]);
 
   useEffect(() => {
-    fetch(assetUrl('/combo-assets/default-avatars/index.json')).then((res) => res.ok ? res.json() : []).then((items: unknown) => setDefaultAvatars(normalizeAvatarPresets(items))).catch(() => setDefaultAvatars([]));
-  }, []);
+    let cancelled = false;
+    const applyRemoteAvatars = (items: DefaultAvatarEntry[]) => {
+      const avatars = sortAvatarPresets(items);
+      setDefaultAvatars(avatars);
+      const avatarByName = new Map(avatars.map((item) => [item.name.trim(), item]));
+      const migrateStyle = (current: ComboImageStyle) => normalizeComboImageStyle({
+        ...current,
+        roleStyles: Object.fromEntries(CHARACTER_SLOTS.map((slot) => {
+          const role = current.roleStyles[slot];
+          const name = normalizeCharacterName(role.name);
+          const apiAvatar = avatarByName.get(name);
+          const usesRetiredLocalAvatar = Boolean(role.avatar?.includes('/combo-assets/default-avatars/'));
+          return [slot, { ...role, name, ...(apiAvatar && (usesRetiredLocalAvatar || !role.avatar) ? { avatar: apiAvatar.src, avatarCrop: { x: 0, y: 0, w: 100, h: 100  } } : { })  }];
+        })) as ComboImageStyle['roleStyles'],
+        avatarPresets: current.avatarPresets
+          .map((preset) => ({ ...preset, name: normalizeCharacterName(preset.name)  }))
+          .filter((preset) => !preset.src.includes('/combo-assets/default-avatars/'))
+      });
+      setComboImageStyle(migrateStyle);
+      setVerticalComboImageStyle(migrateStyle);
+      setWaterfallComboImageStyle(migrateStyle);
+    };
+    const load = async () => {
+      const cachedRemote = await loadCachedRemoteAvatarPresets();
+      if (!cancelled && cachedRemote.length) applyRemoteAvatars(cachedRemote);
+      try {
+        const remoteItems = await fetchRemoteAvatarPresets();
+        if (!cancelled && remoteItems.length) applyRemoteAvatars(remoteItems);
+       } catch {
+        // Keep the last cached API manifest when the network is temporarily unavailable.
+       }
+     };
+    void load();
+    return () => { cancelled = true;  };
+   }, []);
 
   useEffect(() => {
-    fetch(assetUrl('/combo-assets/base-presets/index.json')).then((res) => res.ok ? res.json() : { items: [] }).then((items: unknown) => setDefaultBasePresets(normalizeBasePresets(items))).catch(() => setDefaultBasePresets([]));
-  }, []);
+    fetch(assetUrl('/combo-assets/base-presets/index.json')).then((res) => res.ok ? res.json() : { items: []  }).then((items: unknown) => setDefaultBasePresets(normalizeBasePresets(items))).catch(() => setDefaultBasePresets([]));
+   }, []);
 
   useEffect(() => {
-    const emit = () => desktop?.updateOverlay({ chart: practiceChart, practice, practicePreset, visible: overlayVisible, moveMode: overlayMoveMode, settings: overlaySettings, comboImageStyle });
+    const emit = () => desktop?.updateOverlay({ chart: practiceChart, practice, practicePreset, visible: overlayVisible, moveMode: overlayMoveMode, settings: overlaySettings, comboImageStyle: activeOverlayComboImageStyle, rhythmUiSettings, mode: overlaySettings.layout === 'waterfall' ? 'rhythm' : 'combo'  });
     emit();
-  }, [desktop, practiceChart, practice, practicePreset, overlaySettings, comboImageStyle, overlayVisible, overlayMoveMode]);
+   }, [desktop, practiceChart, practice, practicePreset, overlaySettings, activeOverlayComboImageStyle, rhythmUiSettings, overlayVisible, overlayMoveMode]);
+
+  useEffect(() => {
+    if (!keyMappingVisible) return;
+    void desktop?.updateKeyMapping?.({ visible: true, pressedCodes: keyMappingPressedCodes  });
+   }, [desktop, keyMappingVisible, keyMappingPressedCodes]);
 
   useEffect(() => desktop?.onOverlayBoundsChanged?.((bounds) => {
     const layout = overlaySettingsRef.current.layout;
-    setOverlaySettings((current) => current.layout === layout ? { ...current, ...bounds } : current);
-    setOverlayLayoutBounds((savedBounds) => ({ ...savedBounds, [layout]: normalizeOverlayBounds(bounds, savedBounds[layout]) }));
-  }), [desktop]);
+    setOverlaySettings((current) => current.layout === layout ? { ...current, ...bounds  } : current);
+    setOverlayLayoutBounds((savedBounds) => ({ ...savedBounds, [layout]: normalizeOverlayBounds(bounds, savedBounds[layout])  }));
+   }), [desktop]);
 
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
-      const normalized = normalizeDomKeyboardEvent(event, event.type as 'keydown' | 'keyup');
-      if (inputMode === 'gamepad') return;
+      if (event.type === 'keydown' && event.repeat) return;
+      const normalized = { ...normalizeDomKeyboardEvent(event, event.type as 'keydown' | 'keyup'), source: 'dom' as const  };
       if (event.type === 'keydown') {
         if (page === 'record' && normalized.code === 'Escape' && recorderRef.current.isRecording) {
           event.preventDefault();
           clearBasicAttackHoldState();
           stopRecording();
           return;
-        }
-        if ((page === 'practice' || (page === 'experiment' && experimentPage === 'rhythm')) && normalized.code === 'Escape') {
+         }
+        if (page === 'practice' && normalized.code === 'Escape') {
           event.preventDefault();
           clearBasicAttackHoldState();
           stopPractice();
           return;
-        }
-      }
+         }
+       }
       acceptTrainerInput(normalized);
-    };
-    const handleMouse = (event: MouseEvent) => { if (inputMode !== 'gamepad') acceptTrainerInput(normalizeDomMouseEvent(event, event.type as 'mousedown' | 'mouseup')); };
+     };
+    const handleMouse = (event: MouseEvent) => acceptTrainerInput({ ...normalizeDomMouseEvent(event, event.type as 'mousedown' | 'mouseup'), source: 'dom'  });
     window.addEventListener('keydown', handleKey, true);
     window.addEventListener('keyup', handleKey, true);
     window.addEventListener('mousedown', handleMouse, true);
     window.addEventListener('mouseup', handleMouse, true);
-    const disposeGlobal = desktop?.onGlobalInput((event) => { if (inputMode !== 'gamepad' || isGamepadEvent(event)) acceptTrainerInput(event); });
+    const disposeGlobal = desktop?.onGlobalInput((event) => {
+      if (!globalInputEnabled) return;
+      acceptTrainerInput(event);
+     });
     return () => {
       window.removeEventListener('keydown', handleKey, true);
       window.removeEventListener('keyup', handleKey, true);
@@ -514,180 +1046,226 @@ export default function App() {
       window.removeEventListener('mouseup', handleMouse, true);
       disposeGlobal?.();
       clearBasicAttackHoldState();
-    };
-  }, [page, experimentPage, desktop, basicAttackCodes, heavyAttackCode, inputMode]);
+     };
+   }, [page, experimentPage, desktop, holdBindings, globalInputEnabled]);
 
   useEffect(() => {
-    if (inputMode !== 'gamepad') return;
     let frame = 0;
     const pressed = new Set<string>();
     const tick = () => {
       const current = readPressedGamepadCodes();
       for (const code of current) {
         if (pressed.has(code)) continue;
-        const comboCode = code !== GAMEPAD_COMBO_MODIFIER && current.has(GAMEPAD_COMBO_MODIFIER) ? `${GAMEPAD_COMBO_MODIFIER}+${code}` : code;
-        acceptTrainerInput({ type: 'gamepadbuttondown', code: comboCode, time: performance.now() });
+        const comboCode = code !== GAMEPAD_COMBO_MODIFIER && current.has(GAMEPAD_COMBO_MODIFIER) ? `${GAMEPAD_COMBO_MODIFIER }+${code }` : code;
+        acceptTrainerInput({ type: 'gamepadbuttondown', code: comboCode, time: performance.now(), source: 'gamepad'  });
       }
       for (const code of pressed) {
         if (current.has(code)) continue;
-        acceptTrainerInput({ type: 'gamepadbuttonup', code, time: performance.now() });
-      }
+        if (code === GAMEPAD_COMBO_MODIFIER) {
+          for (const modifiedCode of pressed) {
+            if (modifiedCode === GAMEPAD_COMBO_MODIFIER || !current.has(modifiedCode)) continue;
+            acceptTrainerInput({ type: 'gamepadbuttonup', code: `${GAMEPAD_COMBO_MODIFIER }+${modifiedCode }`, time: performance.now(), source: 'gamepad'  });
+           }
+         }
+        const comboCode = code !== GAMEPAD_COMBO_MODIFIER && pressed.has(GAMEPAD_COMBO_MODIFIER) ? `${GAMEPAD_COMBO_MODIFIER }+${code }` : code;
+        acceptTrainerInput({ type: 'gamepadbuttonup', code: comboCode, time: performance.now(), source: 'gamepad'  });
+       }
       pressed.clear();
       current.forEach((code) => pressed.add(code));
       frame = requestAnimationFrame(tick);
-    };
+     };
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, [inputMode, basicAttackCodes, heavyAttackCode, page, experimentPage]);
+   }, [holdBindings, page, experimentPage]);
 
   function acceptTrainerInput(event: TrainerLikeInputEvent) {
     const normalizedCode = normalizeInputCode(event.code);
-    if (basicAttackCodes.has(normalizedCode)) {
+    const source = event.source ?? (isGamepadEvent(event) ? 'gamepad' : 'dom');
+    const transitionKey = `${event.type}:${normalizedCode}`;
+    const receivedAt = performance.now();
+    const previousTransition = recentInputTransitionsRef.current.get(transitionKey);
+    if (previousTransition && previousTransition.source !== source && receivedAt - previousTransition.receivedAt < 50) return;
+    recentInputTransitionsRef.current.set(transitionKey, { source, receivedAt  });
+    const normalizedEvent = { ...event, code: normalizedCode, id: crypto.randomUUID() };
+    setKeyMappingInputSignal(normalizedEvent);
+    if (isPressEvent(event)) setKeyMappingPressedCodes((current) => current.includes(normalizedCode) ? current : [...current, normalizedCode]);
+    if (isReleaseEvent(event)) setKeyMappingPressedCodes((current) => current.filter((item) => item !== normalizedCode && !item.split('+').includes(normalizedCode)));
+    const holdCode = holdBindings.get(normalizedCode);
+    if (holdCode) {
       if (isPressEvent(event)) {
-        if (basicAttackHoldRef.current.has(normalizedCode)) return;
-        const hold = {
-          pressEvent: { ...event, code: normalizedCode },
-          heavyCode: heavyAttackCode,
-          timer: window.setTimeout(() => {
-            const current = basicAttackHoldRef.current.get(normalizedCode);
-            if (!current || current.fired) return;
-            current.fired = true;
-            routeTrainerInput({ ...current.pressEvent, code: current.heavyCode, time: current.pressEvent.time + HEAVY_ATTACK_HOLD_MS });
-          }, HEAVY_ATTACK_HOLD_MS),
-          fired: false
-        };
-        basicAttackHoldRef.current.set(normalizedCode, hold);
+        if (holdPressRef.current.has(normalizedCode)) return;
+        const pressEvent = { ...event, code: normalizedCode  };
+        const hold = { pressEvent, holdCode, timer: null as number | null, holdTriggered: false  };
+        holdPressRef.current.set(normalizedCode, hold);
+        if (page === 'practice') {
+          hold.timer = window.setTimeout(() => {
+            const current = holdPressRef.current.get(normalizedCode);
+            if (!current || current.holdTriggered) return;
+            current.holdTriggered = true;
+            routeTrainerInput({ ...current.pressEvent, code: current.holdCode, time: current.pressEvent.time + HEAVY_ATTACK_HOLD_MS  });
+           }, HEAVY_ATTACK_HOLD_MS);
+         } else {
+          routeTrainerInput(pressEvent);
+         }
         return;
-      }
+       }
       if (isReleaseEvent(event)) {
-        const hold = basicAttackHoldRef.current.get(normalizedCode);
+        const hold = holdPressRef.current.get(normalizedCode);
         if (!hold) return;
-        window.clearTimeout(hold.timer);
-        basicAttackHoldRef.current.delete(normalizedCode);
-        const heldMs = event.time - hold.pressEvent.time;
-        if (!hold.fired && heldMs < HEAVY_ATTACK_HOLD_MS) routeTrainerInput(hold.pressEvent);
+        holdPressRef.current.delete(normalizedCode);
+        if (hold.timer !== null) window.clearTimeout(hold.timer);
+        const heldMs = Math.max(0, event.time - hold.pressEvent.time);
+        if (page === 'record' && recorderRef.current.isRecording) {
+          const next = heldMs >= HEAVY_ATTACK_HOLD_MS
+            ? recorderRef.current.convertHold({ sourceCode: normalizedCode, holdCode: hold.holdCode, pressTime: hold.pressEvent.time, holdStartTime: hold.pressEvent.time + HEAVY_ATTACK_HOLD_MS, releaseTime: event.time  })
+            : recorderRef.current.finishPress(normalizedCode, hold.pressEvent.time, event.time);
+          setSnapshot(next);
+         } else if (page === 'practice' && !hold.holdTriggered) {
+          routeTrainerInput(heldMs >= HEAVY_ATTACK_HOLD_MS ? { ...hold.pressEvent, code: hold.holdCode, time: hold.pressEvent.time + HEAVY_ATTACK_HOLD_MS  } : hold.pressEvent);
+         }
         return;
-      }
-    }
-    routeTrainerInput(event);
-  }
+       }
+     }
+    routeTrainerInput({ ...event, code: normalizedCode  });
+   }
 
   function routeTrainerInput(event: TrainerLikeInputEvent) {
-    setExperimentInputSignal({ ...event, id: crypto.randomUUID() });
+    setExperimentInputSignal({ ...event, id: crypto.randomUUID()  });
     if (page === 'record') {
       const before = recorderRef.current.isRecording;
       const next = recorderRef.current.accept(event);
       setSnapshot(next);
       if (before && !next.isRecording) {
         setDebugSnapshot(next);
-        setDebugMessage(`录制完成：捕获 ${next.units.length} 个指令。可以选择覆盖载入编辑区，或调试合并到当前连段。`);
-      }
-    }
-    if ((page === 'practice' || (page === 'experiment' && experimentPage === 'rhythm')) && practiceRef.current) {
+        setDebugMessage(localizedMessage(`录制完成：捕获 ${next.units.length } 个指令。可以选择覆盖载入编辑区，或调试合并到当前连段。`, `Recording complete: captured ${next.units.length } actions. Replace the editor chart or merge them in Test.`));
+       }
+     }
+    if (page === 'practice' && practiceRef.current) {
       setPractice(practiceRef.current.accept(event));
-    }
-  }
+     }
+   }
 
   function clearBasicAttackHoldState() {
-    for (const hold of basicAttackHoldRef.current.values()) window.clearTimeout(hold.timer);
-    basicAttackHoldRef.current.clear();
-  }
+    for (const hold of holdPressRef.current.values()) if (hold.timer !== null) window.clearTimeout(hold.timer);
+    holdPressRef.current.clear();
+   }
 
   function manualToggleRecording() {
     if (recorderRef.current.isRecording) stopRecording();
     else setSnapshot(recorderRef.current.start(nowEventTime()));
-  }
+   }
 
   function stopRecording() {
     const next = recorderRef.current.stop(nowEventTime());
     setSnapshot(next);
     setDebugSnapshot(next);
-    setDebugMessage(`录制完成：捕获 ${next.units.length} 个指令。可以选择覆盖载入编辑区，或调试合并到当前连段。`);
-  }
+    setDebugMessage(localizedMessage(`录制完成：捕获 ${next.units.length } 个指令。可以选择覆盖载入编辑区，或调试合并到当前连段。`, `Recording complete: captured ${next.units.length } actions. Replace the editor chart or merge them in Test.`));
+   }
 
   function startPractice() {
     if (practice.status === 'running' || practice.status === 'armed') return;
     if (practiceRef.current) setPractice(practiceRef.current.start(nowEventTime()));
-  }
+   }
 
   function stopPractice() {
     if (practiceRef.current) setPractice(practiceRef.current.stop());
-  }
+   }
 
   function tickPractice() {
     if (practiceRef.current) setPractice(practiceRef.current.tick(nowEventTime()));
-  }
+   }
 
   useEffect(() => {
     if (practice.status !== 'running') return;
     const timer = window.setInterval(tickPractice, 50);
     return () => window.clearInterval(timer);
-  }, [practice.status]);
+   }, [practice.status]);
 
   async function startGlobalInput() {
     if (!desktop) {
-      setGlobalInputStatus('网页模式：仅窗口聚焦可监听');
+      setGlobalInputStatus(localizedMessage('网页模式：仅窗口聚焦可监听', 'Web mode: input is available while this window is focused'));
       setGlobalInputEnabled(false);
       return;
-    }
-    const result = await desktop.startGlobalInput();
-    setGlobalInputEnabled(result.ok);
-    setGlobalInputStatus(result.ok ? '全局监听已开启' : `全局监听不可用：${result.reason ?? '未知原因'}`);
-  }
+     }
+    try {
+      const result = await desktop.startGlobalInput();
+      const status = result.ok ? await desktop.getGlobalInputStatus() : null;
+      const enabled = Boolean(result.ok && status?.started);
+      setGlobalInputEnabled(enabled);
+      setGlobalInputStatus(enabled ? localizedMessage('全局监听已开启', 'Global input enabled') : localizedMessage(`全局监听不可用：${result.reason ?? status?.status ?? '未知原因' }`, `Global input unavailable: ${result.reason ?? status?.status ?? 'unknown reason' }`));
+     } catch (error) {
+      setGlobalInputEnabled(false);
+      setGlobalInputStatus(localizedMessage(`全局监听启动失败：${error instanceof Error ? error.message : String(error) }`, `Global input failed to start: ${error instanceof Error ? error.message : String(error) }`));
+     }
+   }
 
   async function stopGlobalInput() {
     setGlobalInputEnabled(false);
-    setGlobalInputStatus('全局监听已关闭，保留窗口内监听');
+    setGlobalInputStatus(localizedMessage('全局监听已关闭，保留窗口内监听', 'Global input disabled; in-window input remains active'));
     await desktop?.stopGlobalInput();
-  }
+   }
 
   function overwriteChartWithRecording() {
     if (!debugSnapshot?.units.length) return;
-    const nextChart = createChartFromRecording(debugSnapshot, recorderRef.current, chartTitle || `录制连段 ${new Date().toLocaleTimeString()}`);
+    const recordedAt = new Date().toLocaleTimeString(language);
+    const nextChart = createChartFromRecording(debugSnapshot, recorderRef.current, chartTitle || text(`录制连段 ${recordedAt }`, `Recorded Combo ${recordedAt }`));
     if (!nextChart) return;
     setChart(nextChart);
     setDebugSnapshot(null);
-    setDebugMessage(`已覆盖编辑区：载入 ${nextChart.steps.length} 个指令。`);
-  }
+    setDebugMessage(localizedMessage(`已覆盖编辑区：载入 ${nextChart.steps.length } 个指令。`, `Editor replaced: loaded ${nextChart.steps.length } actions.`));
+   }
 
   function applyDebugSnapshot() {
     if (!chart || !debugSnapshot?.units.length) return;
     const result = mergeDebugRunIntoChart(chart, debugSnapshot);
-    const nextChart = { ...result.chart, updatedAt: Date.now() };
+    const nextChart = { ...result.chart, updatedAt: Date.now()  };
     setChart(nextChart);
     setLibrary((current) => current.some((item) => item.id === nextChart.id) ? upsertLibraryChart(current, nextChart) : current);
     setDebugSnapshot(null);
-    setDebugMessage(`已加入调试：匹配 ${result.matched}/${result.total} 个指令，提前窗口 ${result.preheated} 处，延后窗口 ${result.recovered} 处，跳过 ${result.rejected} 处疑似漏输入。`);
-  }
+    setDebugMessage(localizedMessage(`已加入调试：匹配 ${result.matched }/${result.total } 个指令，提前窗口 ${result.preheated } 处，延后窗口 ${result.recovered } 处，跳过 ${result.rejected } 处疑似漏输入。`, `Test merged: matched ${result.matched }/${result.total } actions, adjusted ${result.preheated } early and ${result.recovered } late windows, and skipped ${result.rejected } likely missing inputs.`));
+   }
 
   function updateStep(stepId: string, patch: Partial<ComboStep>) {
-    if (!chart) return;
-    const steps = stepId === '__insert__' ? [...chart.steps, normalizeStep(patch as ComboStep)] : chart.steps.map((step) => step.id === stepId ? normalizeStep({ ...step, ...patch }) : step);
-    setChart(applyFreeFirePeriods({ ...chart, updatedAt: Date.now(), steps }));
-  }
+    setChart((current) => {
+      if (!current) return current;
+      const steps = stepId === '__insert__' ? [...current.steps, normalizeStep(patch as ComboStep)] : current.steps.map((step) => step.id === stepId ? normalizeStep({ ...step, ...patch  }) : step);
+      return applyFreeFirePeriods({ ...current, updatedAt: Date.now(), steps  });
+     });
+   }
+
+  function insertSteps(steps: ComboStep[]) {
+    if (!steps.length) return;
+    setChart((current) => current ? applyFreeFirePeriods({ ...current, updatedAt: Date.now(), steps: [...current.steps, ...steps.map(normalizeStep)]  }) : current);
+   }
 
   function deleteStep(stepId: string) {
     if (!chart) return;
-    setChart(applyFreeFirePeriods({ ...chart, updatedAt: Date.now(), steps: chart.steps.filter((step) => step.id !== stepId) }));
-  }
+    setChart(applyFreeFirePeriods({ ...chart, updatedAt: Date.now(), steps: chart.steps.filter((step) => step.id !== stepId)  }));
+   }
+
+  function deleteSteps(stepIds: string[]) {
+    if (!chart || !stepIds.length) return;
+    const ids = new Set(stepIds);
+    setChart(applyFreeFirePeriods({ ...chart, updatedAt: Date.now(), steps: chart.steps.filter((step) => !ids.has(step.id))  }));
+   }
 
   function updatePeriods(periods: ComboPeriod[]) {
-    if (!chart) return;
-    setChart(applyFreeFirePeriods({ ...chart, updatedAt: Date.now(), periods: constrainAxisPeriods(periods) }));
-  }
+    setChart((current) => current ? applyFreeFirePeriods({ ...current, updatedAt: Date.now(), periods: constrainAxisPeriods(periods)  }) : current);
+   }
 
   function applyVideoWorkbenchChart(nextChart: ComboChart) {
-    const normalized = applyFreeFirePeriods({ ...nextChart, updatedAt: Date.now(), periods: constrainAxisPeriods(nextChart.periods ?? []), steps: nextChart.steps.map(normalizeStep) });
+    const normalized = applyFreeFirePeriods({ ...nextChart, updatedAt: Date.now(), periods: constrainAxisPeriods(nextChart.periods ?? []), steps: nextChart.steps.map(normalizeStep)  });
     setChart(normalized);
     setLibrary((current) => current.some((item) => item.id === normalized.id) ? upsertLibraryChart(current, normalized) : current);
-  }
+   }
 
   function saveCurrentChart() {
     if (!chart) return;
-    const nextChart = { ...chart, title: chartTitle.trim() || chart.title || `连段 ${new Date().toLocaleTimeString()}`, updatedAt: Date.now() };
+    const savedAt = new Date().toLocaleTimeString(language);
+    const nextChart = { ...chart, id: crypto.randomUUID(), community: undefined, title: chartTitle.trim() || chart.title || text(`连段 ${savedAt }`, `Combo ${savedAt }`), updatedAt: Date.now()  };
     setChart(nextChart);
     setLibrary((current) => upsertLibraryChart(current, nextChart));
-  }
+   }
 
   function deleteLibraryChart(chartId: string) {
     setLibrary((current) => {
@@ -696,94 +1274,214 @@ export default function App() {
         const fallback = next[0] ?? null;
         setChart(fallback);
         setChartTitle(fallback?.title ?? '');
-      }
+       }
       return next;
-    });
-  }
+     });
+   }
 
   function updateMove(moveId: string, patch: Partial<MoveDefinition>) {
-    setMoves((current) => current.map((move) => move.id === moveId ? { ...move, ...patch } : move));
-  }
+    setMoves((current) => normalizeMoves(current.map((move) => move.id === moveId ? { ...move, ...patch  } : move)));
+   }
 
   function updateBindingList(setter: typeof setBindings, moveId: string, value: string) {
-    const inputs = value.split(',').map((part) => part.trim()).filter(Boolean).map((code) => ({ code: normalizeInputCode(code), label: code }));
-    setter((current) => current.some((binding) => binding.moveId === moveId) ? current.map((binding) => binding.moveId === moveId ? { moveId, inputs } : binding) : [...current, { moveId, inputs }]);
-  }
+    const seen = new Set<string>();
+    const inputs = value.split(',').map((part) => part.trim()).filter(Boolean).flatMap((label) => {
+      const code = normalizeInputCode(label);
+      if (!code || seen.has(code) || seen.size >= 2) return [];
+      seen.add(code);
+      return [{ code, label  }];
+     });
+    setter((current) => current.some((binding) => binding.moveId === moveId) ? current.map((binding) => binding.moveId === moveId ? { moveId, inputs  } : binding) : [...current, { moveId, inputs  }]);
+   }
 
   function updateBinding(moveId: string, value: string) {
     updateBindingList(setBindings, moveId, value);
-  }
+   }
 
   function updateGamepadBinding(moveId: string, value: string) {
     updateBindingList(setGamepadBindings, moveId, value);
-  }
+   }
+
+  function reorderPracticeRoles(order: CharacterSlot[]) {
+    if (snapshot.isRecording || practice.status === 'armed' || practice.status === 'running') return;
+    const nextOrder = normalizeCharacterOrder(order);
+    const slotMap = characterPositionMap(practiceRoleOrder, nextOrder);
+    if (!slotMap || CHARACTER_SLOTS.every((slot) => slotMap[slot] === slot)) return;
+    const updatedAt = Date.now();
+    const chartsForLabels = chart ? [chart] : [];
+    setChart((current) => current ? remapChartSwitchTargets(current, slotMap, updatedAt) : current);
+    setComboImageStyle((current) => normalizeComboImageStyle({
+      ...current,
+      contentLabels: remapSwitchContentLabels(current.contentLabels, chartsForLabels, slotMap)
+     }));
+    setPracticeRoleOrder(nextOrder);
+   }
+
+  function cloneTimelineChart(source: ComboChart | null): ComboChart | null {
+    return source ? { ...source, steps: source.steps.map((step) => ({ ...step, samples: step.samples.map((sample) => ({ ...sample  }))  })), periods: source.periods?.map((period) => ({ ...period  }))  } : null;
+   }
+
+  function currentTimelineHistorySnapshot(): TimelineHistorySnapshot {
+    return { chart: cloneTimelineChart(chartRef.current), contentLabels: { ...comboImageStyleRef.current.contentLabels  }  };
+   }
+
+  function restoreTimelineHistorySnapshot(snapshot: TimelineHistorySnapshot) {
+    setChart(cloneTimelineChart(snapshot.chart));
+    setComboImageStyle((current) => normalizeComboImageStyle({ ...current, contentLabels: { ...snapshot.contentLabels  }  }));
+   }
+
+  function captureTimelineHistory() {
+    const snapshot = currentTimelineHistorySnapshot();
+    setTimelineUndoStack((current) => [...current.slice(-MAX_TIMELINE_HISTORY + 1), snapshot]);
+    setTimelineRedoStack([]);
+   }
+
+  function undoTimeline() {
+    setTimelineUndoStack((current) => {
+      const previous = current[current.length - 1];
+      if (!previous) return current;
+      setTimelineRedoStack((redo) => [...redo.slice(-MAX_TIMELINE_HISTORY + 1), currentTimelineHistorySnapshot()]);
+      restoreTimelineHistorySnapshot(previous);
+      return current.slice(0, -1);
+     });
+   }
+
+  function redoTimeline() {
+    setTimelineRedoStack((current) => {
+      const next = current[current.length - 1];
+      if (!next) return current;
+      setTimelineUndoStack((undo) => [...undo.slice(-MAX_TIMELINE_HISTORY + 1), currentTimelineHistorySnapshot()]);
+      restoreTimelineHistorySnapshot(next);
+      return current.slice(0, -1);
+     });
+   }
 
   function updateComboImageStyle(patch: Partial<ComboImageStyle>) {
-    setComboImageStyle((current) => normalizeComboImageStyle({ ...current, ...patch }));
-  }
+    setComboImageStyle((current) => normalizeComboImageStyle({ ...current, ...patch  }));
+   }
+
+  function updateVerticalComboImageStyle(patch: Partial<ComboImageStyle>) {
+    setVerticalComboImageStyle((current) => normalizeComboImageStyle({ ...current, ...patch  }));
+   }
+
+  function updateWaterfallComboImageStyle(patch: Partial<ComboImageStyle>) {
+    setWaterfallComboImageStyle((current) => normalizeComboImageStyle({ ...current, ...patch  }));
+   }
+
+  function updateWaterfallRoleStyle(slot: CharacterSlot, patch: Partial<ComboImageStyle['roleStyles'][CharacterSlot]>) {
+    setWaterfallComboImageStyle((current) => normalizeComboImageStyle({ ...current, roleStyles: { ...current.roleStyles, [slot]: { ...current.roleStyles[slot], ...patch  }  }  }));
+   }
+
+  function updateRhythmUiSettings(patch: Partial<RhythmUiSettings>) {
+    setRhythmUiSettings((current) => normalizeRhythmUiSettings({ ...current, ...patch  }));
+   }
 
   function updateRoleStyle(slot: CharacterSlot, patch: Partial<ComboImageStyle['roleStyles'][CharacterSlot]>) {
-    setComboImageStyle((current) => normalizeComboImageStyle({ ...current, roleStyles: { ...current.roleStyles, [slot]: { ...current.roleStyles[slot], ...patch } } }));
-  }
+    setComboImageStyle((current) => normalizeComboImageStyle({ ...current, roleStyles: { ...current.roleStyles, [slot]: { ...current.roleStyles[slot], ...patch  }  }  }));
+   }
+
+  function updateVerticalRoleStyle(slot: CharacterSlot, patch: Partial<ComboImageStyle['roleStyles'][CharacterSlot]>) {
+    setVerticalComboImageStyle((current) => normalizeComboImageStyle({ ...current, roleStyles: { ...current.roleStyles, [slot]: { ...current.roleStyles[slot], ...patch  }  }  }));
+   }
 
   async function pickAvatar(slot: CharacterSlot, file: File | null) {
     if (!file) return;
     const dataUrl = await readFileAsDataUrl(file);
-    updateRoleStyle(slot, { avatar: dataUrl, avatarCrop: { x: 10, y: 10, w: 80, h: 80 } });
-  }
+    updateRoleStyle(slot, { avatar: dataUrl, avatarCrop: { x: 10, y: 10, w: 80, h: 80  }  });
+   }
 
-  async function pickCapsuleImage(file: File | null) {
+  async function pickVerticalAvatar(slot: CharacterSlot, file: File | null) {
     if (!file) return;
     const dataUrl = await readFileAsDataUrl(file);
-    const size = await readImageSize(dataUrl);
-    updateComboImageStyle({
-      blockMode: 'image',
-      capsuleImage: dataUrl,
-      capsuleImageWidth: size.width,
-      capsuleImageHeight: size.height,
-      capsuleCrop: { x: 0, y: 0, w: 100, h: 100 },
-      capsuleStretch: { left: 25, right: 75 }
-    });
-  }
+    updateVerticalRoleStyle(slot, { avatar: dataUrl, avatarCrop: { x: 10, y: 10, w: 80, h: 80  }  });
+   }
+
+  async function pickWaterfallAvatar(slot: CharacterSlot, file: File | null) {
+    if (!file) return;
+    const dataUrl = await readFileAsDataUrl(file);
+    updateWaterfallRoleStyle(slot, { avatar: dataUrl, avatarCrop: { x: 10, y: 10, w: 80, h: 80  }  });
+   }
 
   function applyQuickInput(values: string[]) {
     if (!practiceChart) return;
     setQuickInputMemory(values);
-    const labels = { ...comboImageStyle.contentLabels };
+    const labels = { ...comboImageStyle.contentLabels  };
     practiceChart.steps.forEach((step, index) => {
       if (values[index] !== undefined) labels[step.id] = values[index];
-    });
-    updateComboImageStyle({ contentLabels: labels });
-  }
+     });
+    updateComboImageStyle({ contentLabels: labels  });
+   }
 
-  function exportCurrentChart() {
+
+  function openShareDialog() {
     if (!chart) return;
-    downloadJson(createChartExportPackage(chart, comboImageStyle.contentLabels, moves, bindings), `${safeFileName(chart.title)}.wwcombo.json`);
-  }
+    const otherIds = library.filter((item) => item.id !== chart.id).flatMap((item) => item.community?.id ? [item.community.id] : []);
+    setShareDraft(communityShareDraft(chart, comboImageStyle, otherIds));
+   }
 
-  function exportLibrary() {
-    downloadJson({ type: 'wwcombo-library', version: 2, charts: library, contentLabels: filterContentLabelsForCharts(library, comboImageStyle.contentLabels), moves, bindings }, 'wwcombo-library.json');
-  }
+  async function exportSharedChart(draft: CommunityShareDraft) {
+    if (!chart) return;
+    const link = draft.link.trim();
+    if (link && !/^https?:\/\//i.test(link)) { showToast('\u94fe\u63a5\u9700\u8981\u4ee5 http:// \u6216 https:// \u5f00\u5934'); return;  }
+    const metadata: ComboCommunityMetadata = { ...draft, name: draft.name.trim() || chart.title, description: draft.description.trim(), link, tags: normalizeCommunityTags(draft.tags, draft.wheelchairEligible), exportedAt: Date.now()  };
+    const sharedChart = normalizeChart({ ...chart, title: metadata.name, character: metadata.characters.join(' / '), tags: [...metadata.tags], community: metadata, updatedAt: Date.now()  });
+    const filename = `${safeFileName(metadata.name)}-${safeFileName(metadata.id)}.wwcombo.json`;
+    const bytes = new TextEncoder().encode(stringifyPortableJson(createChartExportPackage(sharedChart, comboImageStyle.contentLabels, moves, bindings)));
+    try {
+      let path: string | null = null;
+      if (desktop?.saveExportFile) path = (await desktop.saveExportFile('', filename, bytes)).path;
+      else downloadBytes(bytes, filename, 'application/json;charset=utf-8');
+      setChart(sharedChart);
+      setLibrary((current) => upsertLibraryChart(current, sharedChart));
+      setChartTitle(sharedChart.title);
+      setShareDraft(null);
+      showToast(path ? `\u5df2\u5bfc\u51fa\u5230\uff1a${path}` : `\u5df2\u5bfc\u51fa\u5230\u6d4f\u89c8\u5668\u4e0b\u8f7d\u76ee\u5f55\uff1a${filename}`);
+     } catch (error) {
+      showToast(`\u5bfc\u51fa\u5931\u8d25\uff1a${error instanceof Error ? error.message : String(error)}`);
+     }
+   }
+
+  async function exportAxisImage(filename: string, bytes: Uint8Array) {
+    try {
+      let path: string | null = null;
+      if (desktop?.saveExportFile) path = (await desktop.saveExportFile(exportDirectory, filename, bytes)).path;
+      else downloadBytes(bytes, filename, 'image/png');
+      showToast(path ? text(`已导出到：${path}`, `Exported to: ${path}`) : text(`已导出到浏览器下载目录：${filename}`, `Exported to the browser download folder: ${filename}`));
+     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      showToast(text(`导出失败：${message}`, `Export failed: ${message}`));
+      throw error;
+     }
+   }
+
+  function showToast(message: string) {
+    if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
+    setToastMessage(message);
+    toastTimerRef.current = window.setTimeout(() => {
+      setToastMessage(null);
+      toastTimerRef.current = null;
+    }, 3200);
+   }
 
   async function importCharts(file: File | null) {
     if (!file) return;
     const text = await file.text();
-    const parsed = JSON.parse(text);
+    const parsed = JSON.parse(text.replace(/^\uFEFF/, ''));
     const imported = parseImportedComboPackage(parsed);
     const charts = imported.charts;
     if (!charts.length) return;
     setLibrary((current) => charts.reduce((next, item) => upsertLibraryChart(next, item), current));
     setChart(charts[0]);
-    if (Object.keys(imported.contentLabels).length) updateComboImageStyle({ contentLabels: { ...comboImageStyle.contentLabels, ...imported.contentLabels } });
-    if (imported.moves.length) setMoves((current) => mergeMoves(current, imported.moves));
+    if (Object.keys(imported.contentLabels).length) updateComboImageStyle({ contentLabels: { ...comboImageStyle.contentLabels, ...imported.contentLabels  }  });
+    if (imported.moves.length) setMoves((current) => normalizeMoves(mergeMoves(current, imported.moves)));
     if (imported.bindings.length) setBindings((current) => normalizeBindings(mergeBindings(current, imported.bindings)));
-  }
+   }
 
   async function toggleOverlay() {
     const visible = !overlayVisible;
     setOverlayVisible(visible);
     await desktop?.setOverlayVisible(visible);
-  }
+   }
 
   async function toggleOverlayMoveMode() {
     const enabled = !overlayMoveMode;
@@ -793,188 +1491,360 @@ export default function App() {
       setOverlayVisible(true);
       const liveBounds = await desktop?.getOverlayBounds?.().catch(() => null);
       if (liveBounds) {
-        nextSettings = { ...overlaySettings, ...liveBounds };
+        nextSettings = { ...overlaySettings, ...liveBounds  };
         setOverlaySettings(nextSettings);
         overlaySettingsRef.current = nextSettings;
-        setOverlayLayoutBounds((current) => ({ ...current, [overlaySettings.layout]: { x: nextSettings.x, y: nextSettings.y, width: nextSettings.width, height: nextSettings.height } }));
-      } else {
+        setOverlayLayoutBounds((current) => ({ ...current, [overlaySettings.layout]: { x: nextSettings.x, y: nextSettings.y, width: nextSettings.width, height: nextSettings.height  }  }));
+       } else {
         await desktop?.setOverlayBounds(nextSettings);
-      }
+       }
       await desktop?.setOverlayVisible(true);
-    }
+     }
     await desktop?.setOverlayClickThrough(!enabled);
-    await desktop?.updateOverlay({ chart: practiceChart, practice, practicePreset, visible: enabled ? true : overlayVisible, moveMode: enabled, settings: nextSettings, comboImageStyle });
-  }
+    await desktop?.updateOverlay({ chart: practiceChart, practice, practicePreset, visible: enabled ? true : overlayVisible, moveMode: enabled, settings: nextSettings, comboImageStyle: nextSettings.layout === 'waterfall' ? waterfallComboImageStyle : nextSettings.layout === 'vertical' ? verticalComboImageStyle : comboImageStyle, rhythmUiSettings, mode: nextSettings.layout === 'waterfall' ? 'rhythm' : 'combo'  });
+   }
 
   async function resetOverlayBounds() {
-    const next = { layout: overlaySettings.layout, ...DEFAULT_OVERLAY_LAYOUT_BOUNDS[overlaySettings.layout] };
+    const next = { layout: overlaySettings.layout, ...DEFAULT_OVERLAY_LAYOUT_BOUNDS[overlaySettings.layout]  };
     setOverlaySettings(next);
     overlaySettingsRef.current = next;
-    setOverlayLayoutBounds((current) => ({ ...current, [next.layout]: { x: next.x, y: next.y, width: next.width, height: next.height } }));
+    setOverlayLayoutBounds((current) => ({ ...current, [next.layout]: { x: next.x, y: next.y, width: next.width, height: next.height  }  }));
     await desktop?.setOverlayBounds(next);
-    await desktop?.updateOverlay({ chart: practiceChart, practice, practicePreset, visible: overlayVisible, moveMode: overlayMoveMode, settings: next, comboImageStyle });
-  }
+    await desktop?.updateOverlay({ chart: practiceChart, practice, practicePreset, visible: overlayVisible, moveMode: overlayMoveMode, settings: next, comboImageStyle: next.layout === 'waterfall' ? waterfallComboImageStyle : next.layout === 'vertical' ? verticalComboImageStyle : comboImageStyle, rhythmUiSettings, mode: next.layout === 'waterfall' ? 'rhythm' : 'combo'  });
+   }
 
   async function setOverlayLayout(layout: ComboLayout) {
     const next = overlaySettingsForLayout(layout, overlayLayoutBounds);
     setOverlaySettings(next);
     overlaySettingsRef.current = next;
     await desktop?.setOverlayBounds(next);
-    await desktop?.updateOverlay({ chart: practiceChart, practice, practicePreset, visible: overlayVisible, moveMode: overlayMoveMode, settings: next, comboImageStyle });
-  }
+    await desktop?.updateOverlay({ chart: practiceChart, practice, practicePreset, visible: overlayVisible, moveMode: overlayMoveMode, settings: next, comboImageStyle: layout === 'waterfall' ? waterfallComboImageStyle : layout === 'vertical' ? verticalComboImageStyle : comboImageStyle, rhythmUiSettings, mode: layout === 'waterfall' ? 'rhythm' : 'combo'  });
+   }
+
+  function exitExperimentSubpage() {
+    if (experimentOpenedFromHome) {
+      setExperimentOpenedFromHome(false);
+      setPage('home');
+      return;
+     }
+    setExperimentPage('home');
+   }
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${page === 'experiment' && experimentPage === 'axis' ? 'axis-game-open' : '' }` }>
+      {toastMessage && <div className="app-toast" role="status">{toastMessage}</div>}
         <aside className="sidebar">
-          <div className="brand"><div className="brand-mark"><img src="/app-icon-avatar.png" alt="" /></div><div><h1>{'鸣潮训练场'}</h1><span>Combo Trainer</span></div></div>
+          <button className={`brand ${page === 'home' ? 'home-active' : '' }` } type="button" aria-label={text('返回主界面', 'Back to Home') } title={text('返回主界面', 'Back to Home') } onClick={() => setPage('home') }><div className="brand-mark"><img src="/app-icon-avatar.png" alt="" /></div><div><h1>{text('鸣潮训练场', 'Wuthering Waves Trainer') }</h1><span>Combo Trainer</span></div></button>
           <nav>
-          <button className={page === 'record' ? 'active' : ''} onClick={() => setPage('record')}><Activity size={18} /><span>{'记录'}</span></button>
-          <button className={page === 'practice' ? 'active' : ''} onClick={() => setPage('practice')}><Target size={18} /><span>{'练习'}</span></button>
-          <button className={page === 'appearance' ? 'active' : ''} onClick={() => setPage('appearance')}><Palette size={18} /><span>{'外观'}</span></button>
-          <button className={page === 'experiment' ? 'active' : ''} onClick={() => { setPage('experiment'); setExperimentPage('home'); }}><FlaskConical size={18} /><span>{'实验'}</span></button>
-          <button className={page === 'settings' ? 'active' : ''} onClick={() => setPage('settings')}><Settings size={18} /><span>{'设置'}</span></button>
+          <button className={page === 'record' ? 'active' : '' } onClick={() => setPage('record') }><Activity size={18 } /><span>{language === 'zh-CN' ? '记录 Record' : text('记录', 'Record') }</span></button>
+          <button className={page === 'practice' ? 'active' : '' } onClick={() => setPage('practice') }><Target size={18 } /><span>{language === 'zh-CN' ? '练习 Practice' : text('练习', 'Practice') }</span></button>
+          <button className={page === 'appearance' ? 'active' : '' } onClick={() => setPage('appearance') }><Palette size={18 } /><span>{language === 'zh-CN' ? '外观 Appearance' : text('外观', 'Appearance') }</span></button>
+          <button className={page === 'experiment' ? 'active' : '' } onClick={() => { setExperimentOpenedFromHome(false); setPage('experiment'); setExperimentPage('home');  } }><FlaskConical size={18 } /><span>{language === 'zh-CN' ? '实验 Labs' : text('实验', 'Labs') }</span></button>
+          <button className={page === 'settings' ? 'active' : '' } onClick={() => setPage('settings') }><Settings size={18 } /><span>{language === 'zh-CN' ? '设置 Settings' : text('设置', 'Settings') }</span></button>
         </nav>
-        <button className={`sidebar-tool sidebar-global-listener ${globalInputEnabled ? 'active' : ''}`} title={globalInputStatus} onClick={() => void (globalInputEnabled ? stopGlobalInput() : startGlobalInput())}><Keyboard size={18} /><span>{'全局监听'}</span></button>
+        <button className={`sidebar-tool sidebar-global-listener ${globalInputEnabled ? 'active' : '' }` } title={text(globalInputStatus.chinese, globalInputStatus.english) } onClick={() => void (globalInputEnabled ? stopGlobalInput() : startGlobalInput()) }><Keyboard size={18 } /><span>{text('全局监听', 'Global Input') }</span></button>
         <div className="sidebar-illustration" aria-hidden="true" />
       </aside>
 
-      <main className={`workspace ${page === 'experiment' && experimentPage !== 'home' ? 'workspace-experiment' : ''}`}>
+      <main className={`workspace ${page === 'home' ? 'workspace-home' : '' } ${page === 'experiment' && experimentPage !== 'home' ? 'workspace-experiment' : '' }` }>
+        {page === 'home' && <HomePage onNavigate={(destination) => {
+          if (destination === 'keymap' || destination === 'export-axis') {
+            setExperimentOpenedFromHome(true);
+            setExperimentPage(destination);
+            setPage('experiment');
+            return;
+           }
+          setPage(destination);
+         } } />}
         {page === 'record' && (
           <section className="record-page-layout record-page-layout-v2">
             <div className="panel record-panel record-panel-v2">
               <div className="panel-title compact-title">
-                <div><h2>{'记录模式'}</h2><p>{'F 开始录制，Esc 结束录制。结束后可选择覆盖编辑区或调试当前连段。'}</p></div>
-                <div className="record-panel-actions"><div className={`record-dot ${snapshot.isRecording ? 'on' : ''}`} /></div>
+                <div><h2>{text('记录模式', 'Record Mode') }</h2><p>{text('F 开始录制，Esc 结束录制。结束后可选择覆盖编辑区或调试当前连段。', 'Press F to record and Esc to stop. You can then replace the editor chart or test the recording.') }</p></div>
+                <div className="record-panel-actions"><div className={`record-dot ${snapshot.isRecording ? 'on' : '' }` } /></div>
               </div>
               <div className="record-actions">
-                <button className="primary" onClick={manualToggleRecording}>{snapshot.isRecording ? <Square size={18} /> : <Play size={18} />}{snapshot.isRecording ? '结束录制 Esc' : '开始记录 F'}</button>
-                <button onClick={overwriteChartWithRecording} disabled={snapshot.isRecording || !debugSnapshot?.units.length}><Upload size={18} />{'覆盖'}</button>
-                <button onClick={applyDebugSnapshot} disabled={snapshot.isRecording || !debugSnapshot?.units.length || !chart}><Bug size={18} />{'调试'}</button>
+                <button className="primary" onClick={manualToggleRecording }>{snapshot.isRecording ? <Square size={18 } /> : <Play size={18 } /> }{snapshot.isRecording ? text('结束录制 Esc', 'Stop Recording Esc') : text('开始记录 F', 'Start Recording F') }</button>
+                <button className={`overwrite-button ${!snapshot.isRecording && debugSnapshot?.units.length ? 'needs-attention' : '' }` } onClick={overwriteChartWithRecording } disabled={snapshot.isRecording || !debugSnapshot?.units.length }><Upload size={18 } />{text('覆盖', 'Replace') }{!snapshot.isRecording && Boolean(debugSnapshot?.units.length) && <span className="overwrite-count-badge">{debugSnapshot!.units.length }</span> }</button>
+                <button onClick={applyDebugSnapshot } disabled={snapshot.isRecording || !debugSnapshot?.units.length || !chart }><Bug size={18 } />{text('调试', 'Test') }</button>
+                <button onClick={() => { setVideoWorkbenchMounted(true); setVideoWorkbenchOpen(true);  } } disabled={!chart }><FileVideo size={18 } />{text('视频辅助', 'Video Tools') }</button>
               </div>
-              <div className={`debug-status ${debugSnapshot?.units.length ? 'on' : ''}`}>{debugMessage}</div>
+              <div className={`debug-status ${debugSnapshot?.units.length ? 'on' : '' }` }>{text(debugMessage.chinese, debugMessage.english) }</div>
             </div>
 
             <div className="panel combo-editor-panel combo-editor-panel-v2">
               <div className="panel-title combo-editor-title-v2">
-                <div><h2>{'连段谱编辑'}</h2><p>{'时间轴用于调整操作时机；内容模式用于编辑连段图显示文字。'}</p></div>
+                <div><h2>{text('连段谱编辑', 'Combo Chart Editor') }</h2><p>{text('时间轴用于调整操作时机；内容模式用于编辑连段图显示文字。', 'Use the timeline to adjust timing and Content mode to edit labels.') }</p></div>
                 <div className="editor-title-actions editor-title-actions-v2">
-                  <div className="segmented editor-mode-tabs"><button className={editorTab === 'timeline' ? 'active' : ''} onClick={() => setEditorTab('timeline')}>{'时间'}</button><button className={editorTab === 'content' ? 'active' : ''} onClick={() => setEditorTab('content')}>{'内容'}</button></div>
-                  <button onClick={() => setVideoWorkbenchOpen(true)} disabled={!chart}><FileVideo size={18} />{'视频辅助'}</button>
-                  <label>{'名称'} <input className="chart-title-input" value={chartTitle} onChange={(event) => setChartTitle(event.target.value)} /></label>
-                  <StartingRolePicker value={startingCharacterSlot} style={comboImageStyle} onChange={setStartingCharacterSlot} />
+
+                  <label>{text('名称', 'Name') } <input className="chart-title-input" value={chartTitle } onChange={(event) => setChartTitle(event.target.value) } /></label>
+                  <StartingRolePicker value={startingCharacterSlot  } style={comboImageStyle } onChange={setStartingCharacterSlot } />
                 </div>
+
               </div>
-              {chart && <TimelineEditor chart={chart} moves={moves} comboImageStyle={comboImageStyle} mode={editorTab} zoom={editorZoom} onZoomChange={setEditorZoom} onUpdate={updateStep} onDelete={deleteStep} onPeriodsChange={updatePeriods} onContentChange={updateComboImageStyle} onQuickInput={(stepId) => { setQuickInputStartStepId(stepId); setQuickInputOpen(true); }} onSave={saveCurrentChart} />}
-              {!chart && <EmptyState text="暂无连段谱。先录制一遍并点击覆盖，或导入 JSON。" />}
+              {chart && <div className="editor-combo-preview"><ComboImagePreview chart={chart } practice={editorPreviewPractice } style={renderComboImageStyle } layout="horizontal" bounds={overlaySettings } mergedHighlightMode="input" /></div> }
+              {chart && <TimelineEditor chart={chart } moves={moves } bindings={activeBindings } inputSignal={experimentInputSignal } comboImageStyle={comboImageStyle } mode={editorTab } onModeChange={setEditorTab } zoom={editorZoom } onZoomChange={setEditorZoom } playheadControl={{ playbackMs: editorPlaybackMs, onSeek: setEditorPlaybackMs  }} onUpdate={updateStep } onInsert={insertSteps } onDelete={deleteSteps } onPeriodsChange={updatePeriods } onContentChange={updateComboImageStyle } onQuickInput={(stepId) => { setQuickInputStartStepId(stepId); setQuickInputOpen(true);  } } onSave={saveCurrentChart } historyControl={{ canUndo: timelineUndoStack.length > 0, canRedo: timelineRedoStack.length > 0, onCaptureHistory: captureTimelineHistory, onUndo: undoTimeline, onRedo: redoTimeline  }} /> }
+              {!chart && <EmptyState text={text('暂无连段谱。先录制一遍并点击覆盖，或导入 JSON。', 'No combo chart yet. Record and replace one, or import a JSON file.') } /> }
             </div>
           </section>
-        )}
+        ) }
 
         {page === 'practice' && (
           <section className="practice-layout">
             <div className="panel practice-main-panel">
-              <div className="panel-title"><div><h2>{'练习模式'}</h2><p>{'F 开始，Esc 结束；演示按时间展示流程，练习按正确输入推进。'}</p></div><div className="segmented"><button className={practicePreset === 'simple' ? 'active' : ''} onClick={() => setPracticePreset('simple')}>{'演示'}</button><button className={practicePreset === 'lenient' ? 'active' : ''} onClick={() => setPracticePreset('lenient')}>{'练习'}</button><button className={practicePreset === 'strict' ? 'active' : ''} onClick={() => setPracticePreset('strict')}>{'挑战'}</button></div></div>
-              {practiceChart ? <ComboImagePreview chart={practiceChart} practice={practice} style={comboImageStyle} layout="horizontal" bounds={overlaySettings} mergedHighlightMode={practicePreset === 'lenient' ? 'input' : 'time'} /> : <EmptyState text="暂无连段谱。" />}
-              <div className="record-actions"><button className="primary" onClick={startPractice} disabled={practice.status === 'running' || practice.status === 'armed'}><Play size={18} />{'开始 F'}</button><button onClick={stopPractice}><Square size={18} />{'结束 Esc'}</button><button onClick={() => { setQuickInputStartStepId(null); setQuickInputOpen(true); }} disabled={!practiceChart}>{'快捷输入'}</button><button className="icon-button" onClick={toggleOverlay}>{overlayVisible ? <EyeOff size={18} /> : <Eye size={18} />}</button><label className="checkline axis-gate-toggle"><input type="checkbox" checked={axisGateEnabled} onChange={(event) => setAxisGateEnabled(event.target.checked)} />轴首招启动</label><label className="checkline axis-gate-toggle"><input type="checkbox" checked={comboImageStyle.mergeSameRoleSteps} onChange={(event) => updateComboImageStyle({ mergeSameRoleSteps: event.target.checked })} />同角色合并</label></div>
-              <div className="practice-feedback-row">{practice.feedback[0] ? <div className={`feedback ${practice.feedback[0].level}`}>{practice.feedback[0].message}</div> : <div className="feedback info">{'等待输入提示'}</div>}</div>
-              {practiceChart && practice.errorStepIds.length > 0 && <PracticeErrorSummary chart={practiceChart} practice={practice} />}
+              <div className="panel-title practice-panel-title"><div><h2>{text('练习模式', 'Practice Mode') }</h2><p>{text('F 开始，Esc 结束；演示按时间展示流程，练习按正确输入推进。', 'Press F to start and Esc to stop. Demo follows time; Practice advances on correct input.') }</p></div><div className="practice-title-actions"><PracticeRoleOrderPicker order={practiceRoleOrder  } style={comboImageStyle } disabled={snapshot.isRecording || practice.status === 'armed' || practice.status === 'running' } onReorder={reorderPracticeRoles } /><div className="segmented"><button className={practicePreset === 'simple' ? 'active' : '' } onClick={() => setPracticePreset('simple') }>{text('演示', 'Demo') }</button><button className={practicePreset === 'lenient' ? 'active' : '' } onClick={() => setPracticePreset('lenient') }>{text('练习', 'Practice') }</button><button className={practicePreset === 'strict' ? 'active' : '' } onClick={() => setPracticePreset('strict') }>{text('挑战', 'Challenge') }</button></div></div></div>
+              {practiceChart ? <ComboImagePreview chart={practiceChart } practice={practice  } style={renderComboImageStyle } layout="horizontal" bounds={overlaySettings } mergedHighlightMode={practicePreset === 'lenient' ? 'input' : 'time' } /> : <EmptyState text={text('暂无连段谱。', 'No combo chart available.') } /> }
+              <div className="record-actions"><button className="primary" onClick={startPractice } disabled={practice.status === 'running' || practice.status === 'armed' }><Play size={18 } />{text('开始 F', 'Start F') }</button><button onClick={stopPractice }><Square size={18 } />{text('结束 Esc', 'Stop Esc') }</button><button className="icon-button" onClick={toggleOverlay }>{overlayVisible ? <EyeOff size={18 } /> : <Eye size={18 } /> }</button><label className="checkline axis-gate-toggle"><input type="checkbox" checked={axisGateEnabled } onChange={(event) => setAxisGateEnabled(event.target.checked) } />{text('轴首招启动', 'Start at Axis Opener') }</label></div>
+              <div className="practice-feedback-row">{practice.feedback[0] ? <div className={`feedback ${practice.feedback[0].level }` }>{practice.feedback[0].message }</div> : <div className="feedback info">{text('等待输入提示', 'Waiting for input') }</div> }</div>
+              {practiceChart && practice.errorStepIds.length > 0 && <PracticeErrorSummary chart={practiceChart } practice={practice } /> }
             </div>
-            <LibraryPanel chart={chart} library={library} onSelect={(id) => setChart(library.find((item) => item.id === id) ?? chart)} onEdit={(id) => { const item = library.find((entry) => entry.id === id); if (item) { setChart(item); setPage('record'); setEditorTab('timeline'); } }} onDelete={deleteLibraryChart} onExportCurrent={exportCurrentChart} onExportLibrary={exportLibrary} onImport={() => importInputRef.current?.click()} />
-            <input ref={importInputRef} className="file-input" type="file" accept="application/json,.json" onChange={(event) => void importCharts(event.target.files?.[0] ?? null)} />
+            <LibraryPanel chart={chart } library={library } style={comboImageStyle } avatarPresets={defaultAvatars } onSelect={(id) => setChart(library.find((item) => item.id === id) ?? chart) } onEdit={(id) => { const item = library.find((entry) => entry.id === id); if (item) { setChart(item); setPage('record'); setEditorTab('timeline');  }  } } onDelete={deleteLibraryChart } onShare={openShareDialog } onImport={() => importInputRef.current?.click() } />
+            <input ref={importInputRef } className="file-input" type="file" accept="application/json,.json" onChange={(event) => void importCharts(event.target.files?.[0] ?? null) } />
           </section>
-        )}
+        ) }
 
         {page === 'appearance' && (
           <section className="appearance-page-layout">
-            <header className="topbar appearance-preview-bar"><ComboImagePreview chart={practiceChart} practice={practice} style={comboImageStyle} layout="horizontal" bounds={overlaySettings} /></header>
+            <header className="topbar appearance-preview-bar"><ComboImagePreview chart={practiceChart } practice={practice  } style={renderComboImageStyle } layout="horizontal" bounds={overlaySettings } manualHorizontalScroll /></header>
             <div className="panel appearance-page-panel">
-              <div className="panel-title"><div><h2>{'连段图外观'}</h2><p>{'这里显示的效果会同步到全局置顶连段图。'}</p></div><div className="overlay-settings-panel inline-overlay-controls"><div className="segmented"><button className={overlaySettings.layout === 'horizontal' ? 'active' : ''} onClick={() => void setOverlayLayout('horizontal')}>{'横排'}</button><button className={overlaySettings.layout === 'vertical' ? 'active' : ''} onClick={() => void setOverlayLayout('vertical')}>{'竖排'}</button></div><button className={overlayMoveMode ? 'active' : ''} onClick={toggleOverlayMoveMode}>{'移动'}</button><button onClick={resetOverlayBounds}>{'复位'}</button><button className="icon-button" onClick={toggleOverlay}>{overlayVisible ? <EyeOff size={18} /> : <Eye size={18} />}</button></div></div>
-              <SimpleAppearanceEditor style={comboImageStyle} avatarPresets={defaultAvatars} basePresets={defaultBasePresets} onChange={updateComboImageStyle} onRoleChange={updateRoleStyle} onPickAvatar={(slot, file) => void pickAvatar(slot, file)} onPickCapsule={(file) => void pickCapsuleImage(file)} avatarInputRefs={avatarInputRefs} capsuleInputRef={capsuleInputRef} />
+              <div className="panel-title"><div><h2>{text('连段图外观', 'Combo Overlay Appearance') }</h2><p>{text('这里显示的效果会同步到全局置顶连段图。', 'Changes here are applied to the always-on-top combo overlay.') }</p></div><div className="overlay-settings-panel inline-overlay-controls"><div className="segmented"><button className={overlaySettings.layout === 'horizontal' ? 'active' : '' } onClick={() => void setOverlayLayout('horizontal') }>{text('横排', 'Horizontal') }</button><button className={overlaySettings.layout === 'vertical' ? 'active' : '' } onClick={() => void setOverlayLayout('vertical') }>{text('竖排', 'Vertical') }</button><button className={overlaySettings.layout === 'waterfall' ? 'active' : '' } onClick={() => void setOverlayLayout('waterfall') }>{text('瀑布', 'Waterfall') }</button></div><button className={overlayMoveMode ? 'active' : '' } onClick={toggleOverlayMoveMode }>{text('移动', 'Move') }</button><button onClick={resetOverlayBounds }>{text('复位', 'Reset') }</button><button className="icon-button" onClick={toggleOverlay }>{overlayVisible ? <EyeOff size={18 } /> : <Eye size={18 } /> }</button></div></div>
+              <SimpleAppearanceEditor style={appearanceComboImageStyle } avatarPresets={defaultAvatars } basePresets={defaultBasePresets } onChange={updateAppearanceComboImageStyle } onRoleChange={updateAppearanceRoleStyle } onPickAvatar={(slot, file) => void (overlaySettings.layout === 'waterfall' ? pickWaterfallAvatar(slot, file) : overlaySettings.layout === 'vertical' ? pickVerticalAvatar(slot, file) : pickAvatar(slot, file)) } avatarInputRefs={avatarInputRefs } blockSettingsReplacement={overlaySettings.layout === 'waterfall' ? <RhythmBlockSettings settings={rhythmUiSettings } onChange={updateRhythmUiSettings } /> : null } />
             </div>
           </section>
-        )}
+        ) }
 
         {page === 'experiment' && (
           <section className="experiment-page-layout">
             {experimentPage === 'home' && (
               <div className="panel experiment-panel">
-                <div className="panel-title"><div><h2>{'实验'}</h2><p>{'还在打磨中的玩法和工具入口。'}</p></div></div>
+                <div className="panel-title"><div><h2>{text('实验', 'Labs') }</h2><p>{text('还在打磨中的玩法和工具入口。', 'Experimental modes and tools currently in development.') }</p></div></div>
                 <div className="experiment-grid">
-                  <button className="experiment-card" onClick={() => setExperimentPage('rhythm')}><span className="experiment-card-icon"><img src="/theme/experiment-rhythm.png" alt="" /></span><strong>{'音游模式'}</strong></button>
-                  <button className="experiment-card" onClick={() => setExperimentPage('axis')}><span className="experiment-card-icon"><Music2 size={64} /></span><strong>{'节奏合轴'}</strong></button>
-                  <button className="experiment-card" onClick={() => setExperimentPage('coop')}><span className="experiment-card-icon"><img src="/theme/experiment-coop.png" alt="" /></span><strong>{'协同事件'}</strong></button>
-                  <button className="experiment-card" onClick={() => setExperimentPage('keymap')}><span className="experiment-card-icon"><img src="/theme/experiment-keymap.png" alt="" /></span><strong>{'按键映射'}</strong></button>
+                  <button className="experiment-card" onClick={() => setExperimentPage('axis') }><span className="experiment-card-icon"><img src="/theme/experiment-axis.png" alt="" /></span><strong>{text('节奏合轴', 'Rhythm Axis') }</strong></button>
+                  <button className="experiment-card" onClick={() => setExperimentPage('keymap') }><span className="experiment-card-icon"><img src="/theme/home-keymap-icon.png" alt="" /></span><strong>{text('按键映射', 'Key Mapping') }</strong></button>
+                  <button className="experiment-card" onClick={() => setExperimentPage('export-axis') }><span className="experiment-card-icon"><img src="/theme/experiment-export-axis.png" alt="" /></span><strong>{text('导出轴图', 'Export Axis Image') }</strong></button>
                 </div>
               </div>
-            )}
-            {experimentPage === 'rhythm' && (
-              <div className="experiment-rhythm-layout">
-                <div className="panel practice-main-panel experiment-rhythm-main">
-                  <div className="panel-title experiment-subtitle"><div><h2>{'音游模式'}</h2><p>{'按连段时间生成三轨下落块。'}</p></div><button className="icon-button experiment-back-button" onClick={() => setExperimentPage('home')} title="返回"><ArrowLeft size={18} /></button></div>
-                  <RhythmGameDemo chart={practiceChart} style={comboImageStyle} practice={practice} settings={DEFAULT_RHYTHM_UI} />
-                  <div className="record-actions rhythm-actions"><button className="primary" onClick={startPractice} disabled={!practiceChart || practice.status === 'running' || practice.status === 'armed'}><Play size={18} />{'开始 F'}</button><button onClick={stopPractice} disabled={!practiceChart}><Square size={18} />{'结束 Esc'}</button></div>
-                  <div className="rhythm-hint-row"><span>{practiceChart ? `当前谱：${practiceChart.title || '未命名连段谱'}` : '先在右侧读取或选择一个连段谱。'}</span><span>{practice.status === 'running' ? '播放中' : practice.status === 'armed' ? '准备中' : '未开始'}</span></div>
-                </div>
-                <LibraryPanel chart={chart} library={library} onSelect={(id) => setChart(library.find((item) => item.id === id) ?? chart)} onEdit={(id) => { const item = library.find((entry) => entry.id === id); if (item) { setChart(item); setPage('record'); setEditorTab('timeline'); } }} onDelete={deleteLibraryChart} onExportCurrent={exportCurrentChart} onExportLibrary={exportLibrary} onImport={() => importInputRef.current?.click()} />
-                <input ref={importInputRef} className="file-input" type="file" accept="application/json,.json" onChange={(event) => void importCharts(event.target.files?.[0] ?? null)} />
-              </div>
-            )}
+            ) }
             {experimentPage === 'axis' && (
               <div className="experiment-axis-page">
-                <div className="panel-title experiment-subtitle"><div><h2>{'节奏合轴'}</h2><p>{'按连段时间生成三轨判定玩法。'}</p></div><button className="icon-button experiment-back-button" onClick={() => setExperimentPage('home')} title="返回"><ArrowLeft size={18} /></button></div>
-                <AxisRhythmGame chart={practiceChart} style={comboImageStyle} moves={moves} bindings={activeBindings} inputSignal={experimentInputSignal} iconStorageKey="ww-combo-axis-rhythm-icons-v1" />
+                <AxisRhythmGame chart={practiceChart } library={library  } style={comboImageStyle } moves={moves } bindings={activeBindings } inputSignal={experimentInputSignal } iconStorageKey="ww-combo-axis-rhythm-icons-v1" onSelectChart={(id) => setChart(library.find((item) => item.id === id) ?? chart) } onExit={exitExperimentSubpage } />
               </div>
-            )}
-            {experimentPage === 'coop' && (
-              <div className="experiment-coop-page">
-                <div className="panel-title experiment-subtitle"><div><h2>{'协同事件'}</h2><p>{'给连段事件绑定音频和图片触发。'}</p></div><button className="icon-button experiment-back-button" onClick={() => setExperimentPage('home')} title="返回"><ArrowLeft size={18} /></button></div>
-                <CoopEventLab sourceChart={chart} library={library} moves={moves} bindings={activeBindings} comboImageStyle={comboImageStyle} inputSignal={keyboardMouseInputSignal} />
-              </div>
-            )}
+            ) }
             {experimentPage === 'keymap' && (
               <div className="experiment-keymap-page">
-                <div className="panel-title experiment-subtitle"><div><h2>{'按键映射'}</h2><p>{'按下键位时显示对应图片。'}</p></div><button className="icon-button experiment-back-button" onClick={() => setExperimentPage('home')} title="返回"><ArrowLeft size={18} /></button></div>
-                <KeyMappingLab inputSignal={keyboardMouseInputSignal} onRequestGlobalInput={startGlobalInput} />
+                <div className="panel-title experiment-subtitle"><div><h2>{text('按键映射', 'Key Mapping') }</h2><p>{text('按下键位时显示对应图片。', 'Show the mapped image when a key is pressed.') }</p></div><button className="icon-button experiment-back-button" onClick={exitExperimentSubpage } title={text('返回', 'Back') }><ArrowLeft size={18 } /></button></div>
+                <KeyMappingLab inputSignal={keyMappingInputSignal } inputMode={inputMode } bindings={activeBindings } visible={keyMappingVisible } onVisibleChange={setKeyMappingVisible } onRequestGlobalInput={startGlobalInput } />
               </div>
-            )}
+            ) }
+            {experimentPage === 'export-axis' && (
+              <FullChartExportLab chart={chart } library={library } style={comboImageStyle } basePresets={defaultBasePresets } onSelectChart={(id) => setChart(library.find((item) => item.id === id) ?? chart) } onExit={exitExperimentSubpage } onExport={exportAxisImage } />
+            ) }
           </section>
-        )}
+        ) }
 
-        {page === 'settings' && <SettingsPanel moves={moves} bindings={bindings} gamepadBindings={gamepadBindings} inputMode={inputMode} exportDirectory={exportDirectory} onInputModeChange={setInputMode} onExportDirectoryChange={setExportDirectory} onMoveChange={updateMove} onBindingChange={updateBinding} onGamepadBindingChange={updateGamepadBinding} />}
+        {page === 'settings' && <SettingsPanel moves={moves } bindings={bindings } gamepadBindings={gamepadBindings } inputMode={inputMode } exportDirectory={exportDirectory } onInputModeChange={setInputMode } onExportDirectoryChange={setExportDirectory } onMoveChange={updateMove } onBindingChange={updateBinding } onGamepadBindingChange={updateGamepadBinding } /> }
       </main>
-      {quickInputOpen && practiceChart && <QuickInputDialog chart={practiceChart} style={comboImageStyle} initialValues={quickInputMemory} startStepId={quickInputStartStepId} onApply={applyQuickInput} onClose={() => setQuickInputOpen(false)} />}
-      {videoWorkbenchOpen && chart && <VideoAxisWorkbench chart={chart} comboImageStyle={comboImageStyle} overlaySettings={overlaySettings} exportDirectory={exportDirectory} timelineEditor={<TimelineEditor chart={chart} moves={moves} comboImageStyle={comboImageStyle} mode={editorTab} zoom={editorZoom} onZoomChange={setEditorZoom} onUpdate={updateStep} onDelete={deleteStep} onPeriodsChange={updatePeriods} onContentChange={updateComboImageStyle} onQuickInput={(stepId) => { setQuickInputStartStepId(stepId); setQuickInputOpen(true); }} onSave={saveCurrentChart} />} onApplyChart={applyVideoWorkbenchChart} onClose={() => setVideoWorkbenchOpen(false)} onSave={saveCurrentChart} getDisplaySize={getDisplaySize} />}
+      {quickInputOpen && practiceChart && <QuickInputDialog chart={practiceChart  } style={comboImageStyle } initialValues={quickInputMemory } startStepId={quickInputStartStepId } onApply={applyQuickInput } onClose={() => setQuickInputOpen(false) } /> }
+      {shareDraft && chart && <CommunityShareDialog draft={shareDraft } onChange={setShareDraft } onExport={() => void exportSharedChart(shareDraft) } onClose={() => setShareDraft(null) } /> }
+      {videoWorkbenchMounted && chart && <VideoAxisWorkbench open={videoWorkbenchOpen } desktop={desktop } chart={chart } comboImageStyle={activeRenderComboImageStyle } timelineContentLabels={comboImageStyle.contentLabels } overlaySettings={overlaySettings } rhythmUiSettings={rhythmUiSettings } exportDirectory={exportDirectory } timelineEditor={<TimelineEditor chart={chart } moves={moves } bindings={activeBindings } inputSignal={experimentInputSignal } comboImageStyle={comboImageStyle } mode={editorTab } onModeChange={setEditorTab } zoom={editorZoom } onZoomChange={setEditorZoom } onUpdate={updateStep } onInsert={insertSteps } onDelete={deleteSteps } onPeriodsChange={updatePeriods } onContentChange={updateComboImageStyle } onQuickInput={(stepId) => { setQuickInputStartStepId(stepId); setQuickInputOpen(true);  } } onSave={saveCurrentChart } historyControl={{ canUndo: timelineUndoStack.length > 0, canRedo: timelineRedoStack.length > 0, onCaptureHistory: captureTimelineHistory, onUndo: undoTimeline, onRedo: redoTimeline  }} /> } onApplyChart={applyVideoWorkbenchChart } onApplyContentLabels={(contentLabels) => setComboImageStyle((current) => normalizeComboImageStyle({ ...current, contentLabels })) } onClose={() => setVideoWorkbenchOpen(false) } onSave={saveCurrentChart } getDisplaySize={getDisplaySize } /> }
     </div>
   );
-}
+ }
 
-function StartingRolePicker({ value, style, onChange }: { value: CharacterSlot; style: ComboImageStyle; onChange: (slot: CharacterSlot) => void }) {
+function HomePage({ onNavigate  }: { onNavigate: (destination: HomeDestination) => void  }) {
+  const { text  } = useI18n();
+  const [activeDestination, setActiveDestination] = useState<HomeDestination | null>(null);
+  const [activeSpine, setActiveSpine] = useState<HomeSpineDestination>('record');
+  const entries: Array<{ destination: HomeDestination; icon: string; title: string; englishTitle: string; description: string  }> = [
+    { destination: 'record', icon: '/theme/home-record-icon.png', title: text('录制', 'Record'), englishTitle: 'RECORD', description: text('捕获键鼠或手柄输入，生成并编辑连段时间轴。', 'Capture keyboard, mouse, or gamepad inputs, then build and edit a combo timeline.')  },
+    { destination: 'practice', icon: '/theme/home-practice-icon.png', title: text('练习', 'Practice'), englishTitle: 'PRACTICE', description: text('载入连段谱，使用演示、练习或挑战模式完成输入。', 'Load a combo chart and complete it in Demo, Practice, or Challenge mode.')  },
+    { destination: 'appearance', icon: '/theme/home-labs-icon.png', title: text('外观', 'Appearance'), englishTitle: 'APPEARANCE', description: text('调整全局置顶连段图的外观与布局。', 'Adjust the appearance and layout of the always-on-top combo display.')  },
+    { destination: 'keymap', icon: '/theme/home-keymap-icon.png', title: text('按键映射', 'Key Mapping'), englishTitle: 'KEY MAPPING', description: text('按下键盘、鼠标或手柄输入时显示映射图片。', 'Display mapped images when keyboard, mouse, or gamepad inputs are pressed.')  },
+    { destination: 'export-axis', icon: '/theme/experiment-export-axis.png', title: text('导出轴图', 'Export Axis'), englishTitle: 'EXPORT AXIS', description: text('自动缩放并导出完整连段轴图。', 'Export a complete combo axis image with automatic scaling.')  },
+    { destination: 'settings', icon: '/theme/home-settings-icon.png', title: text('设置', 'Settings'), englishTitle: 'SETTINGS', description: text('设置语言以及键盘、鼠标与手柄映射。', 'Configure language, keyboard, mouse, and gamepad mappings.')  }
+  ];
+  const activeEntry = entries.find((entry) => entry.destination === activeDestination) ?? null;
+  const activateEntry = (destination: HomeDestination) => {
+    setActiveDestination(destination);
+    if (destination === 'record' || destination === 'practice' || destination === 'appearance' || destination === 'keymap' || destination === 'export-axis' || destination === 'settings') {
+      setActiveSpine(destination);
+    }
+  };
+  const homeTitle = text('鸣潮训练场', 'Wuthering Waves Trainer');
+  const homeDescription = text('记录操作、练习连段，探索更多辅助工具。', 'Record inputs, practice combos, and explore specialized tools.');
+
+  return (
+    <section className="home-page" aria-label={homeTitle }>
+      <div className="home-art-stage" aria-hidden="true">
+        <div className={`home-spine-viewport ${activeSpine === 'record' ? 'visible' : ''}`} data-home-spine="record">
+          <div className="home-spine-crop">
+            <div className="home-spine-scene"><HomeSpineStage skeletonUrl="/theme/zanni-spine/zanni.skel" active={activeSpine === 'record'} /></div>
+          </div>
+        </div>
+        <div className={`home-spine-viewport ${activeSpine === 'practice' ? 'visible' : ''}`} data-home-spine="practice">
+          <div className="home-spine-crop">
+            <div className="home-spine-scene"><HomeSpineStage skeletonUrl="/theme/augusta-spine/aogusita.skel" scale={3} offsetY={0.05} active={activeSpine === 'practice'} /></div>
+          </div>
+        </div>
+        <div className={`home-spine-viewport ${activeSpine === 'appearance' ? 'visible' : ''}`} data-home-spine="appearance">
+          <div className="home-spine-crop">
+            <div className="home-spine-scene"><HomeSpineStage skeletonUrl="/theme/lupa-spine/lupa.skel" active={activeSpine === 'appearance'} /></div>
+          </div>
+        </div>
+        <div className={`home-spine-viewport ${activeSpine === 'keymap' ? 'visible' : ''}`} data-home-spine="keymap">
+          <div className="home-spine-crop">
+            <div className="home-spine-scene"><HomeSpineStage skeletonUrl="/theme/galbrena-spine/jiabeilina.skel" scale={3} offsetY={0.05} active={activeSpine === 'keymap'} /></div>
+          </div>
+        </div>
+        <div className={`home-spine-viewport ${activeSpine === 'export-axis' ? 'visible' : ''}`} data-home-spine="export-axis">
+          <div className="home-spine-crop">
+            <div className="home-spine-scene"><HomeSpineStage skeletonUrl="/theme/hiyuki-spine/feixue.skel" offsetY={-0.2} active={activeSpine === 'export-axis'} /></div>
+          </div>
+        </div>
+        <div className={`home-spine-viewport ${activeSpine === 'settings' ? 'visible' : ''}`} data-home-spine="settings">
+          <div className="home-spine-crop">
+            <div className="home-spine-scene"><HomeSpineStage skeletonUrl="/theme/phrolova-spine/fuluoluo.skel" scale={2.2} offsetY={0.1} active={activeSpine === 'settings'} /></div>
+          </div>
+        </div>
+      </div>
+      <div className={`home-intro ${activeEntry ? 'has-selection' : '' }` } aria-live="polite">
+        <div key={activeEntry?.destination ?? 'home' }>
+          <span>{activeEntry ? activeEntry.englishTitle : 'WW COMBO TRAINER'}</span>
+          <h2>{activeEntry?.title ?? homeTitle}</h2>
+          <p>{activeEntry?.description ?? homeDescription}</p>
+        </div>
+      </div>
+      <div className="home-nav-grid">
+        {entries.map((entry, index) => {
+          const active = activeDestination === entry.destination;
+          return <button key={entry.destination } className={`home-nav-card ${active ? 'active' : '' }` } data-home-destination={entry.destination } type="button" onMouseEnter={() => activateEntry(entry.destination) } onMouseLeave={() => setActiveDestination((current) => current === entry.destination ? null : current) } onFocus={() => activateEntry(entry.destination) } onBlur={() => setActiveDestination((current) => current === entry.destination ? null : current) } onClick={() => onNavigate(entry.destination) }><span className="home-nav-card-index">0{index + 1 }</span><span className="home-nav-card-icon"><img src={entry.icon } alt="" /></span><span className="home-nav-card-copy"><strong>{entry.title}</strong><small>{entry.englishTitle}</small></span></button>;
+         }) }
+      </div>
+    </section>
+  );
+ }
+
+function StartingRolePicker({ value, style, onChange  }: { value: CharacterSlot; style: ComboImageStyle; onChange: (slot: CharacterSlot) => void  }) {
+  const { language, text  } = useI18n();
   return (
     <div className="starting-role-picker">
-      <span>首发角色</span>
+      <span>{text('首发角色', 'Starting Character') }</span>
       <div>
         {CHARACTER_SLOTS.map((slot) => {
           const role = style.roleStyles[slot];
           return (
-            <button key={slot} type="button" className={value === slot ? 'active' : ''} onClick={() => onChange(slot)} title={role.name || `角色 ${slot}`}>
-              <span className="starting-role-avatar" style={avatarBackgroundStyle(role.avatar)}>{role.avatar ? null : slot}</span>
+            <button key={slot } type="button" className={value === slot ? 'active' : '' } onClick={() => onChange(slot) } title={localizeDefaultCharacterName(role.name, slot, language) }>
+              <span className="starting-role-avatar" style={avatarBackgroundStyle(role.avatar) }>{role.avatar ? null : slot }</span>
             </button>
           );
-        })}
+         }) }
       </div>
     </div>
   );
-}
+ }
 
-function avatarBackgroundStyle(src?: string): CSSProperties {
-  return src ? { backgroundImage: `url(${src})`, backgroundSize: 'cover', backgroundPosition: 'center' } : {};
-}
+function PracticeRoleOrderPicker({ order, style, disabled, onReorder  }: { order: CharacterSlot[]; style: ComboImageStyle; disabled: boolean; onReorder: (order: CharacterSlot[]) => void  }) {
+  const { language, text  } = useI18n();
+  const [draggedSlot, setDraggedSlot] = useState<CharacterSlot | null>(null);
+  const [dropSlot, setDropSlot] = useState<CharacterSlot | null>(null);
+  const visibleOrder = normalizeCharacterOrder(order);
 
-function ComboInlineContent({ parts, className }: { parts: ReturnType<typeof comboTextParts>; className: string }) {
-  return <strong className={className}>{parts.map((part, index) => part.kind === 'icon' ? <span key={`${part.iconId}-${index}`} className="combo-inline-icon-mark" style={{ '--icon-scale': part.iconScale } as CSSProperties}><img className="combo-inline-icon" src={part.src} alt={part.label} title={part.label} /></span> : <span key={`text-${index}`}>{part.value}</span>)}</strong>;
-}
+  function dropOn(targetSlot: CharacterSlot, event?: ReactDragEvent<HTMLButtonElement>) {
+    const sourceSlot = draggedSlot ?? Number(event?.dataTransfer.getData('text/plain')) as CharacterSlot;
+    if (!CHARACTER_SLOTS.includes(sourceSlot) || sourceSlot === targetSlot) {
+      setDraggedSlot(null);
+      setDropSlot(null);
+      return;
+     }
+    const nextOrder = [...visibleOrder];
+    const sourceIndex = nextOrder.indexOf(sourceSlot);
+    const targetIndex = nextOrder.indexOf(targetSlot);
+    if (sourceIndex < 0 || targetIndex < 0) return;
+    nextOrder.splice(sourceIndex, 1);
+    nextOrder.splice(targetIndex, 0, sourceSlot);
+    onReorder(nextOrder);
+    setDraggedSlot(null);
+    setDropSlot(null);
+   }
 
-function RhythmGameDemo({ chart, style, practice, settings }: { chart: ComboChart | null; style: ComboImageStyle; practice: PracticeSnapshot; settings: RhythmUiSettings }) {
+  function beginDrag(event: ReactDragEvent<HTMLButtonElement>, slot: CharacterSlot) {
+    if (disabled) {
+      event.preventDefault();
+      return;
+     }
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', String(slot));
+    setDraggedSlot(slot);
+   }
+
+  return (
+    <div className={`practice-role-order ${disabled ? 'disabled' : '' }` }>
+      <span>{text('角色顺序', 'Character Order') }</span>
+      <div className="practice-role-order-list">
+        {visibleOrder.map((roleSlot, index) => {
+          const position = (index + 1) as CharacterSlot;
+          const role = style.roleStyles[roleSlot];
+          return (
+            <button
+              key={roleSlot }
+              type="button"
+              draggable={!disabled }
+              className={`${draggedSlot === roleSlot ? 'dragging' : '' } ${dropSlot === roleSlot ? 'drop-target' : '' }` }
+              title={disabled ? text('练习进行中不可调整角色顺序', 'Character order cannot be changed during practice') : text(`${role.name || `角色 ${roleSlot }` }，拖动调整切人键位置`, `${localizeDefaultCharacterName(role.name, roleSlot, language) }; drag to change the switch position`) }
+              aria-label={text(`${role.name || `角色 ${roleSlot }` }，当前切人键 ${position }`, `${localizeDefaultCharacterName(role.name, roleSlot, language) }; current switch position ${position }`) }
+              onDragStart={(event) => beginDrag(event, roleSlot) }
+              onDragEnter={(event) => { event.preventDefault(); if (draggedSlot && draggedSlot !== roleSlot) setDropSlot(roleSlot);  } }
+              onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'move';  } }
+              onDrop={(event) => { event.preventDefault(); dropOn(roleSlot, event);  } }
+              onDragEnd={() => { setDraggedSlot(null); setDropSlot(null);  } }
+            >
+              <span className="starting-role-avatar" style={avatarBackgroundStyle(role.avatar) }>{role.avatar ? null : roleSlot }</span>
+              <small>{position }</small>
+              <GripVertical size={12 } aria-hidden="true" />
+            </button>
+          );
+         }) }
+      </div>
+    </div>
+  );
+ }function avatarBackgroundStyle(src?: string): CSSProperties {
+  return src ? { backgroundImage: `url(${src })`, backgroundSize: 'cover', backgroundPosition: 'center'  } : { };
+ }
+
+function ComboInlineContent({ parts, className  }: { parts: ReturnType<typeof comboTextParts>; className: string  }) {
+  return <strong className={className }>{parts.map((part, index) => part.kind === 'icon' ? <span key={`${part.iconId }-${index }` } className="combo-inline-icon-mark" style={{ '--icon-scale': part.iconScale  } as CSSProperties }><img className="combo-inline-icon" src={part.src } alt={part.label } title={part.label } /></span> : <span key={`text-${index }` }>{part.value }</span>) }</strong>;
+ }
+
+function RhythmBlockSettings({ settings, onChange  }: { settings: RhythmUiSettings; onChange: (patch: Partial<RhythmUiSettings>) => void  }) {
+  const { text  } = useI18n();
+  return (
+    <>
+      <div className="appearance-settings-group rhythm-settings-group"><span>{text('画面与轨道', 'Canvas & Lanes') }</span><div className="appearance-grid stable-number-grid">
+        <NumberDraftInput label={text('宽度', 'Width') } value={settings.width } min={120 } onCommit={(value) => onChange({ width: value  }) } />
+        <NumberDraftInput label={text('高度', 'Height') } value={settings.height } min={120 } onCommit={(value) => onChange({ height: value  }) } />
+        <NumberDraftInput label={text('整体缩放 %', 'Scale %') } value={Math.round(settings.scale * 100) } min={30 } onCommit={(value) => onChange({ scale: value / 100  }) } />
+        <NumberDraftInput label={text('角色间距', 'Character Spacing') } value={settings.roleSpacing } min={24 } onCommit={(value) => onChange({ roleSpacing: value  }) } />
+        <NumberDraftInput label={text('轨道间距', 'Lane Gap') } value={settings.laneGap } onCommit={(value) => onChange({ laneGap: value  }) } />
+      </div></div>
+      <div className="appearance-settings-group rhythm-settings-group"><span>{text('下落与判定', 'Falling & Timing') }</span><div className="appearance-grid stable-number-grid">
+        <NumberDraftInput label={text('下落速度', 'Fall Speed') } value={Math.round(settings.fallSpeed * 1000) } min={30 } onCommit={(value) => onChange({ fallSpeed: value / 1000  }) } />
+        <NumberDraftInput label={text('判定线偏移', 'Judge Line Offset') } value={settings.judgeLineOffset } min={20 } onCommit={(value) => onChange({ judgeLineOffset: value  }) } />
+        <NumberDraftInput label={text('反馈 X%', 'Feedback X%') } value={settings.feedbackX } onCommit={(value) => onChange({ feedbackX: value  }) } />
+        <NumberDraftInput label={text('反馈 Y%', 'Feedback Y%') } value={settings.feedbackY } onCommit={(value) => onChange({ feedbackY: value  }) } />
+      </div></div>
+      <div className="appearance-settings-group rhythm-settings-group"><span>{text('切人反馈', 'Switch Feedback') }</span><div className="appearance-grid stable-number-grid">
+        <NumberDraftInput label={text('起始缩放 %', 'Start Scale %') } value={Math.round(settings.ringStartScale * 100) } min={20 } onCommit={(value) => onChange({ ringStartScale: value / 100  }) } />
+        <NumberDraftInput label={text('结束缩放 %', 'End Scale %') } value={Math.round(settings.ringEndScale * 100) } min={20 } onCommit={(value) => onChange({ ringEndScale: value / 100  }) } />
+        <NumberDraftInput label={text('偏移 X', 'Offset X') } value={settings.ringOffsetX } min={-1000 } onCommit={(value) => onChange({ ringOffsetX: value  }) } />
+        <NumberDraftInput label={text('偏移 Y', 'Offset Y') } value={settings.ringOffsetY } min={-1000 } onCommit={(value) => onChange({ ringOffsetY: value  }) } />
+        <NumberDraftInput label={text('时长 ms', 'Duration ms') } value={settings.ringDurationMs } min={80 } onCommit={(value) => onChange({ ringDurationMs: value  }) } />
+      </div></div>
+    </>
+  );
+ }
+
+function RhythmGameDemo({ chart, style, practice, settings  }: { chart: ComboChart | null; style: ComboImageStyle; practice: PracticeSnapshot; settings: RhythmUiSettings  }) {
+  const { language, text  } = useI18n();
   const [clockNow, setClockNow] = useState(() => performance.now());
 
   useEffect(() => {
@@ -983,10 +1853,10 @@ function RhythmGameDemo({ chart, style, practice, settings }: { chart: ComboChar
     const tick = () => {
       setClockNow(performance.now());
       frame = requestAnimationFrame(tick);
-    };
+     };
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, [practice.status, practice.startedAt]);
+   }, [practice.status, practice.startedAt]);
 
   const orderedSteps = useMemo(() => [...(chart?.steps ?? [])].sort((left, right) => left.startMin - right.startMin || (left.characterSlot ?? 1) - (right.characterSlot ?? 1) || left.id.localeCompare(right.id)), [chart]);
   const chartEndMs = Math.max(3000, ...(chart?.steps ?? []).map((step) => step.startMin + step.durationMax + 1000));
@@ -999,104 +1869,112 @@ function RhythmGameDemo({ chart, style, practice, settings }: { chart: ComboChar
   const latestFeedback = practice.feedback.find((item) => item.stepId && item.level !== 'info');
   const latestJudgement = latestFeedback?.stepId ? practice.judgements?.[latestFeedback.stepId] : undefined;
 
-  if (!chart) return <div className="rhythm-empty"><Music2 size={44} /><strong>{'暂无连段谱'}</strong><span>{'从右侧读取连段谱后，这里会生成下落式操作块。'}</span></div>;
+  if (!chart) return <div className="rhythm-empty"><Music2 size={44 } /><strong>{text('暂无连段谱', 'No Combo Chart') }</strong><span>{text('从右侧读取连段谱后，这里会生成下落式操作块。', 'Select a combo chart on the right to generate falling action blocks here.') }</span></div>;
 
   return (
     <div className="rhythm-demo-shell">
       <div className="rhythm-demo-status">
-        <span><b>{'时长'}</b>{(chartEndMs / 1000).toFixed(1)}s</span>
-        <span><b>{'进度'}</b>{(elapsedMs / 1000).toFixed(2)}s</span>
-        <span><b>{'指令'}</b>{orderedSteps.length}</span>
+        <span><b>{text('时长', 'Duration') }</b>{(chartEndMs / 1000).toFixed(1) }s</span>
+        <span><b>{text('进度', 'Progress') }</b>{(elapsedMs / 1000).toFixed(2) }s</span>
+        <span><b>{text('指令', 'Actions') }</b>{orderedSteps.length }</span>
       </div>
-      <div className="rhythm-demo-stage" style={{ '--rhythm-stage-width': `${settings.width}px`, '--rhythm-stage-height': `${settings.height}px`, '--rhythm-lane-gap': `${settings.laneGap}px`, '--rhythm-judge-y': `${judgeY}px` } as CSSProperties}>
+      <div className="rhythm-demo-stage" style={{ '--rhythm-stage-width': `${settings.width }px`, '--rhythm-stage-height': `${settings.height }px`, '--rhythm-lane-gap': `${settings.laneGap }px`, '--rhythm-role-spacing': `${settings.roleSpacing }px`, '--rhythm-judge-y': `${judgeY }px`  } as CSSProperties }>
         <div className="rhythm-lanes">
           {CHARACTER_SLOTS.map((slot) => {
             const role = style.roleStyles[slot];
             return (
-              <div key={slot} className="rhythm-lane">
-                {Number(activeSlot) === slot && <div className="rhythm-active-role-gradient" />}
-                <div className="rhythm-lane-label">{role.name || `角色${slot}`}</div>
+              <div key={slot } className="rhythm-lane">
+                {Number(activeSlot) === slot && <div className="rhythm-active-role-gradient" /> }
+                <div className="rhythm-lane-label">{localizeDefaultCharacterName(role.name, slot, language) }</div>
                 {visibleSteps.filter((step) => (step.characterSlot ?? 1) === slot).map((step) => {
                   const top = judgeY - (step.startMin - elapsedMs) * settings.fallSpeed - 34;
-                  const contentText = style.contentLabels[step.id]?.trim() || displayMoveLabel(step);
+                  const contentText = style.contentLabels[step.id]?.trim() || localizedMoveLabel(step, language);
                   const parts = comboTextParts(maybeConvertTextToIconLabel(contentText, style.convertIcons), style.convertIcons, style.iconMappings);
                   const active = elapsedMs >= step.startMin && elapsedMs <= step.startMin + step.durationMax;
                   const matched = matchedStepIds.has(step.id);
                   const judgement = practice.judgements?.[step.id];
-                  return <div key={step.id} className={`rhythm-note ${step.moveId === 'heavy_attack' || step.moveId.endsWith('_hold') ? 'hold' : 'normal'} ${parts.length > 1 ? 'stacked' : ''} ${active ? 'active' : ''} ${matched ? 'matched' : ''} ${judgement ? `judge-${judgement}` : ''}`} style={{ top } as CSSProperties}><ComboInlineContent parts={parts} className="rhythm-note-content" /></div>;
-                })}
+                  return <div key={step.id } className={`rhythm-note ${step.moveId === 'heavy_attack' || step.moveId.endsWith('_hold') ? 'hold' : 'normal' } ${parts.length > 1 ? 'stacked' : '' } ${active ? 'active' : '' } ${matched ? 'matched' : '' } ${judgement ? `judge-${judgement }` : '' }`  } style={{ top  } as CSSProperties }><ComboInlineContent parts={parts } className="rhythm-note-content" /></div>;
+                 }) }
               </div>
             );
-          })}
+           }) }
         </div>
         <div className="rhythm-judgement-line" />
-        {latestJudgement && <div className={`rhythm-floating-feedback judge-${latestJudgement}`} style={{ left: `${settings.feedbackX}%`, top: `${settings.feedbackY}%` } as CSSProperties}>{latestJudgement.toUpperCase()}</div>}
+        {latestJudgement && <div className={`rhythm-floating-feedback judge-${latestJudgement }`  } style={{ left: `${settings.feedbackX }%`, top: `${settings.feedbackY }%`  } as CSSProperties }>{latestJudgement.toUpperCase() }</div> }
         <div className="rhythm-avatar-row">
           {CHARACTER_SLOTS.map((slot) => {
             const role = style.roleStyles[slot];
             const promptStep = orderedSteps.find((step) => (step.characterSlot ?? 1) === slot && elapsedMs <= step.startMin + step.durationMax);
-            return <div key={slot} className="rhythm-avatar-cell"><span className="rhythm-lane-prompt">{promptStep ? displayMoveLabel(promptStep) : ''}</span><span className="rhythm-avatar" style={avatarBackgroundStyle(role.avatar)}>{role.avatar ? null : slot}</span></div>;
-          })}
+            return <div key={slot } className="rhythm-avatar-cell"><span className="rhythm-lane-prompt">{promptTextForStep(promptStep, language, style) }</span><span className="rhythm-avatar" style={avatarBackgroundStyle(role.avatar) }>{role.avatar ? null : slot }</span></div>;
+           }) }
         </div>
       </div>
     </div>
   );
-}
+ }
 
 function CapsuleBlockBackground() {
   return <div className="capsule-bg" aria-hidden="true"><div className="capsule-bg-piece left" /><div className="capsule-bg-piece middle" /><div className="capsule-bg-piece right" /></div>;
-}
+ }
 
-function imageCropBackground(src: string | undefined, crop = { x: 0, y: 0, w: 100, h: 100 }): CSSProperties {
-  if (!src) return {};
-  const safe = normalizeRectPercent(crop, { x: 0, y: 0, w: 100, h: 100 });
+function imageCropBackground(src: string | undefined, crop = { x: 0, y: 0, w: 100, h: 100  }): CSSProperties {
+  if (!src) return { };
+  const safe = normalizeRectPercent(crop, { x: 0, y: 0, w: 100, h: 100  });
   return {
-    backgroundImage: `url(${src})`,
-    backgroundSize: `${10000 / safe.w}% ${10000 / safe.h}%`,
-    backgroundPosition: `${safe.x <= 0 ? 0 : (safe.x / Math.max(1, 100 - safe.w)) * 100}% ${safe.y <= 0 ? 0 : (safe.y / Math.max(1, 100 - safe.h)) * 100}%`,
+    backgroundImage: `url(${src })`,
+    backgroundSize: `${10000 / safe.w }% ${10000 / safe.h }%`,
+    backgroundPosition: `${safe.x <= 0 ? 0 : (safe.x / Math.max(1, 100 - safe.w)) * 100 }% ${safe.y <= 0 ? 0 : (safe.y / Math.max(1, 100 - safe.h)) * 100 }%`,
     backgroundRepeat: 'no-repeat'
-  };
-}
+   };
+ }
 
 function capsuleImageStyle(style: ComboImageStyle, width: number, height: number, roleStyle?: ComboImageStyle['roleStyles'][CharacterSlot]): CSSProperties {
   const capsule = effectiveCapsuleImageFields(style, roleStyle);
-  if (style.blockMode !== 'image' || !capsule.image) return {};
+  if (style.blockMode !== 'image' || !capsule.image) return { };
   return {
     backgroundImage: 'none',
     borderColor: 'transparent',
     ...capsuleBackgroundVars(style, width, height, roleStyle)
-  } as CSSProperties;
-}
+   } as CSSProperties;
+ }
 
 function cssImageUrl(src: string): string {
-  return `url("${src.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}")`;
-}
+  return `url("${src.replace(/\\/g, '\\\\').replace(/"/g, '\\"') }")`;
+ }
 
 function cssPx(value: number): string {
-  return `${Number(value.toFixed(3))}px`;
-}
+  return `${Number(value.toFixed(3)) }px`;
+ }
 
 function capsuleBackgroundVars(style: ComboImageStyle, targetWidthInput: number, targetHeightInput: number, roleStyle?: ComboImageStyle['roleStyles'][CharacterSlot]): CSSProperties {
   const capsule = effectiveCapsuleImageFields(style, roleStyle);
   const source = capsule.image ?? '';
   const naturalWidth = Math.max(1, capsule.width ?? style.capsuleWidth ?? 200);
   const naturalHeight = Math.max(1, capsule.height ?? style.capsuleHeight ?? 80);
-  const crop = normalizeRectPercent(capsule.crop, { x: 0, y: 0, w: 100, h: 100 });
+  const crop = normalizeRectPercent(capsule.crop, { x: 0, y: 0, w: 100, h: 100  });
   const cropX = Math.round((crop.x / 100) * naturalWidth);
   const cropY = Math.round((crop.y / 100) * naturalHeight);
   const cropWidth = Math.max(1, Math.round((crop.w / 100) * naturalWidth));
   const cropHeight = Math.max(1, Math.round((crop.h / 100) * naturalHeight));
-  const stretch = capsule.stretch ?? { left: 25, right: 75 };
+  const stretch = capsule.stretch ?? { left: 25, right: 75  };
   const leftLine = Math.round(clamp(((stretch.left ?? 25) / 100) * naturalWidth - cropX, 1, cropWidth - 2));
   const rightLine = Math.round(clamp(((stretch.right ?? 75) / 100) * naturalWidth - cropX, leftLine + 1, cropWidth - 1));
   const targetWidth = Math.max(1, Math.round(targetWidthInput));
   const targetHeight = Math.max(1, Math.round(targetHeightInput));
   const heightScale = targetHeight / cropHeight;
-  const destLeft = Math.max(0, Math.round(leftLine * heightScale));
-  const destRight = Math.max(0, Math.round((cropWidth - rightLine) * heightScale));
+  const rawDestLeft = Math.max(0, leftLine * heightScale);
+  const rawDestRight = Math.max(0, (cropWidth - rightLine) * heightScale);
+  const minMiddle = Math.min(targetWidth, Math.max(24, targetHeight * 0.42));
+  const availableForEdges = Math.max(0, targetWidth - minMiddle);
+  const edgeScale = rawDestLeft + rawDestRight > availableForEdges ? availableForEdges / (rawDestLeft + rawDestRight) : 1;
+  const destLeft = Math.min(targetWidth, Math.max(0, Math.round(rawDestLeft * edgeScale)));
+  const destRight = Math.max(0, Math.min(targetWidth - destLeft, Math.round(rawDestRight * edgeScale)));
   const destMiddle = Math.max(0, targetWidth - destLeft - destRight);
   const stretchWidth = Math.max(1, rightLine - leftLine);
+  const leftScaleX = destLeft / Math.max(1, leftLine);
   const middleScaleX = destMiddle / stretchWidth;
+  const rightSourceWidth = Math.max(1, cropWidth - rightLine);
+  const rightScaleX = destRight / rightSourceWidth;
   return {
     '--capsule-bg-source': cssImageUrl(source),
     '--capsule-bg-left-width': cssPx(destLeft),
@@ -1104,25 +1982,25 @@ function capsuleBackgroundVars(style: ComboImageStyle, targetWidthInput: number,
     '--capsule-bg-middle-width': cssPx(destMiddle),
     '--capsule-bg-right-left': cssPx(destLeft + destMiddle),
     '--capsule-bg-right-width': cssPx(destRight),
-    '--capsule-bg-left-size': `${cssPx(naturalWidth * heightScale)} ${cssPx(naturalHeight * heightScale)}`,
-    '--capsule-bg-left-position': `${cssPx(-cropX * heightScale)} ${cssPx(-cropY * heightScale)}`,
-    '--capsule-bg-middle-size': `${cssPx(naturalWidth * middleScaleX)} ${cssPx(naturalHeight * heightScale)}`,
-    '--capsule-bg-middle-position': `${cssPx(-(cropX + leftLine) * middleScaleX)} ${cssPx(-cropY * heightScale)}`,
-    '--capsule-bg-right-size': `${cssPx(naturalWidth * heightScale)} ${cssPx(naturalHeight * heightScale)}`,
-    '--capsule-bg-right-position': `${cssPx(-(cropX + rightLine) * heightScale)} ${cssPx(-cropY * heightScale)}`
-  } as CSSProperties;
-}
+    '--capsule-bg-left-size': `${cssPx(naturalWidth * leftScaleX) } ${cssPx(naturalHeight * heightScale) }`,
+    '--capsule-bg-left-position': `${cssPx(-cropX * leftScaleX) } ${cssPx(-cropY * heightScale) }`,
+    '--capsule-bg-middle-size': `${cssPx(naturalWidth * middleScaleX) } ${cssPx(naturalHeight * heightScale) }`,
+    '--capsule-bg-middle-position': `${cssPx(-(cropX + leftLine) * middleScaleX) } ${cssPx(-cropY * heightScale) }`,
+    '--capsule-bg-right-size': `${cssPx(naturalWidth * rightScaleX) } ${cssPx(naturalHeight * heightScale) }`,
+    '--capsule-bg-right-position': `${cssPx(-(cropX + rightLine) * rightScaleX) } ${cssPx(-cropY * heightScale) }`
+   } as CSSProperties;
+ }
 
-function capsuleBorderImage(style: ComboImageStyle, targetWidthInput: number, targetHeightInput: number): { source: string } {
+function capsuleBorderImage(style: ComboImageStyle, targetWidthInput: number, targetHeightInput: number): { source: string  } {
   const source = style.capsuleImage ?? '';
   const naturalWidth = Math.max(1, style.capsuleImageWidth ?? style.capsuleWidth ?? 200);
   const naturalHeight = Math.max(1, style.capsuleImageHeight ?? style.capsuleHeight ?? 80);
-  const crop = normalizeRectPercent(style.capsuleCrop, { x: 0, y: 0, w: 100, h: 100 });
+  const crop = normalizeRectPercent(style.capsuleCrop, { x: 0, y: 0, w: 100, h: 100  });
   const cropX = Math.round((crop.x / 100) * naturalWidth);
   const cropY = Math.round((crop.y / 100) * naturalHeight);
   const cropWidth = Math.max(1, Math.round((crop.w / 100) * naturalWidth));
   const cropHeight = Math.max(1, Math.round((crop.h / 100) * naturalHeight));
-  const stretch = style.capsuleStretch ?? { left: 25, right: 75 };
+  const stretch = style.capsuleStretch ?? { left: 25, right: 75  };
   const leftLine = Math.round(clamp(((stretch.left ?? 25) / 100) * naturalWidth - cropX, 1, cropWidth - 2));
   const rightLine = Math.round(clamp(((stretch.right ?? 75) / 100) * naturalWidth - cropX, leftLine + 1, cropWidth - 1));
   const targetWidth = Math.max(1, Math.round(targetWidthInput));
@@ -1132,10 +2010,10 @@ function capsuleBorderImage(style: ComboImageStyle, targetWidthInput: number, ta
   const destRight = Math.max(0, Math.round((cropWidth - rightLine) * heightScale));
   const destMiddle = Math.max(0, targetWidth - destLeft - destRight);
   const stretchWidth = Math.max(1, rightLine - leftLine);
-  const imageAttrs = `x="0" y="0" width="${naturalWidth}" height="${naturalHeight}" preserveAspectRatio="none" style="image-rendering:pixelated;image-rendering:crisp-edges"`; 
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${targetWidth}" height="${targetHeight}" viewBox="0 0 ${targetWidth} ${targetHeight}" preserveAspectRatio="none" shape-rendering="crispEdges"><svg x="0" y="0" width="${destLeft}" height="${targetHeight}" viewBox="${cropX} ${cropY} ${leftLine} ${cropHeight}" preserveAspectRatio="none"><image href="${source}" ${imageAttrs}/></svg><svg x="${destLeft}" y="0" width="${destMiddle}" height="${targetHeight}" viewBox="${cropX + leftLine} ${cropY} ${stretchWidth} ${cropHeight}" preserveAspectRatio="none"><image href="${source}" ${imageAttrs}/></svg><svg x="${destLeft + destMiddle}" y="0" width="${destRight}" height="${targetHeight}" viewBox="${cropX + rightLine} ${cropY} ${cropWidth - rightLine} ${cropHeight}" preserveAspectRatio="none"><image href="${source}" ${imageAttrs}/></svg></svg>`;
-  return { source: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}` };
-}
+  const imageAttrs = `x="0" y="0" width="${naturalWidth }" height="${naturalHeight }" preserveAspectRatio="none" style="image-rendering:pixelated;image-rendering:crisp-edges"`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${targetWidth }" height="${targetHeight }" viewBox="0 0 ${targetWidth } ${targetHeight }" preserveAspectRatio="none" shape-rendering="crispEdges"><svg x="0" y="0" width="${destLeft }" height="${targetHeight }" viewBox="${cropX } ${cropY } ${leftLine } ${cropHeight }" preserveAspectRatio="none"><image href="${source }" ${imageAttrs }/></svg><svg x="${destLeft }" y="0" width="${destMiddle }" height="${targetHeight }" viewBox="${cropX + leftLine } ${cropY } ${stretchWidth } ${cropHeight }" preserveAspectRatio="none"><image href="${source }" ${imageAttrs }/></svg><svg x="${destLeft + destMiddle }" y="0" width="${destRight }" height="${targetHeight }" viewBox="${cropX + rightLine } ${cropY } ${cropWidth - rightLine } ${cropHeight }" preserveAspectRatio="none"><image href="${source }" ${imageAttrs }/></svg></svg>`;
+  return { source: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg) }`  };
+ }
 
 
 function comboTrackMetrics(items: ReturnType<typeof chartToComboImageItems>, layout: ComboLayout, style: ComboImageStyle): ComboTrackMetric[] {
@@ -1145,12 +2023,17 @@ function comboTrackMetrics(items: ReturnType<typeof chartToComboImageItems>, lay
     const roleStyle = style.roleStyles[item.characterSlot];
     const size = comboImageItemSizeForDisplayItem(style, item, roleStyle);
     const extent = layout === 'vertical' ? size.height : size.width;
-    const metric = { extent, start: cursor, center: cursor + extent / 2 };
+    const metric = { extent, start: cursor, center: cursor + extent / 2  };
     cursor += extent;
     return metric;
-  });
-}
+   });
+ }
 
+function metricsExtentForItems(items: ReturnType<typeof chartToComboImageItems>, style: ComboImageStyle): number {
+  const metrics = comboTrackMetrics(items, 'horizontal', style);
+  const last = metrics.at(-1);
+  return last ? last.start + last.extent : 0;
+ }
 function comboItemOpacity(metric: ComboTrackMetric | undefined, activeMetric: ComboTrackMetric | undefined, trackOffset: number, layout: ComboLayout, bounds: OverlaySettings, style: ComboImageStyle): number {
   if (!style.fadeEnabled || !metric || !activeMetric) return 1;
   const viewport = Math.max(1, layout === 'vertical' ? bounds.height : bounds.width);
@@ -1161,7 +2044,7 @@ function comboItemOpacity(metric: ComboTrackMetric | undefined, activeMetric: Co
   const ratio = clamp(distance / maxDistance, 0, 1);
   const strength = clamp(style.fadeRange / 100, 0, 1);
   return Number((1 - ratio * strength).toFixed(3));
-}
+ }
 
 function comboTrackOffset(items: ReturnType<typeof chartToComboImageItems>, activeIndex: number, layout: ComboLayout, bounds: OverlaySettings, style: ComboImageStyle): number {
   if (!items.length) return 0;
@@ -1172,69 +2055,79 @@ function comboTrackOffset(items: ReturnType<typeof chartToComboImageItems>, acti
   const viewport = Math.max(1, layout === 'vertical' ? bounds.height : bounds.width);
   if (style.scrollAnchor === 'center') return Math.round(viewport / 2 - activeMetric.center);
   return Math.round(style.scrollStartOffsetPx - activeMetric.start);
-}
+ }
 
 function timedStepIndexForPractice(chart: ComboChart | null, practice: PracticeSnapshot, floorIndex = 0): number | null {
   if (!chart?.steps.length) return 0;
   if (practice.status === 'running' && practice.startedAt !== null) {
     const elapsed = Math.max(0, practice.elapsedMs ?? performance.now() - practice.startedAt);
     const startedTimedStep = chart.steps
-      .map((step, index) => ({ step, index }))
-      .filter(({ step }) => elapsed >= step.startMin)
+      .map((step, index) => ({ step, index  }))
+      .filter(({ step  }) => elapsed >= step.startMin)
       .sort((left, right) => right.step.startMin - left.step.startMin || right.index - left.index)[0];
     if (startedTimedStep) return Math.max(floorIndex, startedTimedStep.index);
-  }
+   }
   return null;
-}
+ }
 
 function activeFrameVars(showAvatar: boolean, blockMode: ComboImageStyle['blockMode'], avatarLeft: number, avatarSize: number, avatarOffsetY: number, blockHeight: number, visualHeight = blockHeight): CSSProperties {
-  if (blockMode !== 'image') return {};
+  if (blockMode !== 'image') return { };
   const bleed = 3;
   const frameHeight = Math.min(blockHeight, Math.max(1, visualHeight));
   const centeredInset = Math.max(-bleed, (blockHeight - frameHeight) / 2 - bleed);
   const avatarTop = blockHeight / 2 + avatarOffsetY - avatarSize / 2;
   const avatarBottom = blockHeight / 2 + avatarOffsetY + avatarSize / 2;
   return {
-    '--active-frame-left': `${showAvatar ? Math.min(-bleed, avatarLeft - bleed) : -bleed}px`,
-    '--active-frame-right': `${-bleed}px`,
-    '--active-frame-top': `${showAvatar ? Math.min(centeredInset, avatarTop - bleed) : centeredInset}px`,
-    '--active-frame-bottom': `${showAvatar ? Math.min(centeredInset, blockHeight - avatarBottom - bleed) : centeredInset}px`
-  } as CSSProperties;
-}
+    '--active-frame-left': `${showAvatar ? Math.min(-bleed, avatarLeft - bleed) : -bleed }px`,
+    '--active-frame-right': `${-bleed }px`,
+    '--active-frame-top': `${showAvatar ? Math.min(centeredInset, avatarTop - bleed) : centeredInset }px`,
+    '--active-frame-bottom': `${showAvatar ? Math.min(centeredInset, blockHeight - avatarBottom - bleed) : centeredInset }px`
+   } as CSSProperties;
+ }
 
-function ComboItemContent({ item, parts, className, mappings, activeMergedStepId }: { item: ReturnType<typeof chartToComboImageItems>[number]; parts: ReturnType<typeof comboTextParts>; className: string; mappings: ComboImageStyle['iconMappings']; activeMergedStepId?: string }) {
+function ComboItemContent({ item, parts, className, mappings, activeMergedStepId  }: { item: ReturnType<typeof chartToComboImageItems>[number]; parts: ReturnType<typeof comboTextParts>; className: string; mappings: ComboImageStyle['iconMappings']; activeMergedStepId?: string  }) {
   if (item.mergedParts?.length && activeMergedStepId) {
-    return <strong className={className}>{item.mergedParts.map((part) => {
+    return <strong className={className }>{item.mergedParts.map((part) => {
       const active = part.stepId === activeMergedStepId;
-      return <span key={part.stepId} className={active ? 'combo-merged-part active' : 'combo-merged-part'}>{comboTextParts(part.displayText, Boolean(part.iconId), mappings).map((piece, index) => piece.kind === 'icon' ? <span key={`${piece.iconId}-${index}`} className={active ? 'combo-inline-icon-mark active' : 'combo-inline-icon-mark'} style={{ '--icon-scale': piece.iconScale } as CSSProperties}><img className="combo-inline-icon" src={piece.src} alt={piece.label} title={piece.label} /></span> : <span key={`text-${index}`}>{piece.value}</span>)}</span>;
-    })}</strong>;
-  }
-  return <ComboInlineContent parts={parts} className={className} />;
-}
+      return <span key={part.stepId } className={active ? 'combo-merged-part active' : 'combo-merged-part' }>{comboTextParts(part.displayText, Boolean(part.iconId), mappings).map((piece, index) => piece.kind === 'icon' ? <span key={`${piece.iconId }-${index }` } className={active ? 'combo-inline-icon-mark active' : 'combo-inline-icon-mark'  } style={{ '--icon-scale': piece.iconScale  } as CSSProperties }><img className="combo-inline-icon" src={piece.src } alt={piece.label } title={piece.label } /></span> : <span key={`text-${index }` }>{piece.value }</span>) }</span>;
+     }) }</strong>;
+   }
+  return <ComboInlineContent parts={parts } className={className } />;
+ }
 
 function shouldShowPromptForStep(step: ComboStep | null | undefined): step is ComboStep {
-  return Boolean(step && !step.free && (step.moveId === 'basic_attack' || (!step.independent && step.advancesStep !== false)));
-}
+  return Boolean(step && !step.free && (step.moveId === 'empty_action' || step.moveId === 'basic_attack' || (!step.independent && step.advancesStep !== false)));
+ }
 
-function promptTextForStep(step: ComboStep | null | undefined): string {
+function defaultPromptTextForStep(step: ComboStep | null | undefined, language: AppLanguage, style: ComboImageStyle): string {
+  if (!step) return '';
+  const contentText = style.contentLabels[step.id]?.trim() || defaultComboContentLabelForMoveId(step.moveId);
+  return localizedMovePrompt(step.moveId, displayMoveLabel(step), contentText, language);
+ }
+
+function promptTextForStep(step: ComboStep | null | undefined, language: AppLanguage, style: ComboImageStyle): string {
   if (!step) return '';
   if (step.note?.trim()) return step.note.trim();
-  return displayMoveLabel(step);
-}
+  return defaultPromptTextForStep(step, language, style);
+ }
 
-function ComboImagePreview({ chart, practice, style, layout, bounds, mergedHighlightMode = 'time' }: { chart: ComboChart | null; practice: PracticeSnapshot; style: ComboImageStyle; layout: ComboLayout; bounds: OverlaySettings; mergedHighlightMode?: 'time' | 'input' }) {
+function ComboImagePreview({ chart, practice, style, layout, bounds, mergedHighlightMode = 'time', manualHorizontalScroll = false  }: { chart: ComboChart | null; practice: PracticeSnapshot; style: ComboImageStyle; layout: ComboLayout; bounds: OverlaySettings; mergedHighlightMode?: 'time' | 'input'; manualHorizontalScroll?: boolean  }) {
+  const { language, text  } = useI18n();
   const previewRef = useRef<HTMLDivElement | null>(null);
-  const progressRef = useRef({ runKey: '', activeStepIndex: 0, indicatorStepIndex: 0 });
+  const progressRef = useRef({ runKey: '', activeStepIndex: 0, indicatorStepIndex: 0  });
   const [measuredBounds, setMeasuredBounds] = useState<OverlaySettings | null>(null);
   const [nextIndicatorSide, setNextIndicatorSide] = useState<'above' | 'below' | 'left' | 'right'>('above');
+  const [manualScrollPercent, setManualScrollPercent] = useState(0);
   const activeIndex = chart?.steps.length ? clamp(practice.currentStepIndex ?? 0, 0, chart.steps.length - 1) : 0;
   const timedIndex = timedStepIndexForPractice(chart, practice, activeIndex);
-  const allItems = chartToComboImageItems(chart, style);
+  const effectiveBounds = measuredBounds ?? bounds;
+  const linearLayout = layout === 'waterfall' ? 'horizontal' : layout;
+  const allItems = chartToComboImageItems(chart, style, linearLayout, effectiveBounds);
   const activeStep = chart?.steps[activeIndex] ?? null;
   const rawIndicatorStepIndex = style.mergeSameRoleSteps ? Math.min(chart?.steps.length ?? 0, activeIndex + 1) : activeIndex + 1;
-  const runKey = `${chart?.id ?? 'none'}:${practice.startedAt ?? 'idle'}:${practice.status}`;
-  if (progressRef.current.runKey !== runKey || practice.status !== 'running') progressRef.current = { runKey, activeStepIndex: activeIndex, indicatorStepIndex: rawIndicatorStepIndex };
-  else progressRef.current = { runKey, activeStepIndex: Math.max(progressRef.current.activeStepIndex, activeIndex), indicatorStepIndex: Math.max(progressRef.current.indicatorStepIndex, rawIndicatorStepIndex) };
+  const runKey = `${chart?.id ?? 'none' }:${practice.startedAt ?? 'idle' }:${practice.status }`;
+  if (progressRef.current.runKey !== runKey || practice.status !== 'running') progressRef.current = { runKey, activeStepIndex: activeIndex, indicatorStepIndex: rawIndicatorStepIndex  };
+  else progressRef.current = { runKey, activeStepIndex: Math.max(progressRef.current.activeStepIndex, activeIndex), indicatorStepIndex: Math.max(progressRef.current.indicatorStepIndex, rawIndicatorStepIndex)  };
   const activeStepIndex = clamp(progressRef.current.activeStepIndex, 0, Math.max(0, (chart?.steps.length ?? 1) - 1));
   const indicatorStepIndex = clamp(progressRef.current.indicatorStepIndex, 0, Math.max(0, (chart?.steps.length ?? 1) - 1));
   const timedStepId = timedIndex === null ? undefined : chart?.steps[Math.max(timedIndex, activeStepIndex)]?.id;
@@ -1243,27 +2136,29 @@ function ComboImagePreview({ chart, practice, style, layout, bounds, mergedHighl
   const indicatorStepId = chart?.steps[indicatorStepIndex]?.id ?? activeDisplayStepId;
   const activeDisplayIndex = comboImageDisplayIndexForStep(allItems, activeDisplayStepId);
   const indicatorDisplayIndex = comboImageDisplayIndexForStep(allItems, indicatorStepId);
-  const effectiveBounds = measuredBounds ?? bounds;
-  const items = visibleComboImageItems(allItems, activeDisplayIndex, layout, effectiveBounds, style);
-  const trackOffset = comboTrackOffset(allItems, activeDisplayIndex, layout, effectiveBounds, style);
-  const metrics = comboTrackMetrics(allItems, layout, style);
+  const items = visibleComboImageItems(allItems, activeDisplayIndex, linearLayout, effectiveBounds, style);
+  const automaticTrackOffset = comboTrackOffset(allItems, activeDisplayIndex, linearLayout, effectiveBounds, style);
+  const horizontalTrackWidth = metricsExtentForItems(allItems, style);
+  const manualScrollRange = Math.max(0, horizontalTrackWidth - effectiveBounds.width + 24);
+  const trackOffset = manualHorizontalScroll && linearLayout === 'horizontal' ? -(manualScrollPercent / 100) * manualScrollRange : automaticTrackOffset;
+  const metrics = comboTrackMetrics(allItems, linearLayout, style);
   const activeMetric = metrics[clamp(activeDisplayIndex, 0, Math.max(0, metrics.length - 1))];
   const background = comboImageBackgroundSource(style);
-  const periodLabel = currentPeriodLabel(chart, activeStepIndex);
+  const periodLabel = currentPeriodLabel(chart, activeStepIndex, language);
   const displayActiveStep = chart?.steps[activeStepIndex] ?? activeStep;
   const promptStep = style.prePromptEnabled && shouldShowPromptForStep(displayActiveStep) ? displayActiveStep : null;
   const promptSide = layout === 'horizontal' ? nextIndicatorSide : (nextIndicatorSide === 'right' ? 'left' : 'right');
-  const promptText = promptTextForStep(promptStep);
+  const promptText = promptTextForStep(promptStep, language, style);
   useEffect(() => {
     const node = previewRef.current;
     if (!node) return;
     const update = () => {
       const rect = node.getBoundingClientRect();
-      setMeasuredBounds({ ...bounds, width: Math.max(1, rect.width), height: Math.max(1, rect.height) });
+      setMeasuredBounds({ ...bounds, width: Math.max(1, rect.width), height: Math.max(1, rect.height)  });
       const centerX = rect.left + rect.width / 2;
       const centerY = rect.top + rect.height / 2;
       setNextIndicatorSide(layout === 'vertical' ? (centerX < window.innerWidth / 2 ? 'right' : 'left') : (centerY > window.innerHeight / 2 ? 'above' : 'below'));
-    };
+     };
     update();
     const observer = new ResizeObserver(update);
     observer.observe(node);
@@ -1273,12 +2168,12 @@ function ComboImagePreview({ chart, practice, style, layout, bounds, mergedHighl
       observer.disconnect();
       window.removeEventListener('resize', update);
       window.removeEventListener('scroll', update, true);
-    };
-  }, [bounds.x, bounds.y, bounds.width, bounds.height, layout]);
+     };
+   }, [bounds.x, bounds.y, bounds.width, bounds.height, layout]);
   return (
-    <div ref={previewRef} className={`combo-preview ${layout} next-indicator-${nextIndicatorSide} ${items.length ? '' : 'empty'}`} style={{ backgroundImage: background ? `url(${background})` : undefined }}>
-      {periodLabel && <div className="combo-period-label">{periodLabel}</div>}
-      {items.length ? <div className="combo-preview-track" style={{ gap: style.capsuleGap, transform: layout === 'vertical' ? `translateY(${trackOffset}px)` : `translateX(${trackOffset}px)` }}>{items.map((item) => {
+    <div ref={previewRef } className={`combo-preview ${layout } next-indicator-${nextIndicatorSide } ${manualHorizontalScroll ? 'manual-scroll' : '' } ${items.length ? '' : 'empty' }`  } style={{ backgroundImage: background ? `url(${background })` : undefined  } }>
+      {periodLabel && <div className="combo-period-label">{periodLabel }</div> }
+      {items.length ? <div className="combo-preview-track" style={{ gap: style.capsuleGap, transform: layout === 'vertical' ? `translateY(${trackOffset }px)` : `translateX(${trackOffset }px)`  } }>{items.map((item) => {
         const roleStyle = style.roleStyles[item.characterSlot];
         const chipSize = comboImageItemSizeForDisplayItem(style, item, roleStyle);
         const itemIconMappings = effectiveIconMappings(style, item.characterSlot);
@@ -1293,18 +2188,19 @@ function ComboImagePreview({ chart, practice, style, layout, bounds, mergedHighl
         const metricIndex = allItems.indexOf(item);
         const isError = Boolean(item.mergedStepIds?.some((stepId) => practice.errorStepIds.includes(stepId)) || practice.errorStepIds.includes(item.step.id));
         return (
-          <div key={item.step.id} className={`combo-preview-chip ${style.blockMode === 'image' ? 'image-block' : ''} ${item.showAvatar ? 'with-avatar' : ''} ${comboImageItemContainsStep(item, activeDisplayStepId) ? 'active' : ''} ${isNext ? 'next' : ''} ${isError ? 'error' : ''}`} style={{ width: chipSize.width, height: chipSize.height, color: style.textColor, fontSize: style.fontSize, fontFamily: style.fontFamily, opacity: isNext ? 1 : comboItemOpacity(metrics[metricIndex], activeMetric, trackOffset, layout, effectiveBounds, style), backgroundColor: blockColor, borderRadius: style.blockMode === 'capsule' && style.capsuleShape === 'capsule' ? 999 : 4, '--move-color': roleStyle.color, '--next-indicator-x': `${triangleCenter ?? 50}%`, ...blockImageStyle, ...activeFrameVars(item.showAvatar, style.blockMode, avatarLeft, style.avatarSize, style.avatarOffsetY, chipSize.height, frameVisualHeight) } as CSSProperties}>
-            {style.blockMode === 'image' && <CapsuleBlockBackground />}
-            {item.showAvatar && <span className="avatar-slot preview-avatar" style={{ width: style.avatarSize, height: style.avatarSize, left: avatarLeft, transform: `translateY(calc(-50% + ${style.avatarOffsetY}px))`, ...imageCropBackground(roleStyle.avatar, roleStyle.avatarCrop) }}>{roleStyle.avatar ? null : item.characterSlot}</span>}
-            {layout === 'horizontal' && promptText && comboImageItemContainsStep(item, promptStep?.id) && <div className={`combo-preview-action-prompt horizontal ${promptSide}`}>{promptText}</div>}
-            {layout === 'vertical' && promptText && comboImageItemContainsStep(item, activeDisplayStepId) && <div className={`combo-preview-action-prompt vertical ${nextIndicatorSide}`}>{promptText}</div>}
-            <ComboItemContent item={item} parts={contentParts} className="combo-preview-content" mappings={itemIconMappings} activeMergedStepId={activeMergedStepId} />
+          <div key={item.step.id } className={`combo-preview-chip ${style.blockMode === 'image' ? 'image-block' : '' } ${item.showAvatar ? 'with-avatar' : '' } ${comboImageItemContainsStep(item, activeDisplayStepId) ? 'active' : '' } ${isNext ? 'next' : '' } ${isError ? 'error' : '' }`  } style={{ width: chipSize.width, height: chipSize.height, color: style.textColor, fontSize: style.fontSize, fontFamily: style.fontFamily, opacity: isNext ? 1 : comboItemOpacity(metrics[metricIndex], activeMetric, trackOffset, layout, effectiveBounds, style), backgroundColor: blockColor, borderRadius: style.blockMode === 'capsule' && style.capsuleShape === 'capsule' ? 999 : 4, '--move-color': roleStyle.color, '--next-indicator-x': `${triangleCenter ?? 50 }%`, ...blockImageStyle, ...activeFrameVars(item.showAvatar, style.blockMode, avatarLeft, style.avatarSize, style.avatarOffsetY, chipSize.height, frameVisualHeight)  } as CSSProperties }>
+            {style.blockMode === 'image' && <CapsuleBlockBackground /> }
+            {item.showAvatar && <span className="avatar-slot preview-avatar" style={{ width: style.avatarSize, height: style.avatarSize, left: avatarLeft, transform: `translateY(calc(-50% + ${style.avatarOffsetY }px))`, ...imageCropBackground(roleStyle.avatar, roleStyle.avatarCrop)  } }>{roleStyle.avatar ? null : item.characterSlot }</span> }
+            {layout === 'horizontal' && promptText && comboImageItemContainsStep(item, promptStep?.id) && <div className={`combo-preview-action-prompt horizontal ${promptSide }` }>{promptText }</div> }
+            {layout === 'vertical' && promptText && comboImageItemContainsStep(item, activeDisplayStepId) && <div className={`combo-preview-action-prompt vertical ${nextIndicatorSide }` }>{promptText }</div> }
+            <ComboItemContent item={item } parts={contentParts } className="combo-preview-content" mappings={itemIconMappings } activeMergedStepId={activeMergedStepId } />
           </div>
         );
-      })}</div> : '暂无连段图'}
+       }) }</div> : text('暂无连段图', 'No Combo Chart') }
+      {manualHorizontalScroll && layout === 'horizontal' && <div className="combo-preview-scrollbar"><input type="range" min="0" max="100" step="0.1" value={manualScrollPercent } disabled={manualScrollRange <= 0 } aria-label={text('连段图横向位置', 'Combo Chart Horizontal Position') } onChange={(event) => setManualScrollPercent(Number(event.target.value)) } /></div> }
     </div>
   );
-}
+ }
 
 type TimelineContext = {
   x: number;
@@ -1314,36 +2210,39 @@ type TimelineContext = {
   periodId?: string;
   coveredSteps: ComboStep[];
   coveredPeriods: ComboPeriod[];
-};
+ };
+type TimelineSubmenuKey = 'paste' | 'stepSettings' | 'periodSettings' | 'stepTargets' | 'periodTargets';
+type VideoLayerTransformControl = { active: boolean; onToggle: () => void; onScalePointerDown: (event: ReactPointerEvent<HTMLButtonElement>) => void; onScalePointerMove: (event: ReactPointerEvent<HTMLButtonElement>) => void; onScalePointerUp: (event: ReactPointerEvent<HTMLButtonElement>) => void;  };
 
 type TimelineLane = {
   slot: CharacterSlot;
   lane: LaneKind;
   id: string;
   laneNumber: 1 | 2;
-};
+ };
 
-type TimelineZoomFrame = { id: string; timeMs: number };
-type TimelineZoomFrameTrack = {
+type TimelineZoomFrame = { id: string; timeMs: number  };
+type TimelinePlayheadControl = { playbackMs: number; onSeek: (timeMs: number) => void; disabled?: boolean  };
+type TimelineZoomFrameTrack = TimelineHistoryControl & {
   frames: TimelineZoomFrame[];
   playbackMs: number;
-  onAdd: () => void;
+  onPlace: (timeMs: number) => void;
   onSeek: (timeMs: number) => void;
   onDelete: (frameId: string) => void;
   onBeginDrag: (event: ReactPointerEvent<HTMLButtonElement>, frameId: string, renderTotal: number) => void;
   onDragMove: (event: ReactPointerEvent<HTMLDivElement>) => void;
   onDragEnd: () => void;
-};
+ };
 
 
-function createDraftStep(point: { slot: CharacterSlot; lane: LaneKind; startMs: number }): ComboStep {
+function createDraftStep(point: { slot: CharacterSlot; lane: LaneKind; startMs: number  }): ComboStep {
   return normalizeStep({
     id: crypto.randomUUID(),
     moveId: DRAFT_MOVE_ID,
     label: '待设置指令',
     characterSlot: point.slot,
     lane: point.lane,
-    independent: point.lane === 'independent',
+    independent: false,
     startMin: Math.max(0, Math.round(point.startMs)),
     startMax: Math.max(0, Math.round(point.startMs + 120)),
     durationMin: 35,
@@ -1353,100 +2252,413 @@ function createDraftStep(point: { slot: CharacterSlot; lane: LaneKind; startMs: 
     manualFree: false,
     free: false,
     samples: []
-  });
+   });
+ }
+
+
+function createPlacedMoveStep(move: MoveDefinition, point: { slot: CharacterSlot; lane: LaneKind; startMs: number  }): ComboStep {
+  const startMs = Math.max(0, Math.round(point.startMs));
+  return normalizeStep({
+    id: crypto.randomUUID(),
+    moveId: move.id,
+    label: move.label,
+    characterSlot: point.slot,
+    lane: point.lane,
+    independent: move.independent,
+    startMin: startMs,
+    startMax: startMs,
+    durationMin: 500,
+    durationMax: 500,
+    color: move.color,
+    advancesStep: move.advancesStep,
+    manualFree: false,
+    free: false,
+    samples: []
+   });
+ }
+
+function inferPeriodPlacementPreview(point: { slot?: CharacterSlot; lane?: LaneKind; startMs: number  }, periods: ComboPeriod[]): { kind: ComboPeriodKind; label: string } {
+  const startMs = Math.max(0, Math.round(point.startMs));
+  if (point.slot && point.lane) return { kind: 'free_fire', label: defaultPeriodLabel('free_fire') };
+  const startup = periods.find((period) => period.kind === 'startup_axis');
+  if (!startup) return { kind: 'startup_axis', label: defaultPeriodLabel('startup_axis') };
+  const loopIndex = periods.filter((period) => period.kind === 'loop_axis').length + 1;
+  return { kind: 'loop_axis', label: defaultPeriodLabel('loop_axis', loopIndex) };
 }
 
-function inferPeriodPlacement(point: { slot?: CharacterSlot; lane?: LaneKind; startMs: number }, periods: ComboPeriod[]): ComboPeriod {
+function inferPeriodPlacement(point: { slot?: CharacterSlot; lane?: LaneKind; startMs: number  }, periods: ComboPeriod[]): ComboPeriod {
   const startMs = Math.max(0, Math.round(point.startMs));
   if (point.slot && point.lane) {
-    return normalizePeriod({ id: crypto.randomUUID(), kind: 'free_fire', label: defaultPeriodLabel('free_fire'), characterSlot: point.slot, lane: point.lane, startMs, endMs: startMs + DEFAULT_FREE_FIRE_DURATION });
-  }
+    return normalizePeriod({ id: crypto.randomUUID(), kind: 'free_fire', label: defaultPeriodLabel('free_fire'), characterSlot: point.slot, lane: point.lane, startMs, endMs: startMs + DEFAULT_FREE_FIRE_DURATION  });
+   }
   const startup = periods.find((period) => period.kind === 'startup_axis');
-  if (!startup && startMs <= AXIS_PLACEMENT_WINDOW) {
-    return normalizePeriod({ id: crypto.randomUUID(), kind: 'startup_axis', label: defaultPeriodLabel('startup_axis'), startMs: 0, endMs: DEFAULT_AXIS_DURATION });
-  }
+  if (!startup) {
+    return normalizePeriod({ id: crypto.randomUUID(), kind: 'startup_axis', label: defaultPeriodLabel('startup_axis'), startMs: 0, endMs: DEFAULT_AXIS_DURATION  });
+   }
   const loopIndex = periods.filter((period) => period.kind === 'loop_axis').length + 1;
   const axisEnd = Math.max(startup?.endMs ?? 0, ...periods.filter((period) => period.kind === 'loop_axis').map((period) => period.endMs), 0);
   const axisStart = Math.abs(startMs - axisEnd) <= AXIS_PLACEMENT_WINDOW ? axisEnd : startMs;
-  return normalizePeriod({ id: crypto.randomUUID(), kind: 'loop_axis', label: defaultPeriodLabel('loop_axis', loopIndex), startMs: axisStart, endMs: axisStart + DEFAULT_AXIS_DURATION, loopIndex });
-}
+  return normalizePeriod({ id: crypto.randomUUID(), kind: 'loop_axis', label: defaultPeriodLabel('loop_axis', loopIndex), startMs: axisStart, endMs: axisStart + DEFAULT_AXIS_DURATION, loopIndex  });
+ }
 
 function moveLabelForPeriodKind(kind: ComboPeriodKind, periods: ComboPeriod[]) {
   const loopIndex = periods.filter((period) => period.kind === 'loop_axis').length + 1;
   return defaultPeriodLabel(kind, loopIndex);
-}
+ }
+
+function displayMoveDefinitionLabel(move: Pick<MoveDefinition, 'id' | 'label'>): string {
+  if (move.id === 'switch_1') return '1';
+  if (move.id === 'switch_2') return '2';
+  if (move.id === 'switch_3') return '3';
+  return move.label;
+ }
 
 function displayMoveLabel(step: ComboStep): string {
-  if (step.moveId === 'switch_1') return '1';
-  if (step.moveId === 'switch_2') return '2';
-  if (step.moveId === 'switch_3') return '3';
-  return step.label.replace(/^切人(?=\d)/, '');
-}
+  return displayMoveDefinitionLabel({ id: step.moveId, label: step.label  });
+ }
+
+function localizedMoveDefinitionLabel(move: Pick<MoveDefinition, 'id' | 'label'>, language: AppLanguage): string {
+  const displayLabel = displayMoveDefinitionLabel(move);
+  return localizedDefaultMoveLabel(move.id, displayLabel, language);
+ }
+
+function localizedMoveLabel(step: ComboStep, language: AppLanguage): string {
+  return localizedMoveDefinitionLabel({ id: step.moveId, label: step.label  }, language);
+ }
 
 function msToSeconds(value: number | undefined): number {
   return Number(((value ?? 0) / 1000).toFixed(3));
-}
+ }
 
 function secondsToMs(value: string): number {
   const seconds = Number(value);
   return Number.isFinite(seconds) ? Math.round(seconds * 1000) : 0;
-}
+ }
 
 function formatTimelineMs(ms: number): string {
-  return `${(ms / 1000).toFixed(3).replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1')}s`;
-}
+  return `${(ms / 1000).toFixed(3).replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1') }s`;
+ }
 
-function TimelineEditor({ chart, moves, comboImageStyle, mode, zoom, onZoomChange, onUpdate, onDelete, onPeriodsChange, onContentChange, onQuickInput, onSave, zoomFrameTrack, inspectorPortalTarget, renderTotalOverride }: { chart: ComboChart; moves: MoveDefinition[]; comboImageStyle: ComboImageStyle; mode: EditorTab; zoom: number; onZoomChange: (value: number) => void; onUpdate: (stepId: string, patch: Partial<ComboStep>) => void; onDelete: (stepId: string) => void; onPeriodsChange: (periods: ComboPeriod[]) => void; onContentChange: (patch: Partial<ComboImageStyle>) => void; onQuickInput: (stepId: string | null) => void; onSave: () => void; zoomFrameTrack?: TimelineZoomFrameTrack; inspectorPortalTarget?: HTMLElement | null; renderTotalOverride?: number }) {
+function ZoomKeyframeIcon({ size = 16  }: { size?: number  }) {
+  return <svg className="zoom-keyframe-icon" width={size } height={size } viewBox="0 0 16 16" aria-hidden="true"><path d="M3 2.5h10v7L8 13.5 3 9.5z" /></svg>;
+ }
+
+function TimelineEditor({ chart, moves, bindings, inputSignal, comboImageStyle, mode, onModeChange, zoom, onZoomChange, playheadControl, onUpdate, onInsert, onDelete, onPeriodsChange, onContentChange, onQuickInput, onSave, historyControl, zoomFrameTrack, videoLayerTransformControl, inspectorPortalTarget, toolbarPortalTarget, renderTotalOverride  }: { chart: ComboChart; moves: MoveDefinition[]; bindings: KeyBinding[]; inputSignal?: (TrainerLikeInputEvent & { id: string  }) | null; comboImageStyle: ComboImageStyle; mode: EditorTab; onModeChange?: (mode: EditorTab) => void; zoom: number; onZoomChange: (value: number) => void; playheadControl?: TimelinePlayheadControl; onUpdate: (stepId: string, patch: Partial<ComboStep>) => void; onInsert: (steps: ComboStep[]) => void; onDelete: (stepIds: string[]) => void; onPeriodsChange: (periods: ComboPeriod[]) => void; onContentChange: (patch: Partial<ComboImageStyle>) => void; onQuickInput: (stepId: string | null) => void; onSave: () => void; historyControl?: TimelineHistoryControl; zoomFrameTrack?: TimelineZoomFrameTrack; videoLayerTransformControl?: VideoLayerTransformControl; inspectorPortalTarget?: HTMLElement | null; toolbarPortalTarget?: HTMLElement | null; renderTotalOverride?: number  }) {
+  const { language, text  } = useI18n();
   const [selectedId, setSelectedId] = useState(chart.steps[0]?.id ?? '');
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [selectionBox, setSelectionBox] = useState<SelectionBox | null>(null);
   const [selectedPeriodId, setSelectedPeriodId] = useState('');
   const [pending, setPending] = useState<PendingPlacement | null>(null);
-  const [pendingPoint, setPendingPoint] = useState<{ slot?: CharacterSlot; lane?: LaneKind; startMs: number } | null>(null);
-  const [copied, setCopied] = useState<ComboStep | null>(null);
-  const [copiedPeriod, setCopiedPeriod] = useState<ComboPeriod | null>(null);
+  const [lastPlacementMoveId, setLastPlacementMoveId] = useState<string | null>(null);
+  const [compactAddMenuOpen, setCompactAddMenuOpen] = useState(false);
+  const [pendingPoint, setPendingPoint] = useState<{ slot?: CharacterSlot; lane?: LaneKind; startMs: number  } | null>(null);
+  const [copiedSelection, setCopiedSelection] = useState<CopiedTimelineSelection | null>(null);
   const [context, setContext] = useState<TimelineContext | null>(null);
+  const [contextMenuPosition, setContextMenuPosition] = useState({ x: 0, y: 0  });
+  const [activeContextSubmenu, setActiveContextSubmenu] = useState<TimelineSubmenuKey | null>(null);
+  const [contextSubmenuPosition, setContextSubmenuPosition] = useState({ x: 0, y: 0  });
   const [raisedStepId, setRaisedStepId] = useState<string | null>(null);
   const [raisedPeriodId, setRaisedPeriodId] = useState<string | null>(null);
   const [dragRenderTotal, setDragRenderTotal] = useState<number | null>(null);
-  const actionMoves = moves.filter((move) => move.id !== 'start_challenge');
+  const [timelineViewport, setTimelineViewport] = useState({ scrollLeft: 0, clientWidth: 0  });
+  const placementToggleRef = useRef<{ code: string; time: number  } | null>(null);
+  const contextMenuRef = useRef<HTMLDivElement | null>(null);
+  const contextSubmenuRef = useRef<HTMLDivElement | null>(null);
+  const contextSubmenuAnchorRef = useRef<HTMLButtonElement | null>(null);
+  const videoCompactMode = Boolean(zoomFrameTrack);
+  const activeHistoryControl = zoomFrameTrack ?? historyControl;
+  const actionMoves = moves.filter((move) => move.id !== 'start_challenge' && move.id !== 'stop_recording');
+  const placeableMoves = actionMoves.filter((move) => !move.id.endsWith('_hold'));
+  const activePlacedMove = pending?.kind === 'move' ? placeableMoves.find((move) => move.id === pending.moveId) ?? placeableMoves[0] ?? null : null;
   const periods = constrainAxisPeriods(chart.periods ?? []);
+  const pendingPeriodPreview = pending?.kind === 'period' && pendingPoint ? inferPeriodPlacementPreview(pendingPoint, periods) : null;
   const selected = chart.steps.find((step) => step.id === selectedId) ?? chart.steps[0] ?? null;
   const selectedSteps = chart.steps.filter((step) => selectedIds.includes(step.id));
   const selectedPeriod = periods.find((period) => period.id === selectedPeriodId) ?? null;
+  const copiedGhost = pending?.kind === 'copy' && pendingPoint ? pending : null;
+  const copiedGhostPoint = copiedGhost ? pendingPoint : null;
   const total = Math.max(3000, renderTotalOverride ?? 0, ...chart.steps.map((step) => step.startMax + step.durationMax + 600), ...periods.map((period) => period.endMs + 600), ...(zoomFrameTrack?.frames.map((frame) => frame.timeMs + 600) ?? []));
   const renderTotal = dragRenderTotal ?? total;
   const trackWidth = Math.max(760, Math.ceil(renderTotal * zoom));
-  const timelineBodyStyle = { width: trackWidth + 112, '--timeline-track-width': `${trackWidth}px` } as CSSProperties;
+  const timelineBodyStyle = { width: trackWidth + 112, '--timeline-track-width': `${trackWidth }px`  } as CSSProperties;
+  const activePlayheadControl = playheadControl ?? (zoomFrameTrack ? { playbackMs: zoomFrameTrack.playbackMs, onSeek: zoomFrameTrack.onSeek  } : undefined);
+  const playheadContentX = 112 + (clamp(activePlayheadControl?.playbackMs ?? 0, 0, renderTotal) / Math.max(1, renderTotal)) * trackWidth;
+  const playheadOffscreenDirection = activePlayheadControl && timelineViewport.clientWidth > 0
+    ? playheadContentX < timelineViewport.scrollLeft
+      ? 'left'
+      : playheadContentX > timelineViewport.scrollLeft + timelineViewport.clientWidth
+        ? 'right'
+        : null
+    : null;
+  const playheadArrowTrackX = playheadOffscreenDirection === 'left'
+    ? clamp(timelineViewport.scrollLeft - 112 + 14, 14, trackWidth - 14)
+    : clamp(timelineViewport.scrollLeft + timelineViewport.clientWidth - 112 - 18, 14, trackWidth - 14);
   function scrollToTimelineMs(timeMs: number) {
     const node = scrollRef.current;
     if (!node) return;
     const targetLeft = (clamp(timeMs, 0, renderTotal) / Math.max(1, renderTotal)) * trackWidth;
-    node.scrollTo({ left: Math.max(0, targetLeft - node.clientWidth * 0.45), behavior: 'smooth' });
-  }
+    node.scrollTo({ left: Math.max(0, targetLeft - node.clientWidth * 0.45), behavior: 'smooth'  });
+   }
   const lanes: TimelineLane[] = CHARACTER_SLOTS.flatMap((slot) => [
-    { slot, lane: 'main' as const, id: `${slot}:main`, laneNumber: 1 as const },
-    { slot, lane: 'independent' as const, id: `${slot}:independent`, laneNumber: 2 as const }
+    { slot, lane: 'main' as const, id: `${slot }:main`, laneNumber: 1 as const  },
+    { slot, lane: 'independent' as const, id: `${slot }:independent`, laneNumber: 2 as const  }
   ]);
   const globalPeriods = periods.filter((period) => period.characterSlot === undefined || period.kind !== 'free_fire');
 
+  useEffect(() => {
+    const node = scrollRef.current;
+    if (!node) return;
+    const updateViewport = () => setTimelineViewport({ scrollLeft: node.scrollLeft, clientWidth: node.clientWidth  });
+    updateViewport();
+    node.addEventListener('scroll', updateViewport, { passive: true  });
+    const resizeObserver = new ResizeObserver(updateViewport);
+    resizeObserver.observe(node);
+    return () => {
+      node.removeEventListener('scroll', updateViewport);
+      resizeObserver.disconnect();
+     };
+   }, [trackWidth, videoCompactMode]);
+
+  function switchPendingMoveByInput(code: string): boolean {
+    const normalizedCode = normalizeInputCode(code);
+    const overrideMoveId = normalizedCode === 'KeyA'
+      ? 'basic_attack'
+      : normalizedCode === 'KeyS' || normalizedCode === 'ShiftLeft' || normalizedCode === 'ShiftRight'
+        ? 'dodge'
+        : normalizedCode === 'KeyJ'
+          ? 'jump'
+          : normalizedCode === 'KeyW'
+            ? 'empty_action'
+            : null;
+    const configuredMoveId = bindings.find((binding) => binding.inputs.some((input) => normalizeInputCode(input.code) === normalizedCode))?.moveId ?? null;
+    const mappedMoveId = overrideMoveId ?? (configuredMoveId && !['basic_attack', 'dodge', 'jump'].includes(configuredMoveId) ? configuredMoveId : null);
+    const move = mappedMoveId ? placeableMoves.find((candidate) => candidate.id === mappedMoveId) : null;
+    if (!move) return false;
+    setPending({ kind: 'move', moveId: move.id  });
+    setLastPlacementMoveId(move.id);
+    return true;
+   }
+
+  function togglePendingPeriodPlacement(sourceCode: string, sourceTime = performance.now()): boolean {
+    if (pending?.kind !== 'move' && pending?.kind !== 'period') return false;
+    const normalizedCode = normalizeInputCode(sourceCode);
+    const previous = placementToggleRef.current;
+    if (previous?.code === normalizedCode && sourceTime - previous.time < 80) return true;
+    placementToggleRef.current = { code: normalizedCode, time: sourceTime  };
+    if (pending.kind === 'period') {
+      const moveId = lastPlacementMoveId ?? placeableMoves[0]?.id;
+      if (moveId) setPending({ kind: 'move', moveId  });
+    } else {
+      setLastPlacementMoveId(pending.moveId);
+      setPending({ kind: 'period'  });
+    }
+    return true;
+   }
+
+  useEffect(() => {
+    if (pending?.kind !== 'move' && pending?.kind !== 'period') return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('input, textarea, select, [contenteditable="true"]') || event.repeat) return;
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      if (normalizeInputCode(event.code) === 'KeyX') {
+        event.preventDefault();
+        event.stopPropagation();
+        togglePendingPeriodPlacement(event.code, performance.now());
+        return;
+      }
+      if (pending?.kind !== 'move') return;
+      if (!switchPendingMoveByInput(event.code)) return;
+      event.preventDefault();
+      event.stopPropagation();
+     };
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
+   }, [pending, bindings, placeableMoves, lastPlacementMoveId]);
+
+  useEffect(() => {
+    if ((pending?.kind !== 'move' && pending?.kind !== 'period') || !inputSignal || !isPressEvent(inputSignal)) return;
+    if (normalizeInputCode(inputSignal.code) === 'KeyX') {
+      togglePendingPeriodPlacement(inputSignal.code, inputSignal.time);
+      return;
+    }
+    if (pending.kind === 'move') switchPendingMoveByInput(inputSignal.code);
+   }, [pending, inputSignal?.id, bindings, placeableMoves, lastPlacementMoveId]);
+
+  useEffect(() => {
+    if (!context) {
+      setActiveContextSubmenu(null);
+      return;
+     }
+    const margin = 8;
+    const updatePosition = () => {
+      const node = contextMenuRef.current;
+      if (!node) return;
+      const rect = node.getBoundingClientRect();
+      setContextMenuPosition({
+        x: clamp(context.x, margin, Math.max(margin, window.innerWidth - rect.width - margin)),
+        y: clamp(context.y, margin, Math.max(margin, window.innerHeight - rect.height - margin))
+       });
+     };
+    const frame = window.requestAnimationFrame(updatePosition);
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+     };
+   }, [context]);
+
+  useEffect(() => {
+    if (!context || !activeContextSubmenu) return;
+    const margin = 8;
+    const updatePosition = () => {
+      const anchor = contextSubmenuAnchorRef.current;
+      const submenu = contextSubmenuRef.current;
+      if (!anchor || !submenu) return;
+      const anchorRect = anchor.getBoundingClientRect();
+      const submenuRect = submenu.getBoundingClientRect();
+      const openRight = anchorRect.right + submenuRect.width + 12 <= window.innerWidth - margin;
+      const rawX = openRight ? anchorRect.right + 6 : anchorRect.left - submenuRect.width - 6;
+      const rawY = anchorRect.top - 6;
+      setContextSubmenuPosition({
+        x: clamp(rawX, margin, Math.max(margin, window.innerWidth - submenuRect.width - margin)),
+        y: clamp(rawY, margin, Math.max(margin, window.innerHeight - submenuRect.height - margin))
+       });
+     };
+    const frame = window.requestAnimationFrame(updatePosition);
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+     };
+   }, [context, activeContextSubmenu, contextMenuPosition.x, contextMenuPosition.y]);
+
+  useEffect(() => {
+    if (!context) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (contextMenuRef.current?.contains(target) || contextSubmenuRef.current?.contains(target)) return;
+      setContext(null);
+      setActiveContextSubmenu(null);
+     };
+    document.addEventListener('pointerdown', onPointerDown, true);
+    return () => document.removeEventListener('pointerdown', onPointerDown, true);
+   }, [context]);
+
   function updatePeriod(periodId: string, patch: Partial<ComboPeriod>) {
-    onPeriodsChange(periods.map((period) => period.id === periodId ? normalizePeriod({ ...period, ...patch }) : period));
-  }
+    onPeriodsChange(periods.map((period) => period.id === periodId ? normalizePeriod({ ...period, ...patch  }) : period));
+   }
+
+  function axisPeriodsFrom(source: ComboPeriod[]): ComboPeriod[] {
+    return source.filter((period) => period.kind === 'startup_axis' || period.kind === 'loop_axis').sort((left, right) => left.startMs - right.startMs || (left.loopIndex ?? 0) - (right.loopIndex ?? 0));
+   }
+
+  function copyPlacementStartMs(selection: CopiedTimelineSelection, requestedStartMs: number): number {
+    const copiedAxisPeriod = selection.periods.length === 1 && (selection.periods[0].kind === 'startup_axis' || selection.periods[0].kind === 'loop_axis');
+    return copiedAxisPeriod ? axisPeriodsFrom(periods).at(-1)?.endMs ?? 0 : requestedStartMs;
+   }
+
+  function resizeAxisBoundary(source: ComboPeriod[], periodId: string, mode: 'start' | 'end', deltaMs: number, dragTotal: number): ComboPeriod[] {
+    const axis = axisPeriodsFrom(source);
+    const index = axis.findIndex((period) => period.id === periodId);
+    if (index < 0) return source;
+    const lengths = axis.map((period) => Math.max(MIN_EDITOR_DURATION, period.endMs - period.startMs));
+    if (mode === 'start') {
+      if (index === 0) return source;
+      const previousLength = lengths[index - 1];
+      const currentLength = lengths[index];
+      const sharedDelta = clamp(deltaMs, -previousLength + MIN_EDITOR_DURATION, currentLength - MIN_EDITOR_DURATION);
+      lengths[index - 1] = Math.round(previousLength + sharedDelta);
+      lengths[index] = Math.round(currentLength - sharedDelta);
+     } else {
+      const currentLength = lengths[index];
+      if (index < axis.length - 1) {
+        const nextLength = lengths[index + 1];
+        const sharedDelta = clamp(deltaMs, -currentLength + MIN_EDITOR_DURATION, nextLength - MIN_EDITOR_DURATION);
+        lengths[index] = Math.round(currentLength + sharedDelta);
+        lengths[index + 1] = Math.round(nextLength - sharedDelta);
+       } else {
+        lengths[index] = Math.round(clamp(currentLength + deltaMs, MIN_EDITOR_DURATION, Math.max(MIN_EDITOR_DURATION, dragTotal - axis[index].startMs)));
+       }
+     }
+    let cursor = 0;
+    const resized = new Map<string, ComboPeriod>();
+    axis.forEach((period, axisIndex) => {
+      const loopIndex = period.kind === 'loop_axis' ? axis.filter((candidate, candidateIndex) => candidateIndex <= axisIndex && candidate.kind === 'loop_axis').length : undefined;
+      const next = normalizePeriod({ ...period, startMs: cursor, endMs: cursor + lengths[axisIndex], loopIndex, label: defaultPeriodLabel(period.kind, loopIndex)  });
+      resized.set(period.id, next);
+      cursor = next.endMs;
+     });
+    return source.map((period) => resized.get(period.id) ?? period);
+   }
 
   function updateSelectedSteps(patch: Partial<ComboStep>) {
     selectedSteps.forEach((step) => onUpdate(step.id, patch));
-  }
+   }
 
   function setContentLabel(stepId: string, value: string) {
-    onContentChange({ contentLabels: { ...comboImageStyle.contentLabels, [stepId]: maybeConvertTextToIconLabel(value, comboImageStyle.convertIcons) } });
-  }
+    onContentChange({ contentLabels: { ...comboImageStyle.contentLabels, [stepId]: maybeConvertTextToIconLabel(value, comboImageStyle.convertIcons)  }  });
+   }
+
+  function focusStepInput(stepId: string, field: 'content' | 'note') {
+    window.requestAnimationFrame(() => {
+      const input = scrollRef.current?.querySelector<HTMLInputElement>(`input[data-step-nav-id="${CSS.escape(stepId)}"][data-step-nav-field="${field}"]`) ?? document.querySelector<HTMLInputElement>(`input[data-step-nav-id="${CSS.escape(stepId)}"][data-step-nav-field="${field}"]`);
+      input?.focus();
+      const end = input?.value.length ?? 0;
+      input?.setSelectionRange(end, end);
+    });
+   }
+
+  function timelineLaneIndex(step: ComboStep): number {
+    const slotIndex = Math.max(0, CHARACTER_SLOTS.indexOf((step.characterSlot ?? 1) as CharacterSlot));
+    return slotIndex * 2 + (step.lane === 'independent' ? 1 : 0);
+   }
+
+  function nearestStepForInputNavigation(stepId: string, direction: 'left' | 'right' | 'up' | 'down'): ComboStep | null {
+    const current = chart.steps.find((step) => step.id === stepId);
+    if (!current) return null;
+    const currentLane = timelineLaneIndex(current);
+    const currentCenter = current.startMin + current.durationMax / 2;
+    const sorted = [...chart.steps].sort((left, right) => left.startMin - right.startMin || left.startMax - right.startMax || left.id.localeCompare(right.id));
+    if (direction === 'left') return [...sorted].reverse().find((step) => step.id !== stepId && timelineLaneIndex(step) === currentLane && step.startMin < current.startMin) ?? null;
+    if (direction === 'right') return sorted.find((step) => step.id !== stepId && timelineLaneIndex(step) === currentLane && step.startMin > current.startMin) ?? null;
+    const targetLane = direction === 'up' ? currentLane - 1 : currentLane + 1;
+    const candidates = sorted.filter((step) => step.id !== stepId && timelineLaneIndex(step) === targetLane);
+    return candidates.sort((left, right) => Math.abs(left.startMin + left.durationMax / 2 - currentCenter) - Math.abs(right.startMin + right.durationMax / 2 - currentCenter) || left.startMin - right.startMin)[0] ?? null;
+   }
+
+  function handleStepInputNavigation(event: ReactKeyboardEvent<HTMLInputElement>, stepId: string, field: 'content' | 'note') {
+    if (event.ctrlKey || event.metaKey || event.altKey) return;
+    const input = event.currentTarget;
+    const selectionStart = input.selectionStart ?? 0;
+    const selectionEnd = input.selectionEnd ?? selectionStart;
+    if (event.key === 'Enter') {
+      input.blur();
+      return;
+    }
+    const direction = event.key === 'ArrowUp' ? 'up' : event.key === 'ArrowDown' ? 'down' : event.key === 'ArrowLeft' && selectionStart === 0 && selectionEnd === 0 ? 'left' : event.key === 'ArrowRight' && selectionStart === input.value.length && selectionEnd === input.value.length ? 'right' : null;
+    if (!direction) return;
+    const target = nearestStepForInputNavigation(stepId, direction);
+    if (!target) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setSelectedId(target.id);
+    setSelectedIds([target.id]);
+    setRaisedStepId(target.id);
+    scrollToTimelineMs(target.startMin);
+    focusStepInput(target.id, field);
+   }
 
   function toggleStepSelection(stepId: string, additive: boolean) {
     setSelectedId(stepId);
     setSelectedIds((current) => additive ? (current.includes(stepId) ? current.filter((id) => id !== stepId) : [...current, stepId]) : [stepId]);
-  }
+   }
 
   function setPeriodKind(periodId: string, kind: ComboPeriodKind) {
     const loopIndex = periods.filter((period) => period.kind === 'loop_axis').length + 1;
@@ -1457,8 +2669,8 @@ function TimelineEditor({ chart, moves, comboImageStyle, mode, zoom, onZoomChang
       label: defaultPeriodLabel(kind, loopIndex),
       loopIndex: kind === 'loop_axis' ? loopIndex : undefined,
       startMs: kind === 'startup_axis' ? 0 : periods.find((period) => period.id === periodId)?.startMs
-    });
-  }
+     });
+   }
 
   function applyMoveToSteps(stepIds: string[], move: MoveDefinition) {
     stepIds.forEach((stepId) => {
@@ -1472,27 +2684,110 @@ function TimelineEditor({ chart, moves, comboImageStyle, mode, zoom, onZoomChang
         independent: move.independent,
         lane: current.lane,
         manualFree: current.manualFree ?? false
-      });
-    });
+       });
+     });
     setContext(null);
-  }
+   }
 
-  function placePending(point: { slot?: CharacterSlot; lane?: LaneKind; startMs: number }) {
+  function endSpecialPlacement() {
+    setPending(null);
+    setPendingPoint(null);
+    setCompactAddMenuOpen(false);
+   }
+
+  function copiedSelectionFromContext(scope: 'steps' | 'periods' | 'all' = 'all'): CopiedTimelineSelection | null {
+    if (!context) return null;
+    const steps = scope !== 'periods' ? (context.stepIds?.length ? context.stepIds : context.stepId ? [context.stepId] : [])
+      .map((stepId) => chart.steps.find((step) => step.id === stepId))
+      .filter((step): step is ComboStep => Boolean(step)) : [];
+    const period = scope !== 'steps' && context.periodId ? periods.find((item) => item.id === context.periodId) : null;
+    const selectedPeriods = period ? [period] : [];
+    const periodSteps = period?.kind === 'loop_axis' && scope !== 'steps'
+      ? stepsStartingInPeriod(period)
+      : [];
+    const copiedSteps = [...steps, ...periodSteps.filter((step) => !steps.some((candidate) => candidate.id === step.id))];
+    if (!copiedSteps.length && !selectedPeriods.length) return null;
+    const anchorMs = period?.kind === 'loop_axis'
+      ? period.startMs
+      : Math.min(...copiedSteps.map((step) => step.startMin), ...selectedPeriods.map((item) => item.startMs));
+    const copiedLabels = Object.fromEntries(copiedSteps.map((step) => [step.id, comboImageStyle.contentLabels[step.id]]).filter((entry): entry is [string, string] => typeof entry[1] === 'string'));
+    return { steps: copiedSteps.map((step) => ({ ...step, samples: step.samples.map((sample) => ({ ...sample  }))  })), periods: selectedPeriods.map((item) => ({ ...item  })), contentLabels: copiedLabels, anchorMs: Math.max(0, anchorMs)  };
+   }
+
+  function placePending(point: { slot?: CharacterSlot; lane?: LaneKind; startMs: number  }) {
     if (!pending) return;
+    if (pending.kind === 'cut') return;
+    const isPeriodPlacement = pending.kind === 'period';
     if (pending.kind === 'step' && point.slot && point.lane) {
-      const step = createDraftStep({ slot: point.slot, lane: point.lane, startMs: point.startMs });
-      onUpdate('__insert__', step);
+      activeHistoryControl?.onCaptureHistory();
+      const step = createDraftStep({ slot: point.slot, lane: point.lane, startMs: point.startMs  });
+      onInsert([step]);
       setSelectedId(step.id);
       setSelectedIds([step.id]);
-    }
+     }
+    if (pending.kind === 'move' && point.slot && point.lane) {
+      const move = placeableMoves.find((candidate) => candidate.id === pending.moveId);
+      if (move) {
+        activeHistoryControl?.onCaptureHistory();
+        const step = createPlacedMoveStep(move, { slot: point.slot, lane: point.lane, startMs: point.startMs  });
+        onInsert([step]);
+        setSelectedId(step.id);
+        setSelectedIds([step.id]);
+       }
+     }
     if (pending.kind === 'period') {
+      activeHistoryControl?.onCaptureHistory();
       const period = inferPeriodPlacement(point, periods);
       onPeriodsChange([...periods, period]);
       setSelectedPeriodId(period.id);
-    }
-    setPending(null);
-    setPendingPoint(null);
-  }
+     }
+    if (isPeriodPlacement) setPending({ kind: 'period' });
+    if (pending.kind === 'zoom') {
+      zoomFrameTrack?.onPlace(point.startMs);
+     }
+    if (pending.kind === 'copy') {
+      activeHistoryControl?.onCaptureHistory();
+      const placementStartMs = copyPlacementStartMs(pending, point.startMs);
+      const delta = Math.round(placementStartMs - pending.anchorMs);
+      const singleStepTarget = pending.steps.length === 1 && point.slot && point.lane ? { characterSlot: point.slot, lane: point.lane  } : { };
+      const stepIdMap = new Map<string, string>();
+      const insertedSteps = pending.steps.map((step) => {
+        const id = crypto.randomUUID();
+        stepIdMap.set(step.id, id);
+        return normalizeStep({ ...step, ...singleStepTarget, id, startMin: step.startMin + delta, startMax: step.startMax + delta, samples: step.samples.map((sample) => ({ ...sample, recordingId: id  }))  });
+       });
+      const insertedPeriods = pending.periods.map((period) => normalizePeriod({ ...period, ...(pending.periods.length === 1 && period.kind === 'free_fire' && point.slot && point.lane ? { characterSlot: point.slot, lane: point.lane  } : { }), id: crypto.randomUUID(), startMs: period.startMs + delta, endMs: period.endMs + delta  }));
+      onInsert(insertedSteps);
+      if (insertedPeriods.length) onPeriodsChange([...periods, ...insertedPeriods]);
+      const insertedLabels = Object.fromEntries(Object.entries(pending.contentLabels).map(([stepId, label]) => [stepIdMap.get(stepId), label]).filter((entry): entry is [string, string] => typeof entry[0] === 'string'));
+      if (Object.keys(insertedLabels).length) onContentChange({ contentLabels: { ...comboImageStyle.contentLabels, ...insertedLabels  }  });
+      if (insertedSteps.length) {
+        setSelectedId(insertedSteps[0].id);
+        setSelectedIds(insertedSteps.map((step) => step.id));
+       }
+     }
+    setCompactAddMenuOpen(false);
+   }
+
+  function cutStepAtPointer(event: ReactPointerEvent<HTMLElement>, step: ComboStep) {
+    if (pending?.kind !== 'cut' || event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const cutMs = pointerTimeInTrack(event, renderTotal);
+    const startMs = step.startMin;
+    const endMs = step.startMin + step.durationMax;
+    if (endMs - startMs < MIN_EDITOR_DURATION * 2) return;
+    const splitMs = Math.round(clamp(cutMs, startMs + MIN_EDITOR_DURATION, endMs - MIN_EDITOR_DURATION));
+    activeHistoryControl?.onCaptureHistory();
+    const left = normalizeStep({ ...step, id: crypto.randomUUID(), startMin: startMs, startMax: startMs, durationMin: splitMs - startMs, durationMax: splitMs - startMs  });
+    const right = normalizeStep({ ...step, id: crypto.randomUUID(), startMin: splitMs, startMax: splitMs, durationMin: endMs - splitMs, durationMax: endMs - splitMs  });
+    const originalLabel = comboImageStyle.contentLabels[step.id];
+    if (originalLabel !== undefined) onContentChange({ contentLabels: { ...comboImageStyle.contentLabels, [left.id]: originalLabel, [right.id]: originalLabel  }  });
+    onDelete([step.id]);
+    onInsert([left, right]);
+    setSelectedId(left.id);
+    setSelectedIds([left.id, right.id]);
+   }
 
   function laneHit(clientX: number, clientY: number) {
     const element = document.elementFromPoint(clientX, clientY) as HTMLElement | null;
@@ -1502,12 +2797,14 @@ function TimelineEditor({ chart, moves, comboImageStyle, mode, zoom, onZoomChang
     const slot = Number(row.dataset.slot) as CharacterSlot;
     const lane = row.dataset.lane as LaneKind;
     if (!CHARACTER_SLOTS.includes(slot) || (lane !== 'main' && lane !== 'independent')) return null;
-    return { slot, lane };
-  }
+    return { slot, lane  };
+   }
 
-  function beginDrag(event: ReactPointerEvent<HTMLDivElement>, stepId: string, mode: 'move' | 'start' | 'end' | 'preheat' | 'recovery') {
+  function beginDrag(event: ReactPointerEvent<HTMLElement>, stepId: string, mode: 'move' | 'start' | 'end' | 'preheat' | 'recovery') {
+    if (pending) return;
     event.preventDefault();
     event.stopPropagation();
+    activeHistoryControl?.onCaptureHistory();
     event.currentTarget.setPointerCapture(event.pointerId);
     setSelectedId(stepId);
     const selectedForDrag = mode === 'move' && selectedIds.includes(stepId) ? selectedIds : [stepId];
@@ -1515,7 +2812,7 @@ function TimelineEditor({ chart, moves, comboImageStyle, mode, zoom, onZoomChang
     if (mode !== 'move') setSelectedIds([stepId]);
     const track = event.currentTarget.closest('.timeline-editor-track') as HTMLElement | null;
     if (!track) return;
-    const originals = new Map(chart.steps.filter((candidate) => selectedForDrag.includes(candidate.id)).map((candidate) => [candidate.id, { ...candidate }]));
+    const originals = new Map(chart.steps.filter((candidate) => selectedForDrag.includes(candidate.id)).map((candidate) => [candidate.id, { ...candidate  }]));
     const original = originals.get(stepId);
     if (!original) return;
     const startX = event.clientX;
@@ -1525,38 +2822,48 @@ function TimelineEditor({ chart, moves, comboImageStyle, mode, zoom, onZoomChang
     const onMove = (moveEvent: PointerEvent) => {
       const deltaMs = ((moveEvent.clientX - startX) / dragTrackWidth) * dragTotal;
       if (mode === 'move') {
-        const lane = laneHit(moveEvent.clientX, moveEvent.clientY);
-        originals.forEach((snapshot, id) => {
+        const movingMultiple = originals.size > 1;
+        const minDelta = Math.max(...Array.from(originals.values(), (snapshot) => -snapshot.startMin));
+        const maxDelta = Math.min(...Array.from(originals.values(), (snapshot) => {
           const duration = snapshot.startMax - snapshot.startMin;
-          const startMin = clamp(snapshot.startMin + deltaMs, 0, Math.max(0, dragTotal - duration));
-          const startMax = startMin + duration;
-          onUpdate(id, { startMin: Math.round(startMin), startMax: Math.round(startMax), ...(lane ? { characterSlot: lane.slot, lane: lane.lane, independent: snapshot.independent } : {}) });
-        });
-      }
-      if (mode === 'start') onUpdate(stepId, { startMin: Math.round(clamp(original.startMin + deltaMs, 0, original.startMax - MIN_EDITOR_DURATION)) });
-      if (mode === 'end') onUpdate(stepId, { durationMax: Math.round(clamp(original.durationMax + deltaMs, MIN_EDITOR_DURATION, dragTotal - original.startMin)) });
-      if (mode === 'preheat') onUpdate(stepId, { preheatMs: Math.round(clamp((original.preheatMs ?? 0) + deltaMs, 0, original.durationMax - MIN_EDITOR_DURATION)) });
-      if (mode === 'recovery') onUpdate(stepId, { recoveryMs: Math.round(clamp((original.recoveryMs ?? 0) - deltaMs, 0, original.durationMax - (original.preheatMs ?? 0) - MIN_EDITOR_DURATION)) });
-    };
+          return Math.max(0, dragTotal - duration) - snapshot.startMin;
+         }));
+        const sharedDeltaMs = clamp(deltaMs, minDelta, maxDelta);
+        const lane = movingMultiple ? null : laneHit(moveEvent.clientX, moveEvent.clientY);
+        originals.forEach((snapshot, id) => {
+          const startMin = snapshot.startMin + sharedDeltaMs;
+          const startMax = snapshot.startMax + sharedDeltaMs;
+          onUpdate(id, { startMin: Math.round(startMin), startMax: Math.round(startMax), ...(lane ? { characterSlot: lane.slot, lane: lane.lane, independent: snapshot.independent  } : { })  });
+         });
+       }
+      if (mode === 'start') onUpdate(stepId, { startMin: Math.round(clamp(original.startMin + deltaMs, 0, original.startMax - MIN_EDITOR_DURATION))  });
+      if (mode === 'end') onUpdate(stepId, { durationMax: Math.round(clamp(original.durationMax + deltaMs, MIN_EDITOR_DURATION, dragTotal - original.startMin))  });
+      if (mode === 'preheat') onUpdate(stepId, { preheatMs: Math.round(clamp((original.preheatMs ?? 0) + deltaMs, 0, original.durationMax - MIN_EDITOR_DURATION))  });
+      if (mode === 'recovery') onUpdate(stepId, { recoveryMs: Math.round(clamp((original.recoveryMs ?? 0) - deltaMs, 0, original.durationMax - (original.preheatMs ?? 0) - MIN_EDITOR_DURATION))  });
+     };
     const onUp = () => {
       setDragRenderTotal(null);
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
-    };
+     };
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
-  }
+   }
 
   function beginPeriodDrag(event: ReactPointerEvent<HTMLElement>, periodId: string, mode: 'move' | 'start' | 'end') {
+    if (pending) return;
     event.preventDefault();
     event.stopPropagation();
+    activeHistoryControl?.onCaptureHistory();
     event.currentTarget.setPointerCapture(event.pointerId);
     setSelectedPeriodId(periodId);
+    setRaisedPeriodId(periodId);
     const period = periods.find((candidate) => candidate.id === periodId);
     const track = event.currentTarget.closest('.timeline-editor-track, .timeline-editor-period-track') as HTMLElement | null;
     if (!period || !track) return;
     const startX = event.clientX;
-    const original = { ...period };
+    const original = { ...period  };
+    const originalPeriods = periods.map((candidate) => ({ ...candidate  }));
     const dragTotal = total;
     const dragTrackWidth = Math.max(1, track.getBoundingClientRect().width);
     setDragRenderTotal(dragTotal);
@@ -1566,43 +2873,147 @@ function TimelineEditor({ chart, moves, comboImageStyle, mode, zoom, onZoomChang
         const length = original.endMs - original.startMs;
         const startMs = clamp(original.startMs + deltaMs, 0, Math.max(0, dragTotal - length));
         const lane = laneHit(moveEvent.clientX, moveEvent.clientY);
-        updatePeriod(periodId, { startMs: Math.round(startMs), endMs: Math.round(startMs + length), ...(lane && original.kind === 'free_fire' ? { characterSlot: lane.slot, lane: lane.lane } : {}) });
-      }
-      if (mode === 'start' && period.kind !== 'startup_axis') updatePeriod(periodId, { startMs: Math.round(clamp(original.startMs + deltaMs, 0, original.endMs - MIN_EDITOR_DURATION)) });
-      if (mode === 'end') updatePeriod(periodId, { endMs: Math.round(clamp(original.endMs + deltaMs, original.startMs + MIN_EDITOR_DURATION, dragTotal)) });
-    };
+        updatePeriod(periodId, { startMs: Math.round(startMs), endMs: Math.round(startMs + length), ...(lane && original.kind === 'free_fire' ? { characterSlot: lane.slot, lane: lane.lane  } : { })  });
+       }
+      if (mode === 'start') {
+        if (original.kind === 'startup_axis' || original.kind === 'loop_axis') onPeriodsChange(resizeAxisBoundary(originalPeriods, periodId, 'start', deltaMs, dragTotal));
+        else updatePeriod(periodId, { startMs: Math.round(clamp(original.startMs + deltaMs, 0, original.endMs - MIN_EDITOR_DURATION))  });
+       }
+      if (mode === 'end') {
+        if (original.kind === 'startup_axis' || original.kind === 'loop_axis') onPeriodsChange(resizeAxisBoundary(originalPeriods, periodId, 'end', deltaMs, dragTotal));
+        else updatePeriod(periodId, { endMs: Math.round(clamp(original.endMs + deltaMs, original.startMs + MIN_EDITOR_DURATION, dragTotal))  });
+       }
+     };
     const onUp = () => {
       setDragRenderTotal(null);
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
-    };
+     };
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
-  }
+   }
 
   function pointerTime(event: ReactMouseEvent<HTMLElement> | ReactPointerEvent<HTMLElement>) {
     const rect = event.currentTarget.getBoundingClientRect();
     return Math.round(clamp(((event.clientX - rect.left) / Math.max(1, rect.width)) * renderTotal, 0, renderTotal));
-  }
+   }
+
+  function seekFromTimelineClientX(clientX: number) {
+    const node = scrollRef.current;
+    if (!node || !activePlayheadControl || activePlayheadControl.disabled) return;
+    const rect = node.getBoundingClientRect();
+    const trackX = clientX - rect.left + node.scrollLeft - 112;
+    activePlayheadControl.onSeek(Math.round(clamp((trackX / Math.max(1, trackWidth)) * renderTotal, 0, renderTotal)));
+   }
+
+  function beginPlayheadDrag(event: ReactPointerEvent<HTMLDivElement>) {
+    if (!activePlayheadControl || activePlayheadControl.disabled || pending) return;
+    event.preventDefault();
+    event.stopPropagation();
+    seekFromTimelineClientX(event.clientX);
+    const onMove = (moveEvent: PointerEvent) => seekFromTimelineClientX(moveEvent.clientX);
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+     };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+   }
+
+  function setTrackPendingPoint(event: ReactPointerEvent<HTMLElement>, slot?: CharacterSlot, lane?: LaneKind) {
+    if (!pending) return;
+    setPendingPoint({ slot, lane, startMs: pointerTime(event)  });
+   }
+
+  function handleSpecialContextMenu(event: ReactMouseEvent<HTMLElement>, fallback?: () => void) {
+    if (pending) {
+      event.preventDefault();
+      event.stopPropagation();
+      endSpecialPlacement();
+      return;
+     }
+    fallback?.();
+   }
 
   function beginBoxSelect(event: ReactPointerEvent<HTMLDivElement>) {
     if (pending || event.button !== 0 || event.target !== event.currentTarget) return;
     const body = event.currentTarget.closest('.timeline-editor-body') as HTMLElement | null;
-    if (!body) return;
+    const scrollNode = scrollRef.current;
+    if (!body || !scrollNode) return;
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
-    const bodyRect = body.getBoundingClientRect();
-    const startX = clamp(event.clientX - bodyRect.left, 0, bodyRect.width);
-    const startY = clamp(event.clientY - bodyRect.top, 0, bodyRect.height);
+    const initialBodyRect = body.getBoundingClientRect();
+    const startX = clamp(event.clientX - initialBodyRect.left, 0, initialBodyRect.width);
+    const startY = clamp(event.clientY - initialBodyRect.top, 0, initialBodyRect.height);
+    const startClientX = event.clientX;
+    const startClientY = event.clientY;
     const additive = event.ctrlKey;
+    let selecting = false;
+    let lastClientX = event.clientX;
+    let lastClientY = event.clientY;
+    let edgeDirection: -1 | 0 | 1 = 0;
+    let edgeDelayTimer = 0;
+    let edgeScrollTimer = 0;
+    const stopEdgeScroll = () => {
+      if (edgeDelayTimer) window.clearTimeout(edgeDelayTimer);
+      if (edgeScrollTimer) window.clearInterval(edgeScrollTimer);
+      edgeDelayTimer = 0;
+      edgeScrollTimer = 0;
+      edgeDirection = 0;
+     };
     const updateBox = (clientX: number, clientY: number) => {
+      lastClientX = clientX;
+      lastClientY = clientY;
+      const bodyRect = body.getBoundingClientRect();
       const currentX = clamp(clientX - bodyRect.left, 0, bodyRect.width);
       const currentY = clamp(clientY - bodyRect.top, 0, bodyRect.height);
-      setSelectionBox({ x: Math.min(startX, currentX), y: Math.min(startY, currentY), width: Math.abs(currentX - startX), height: Math.abs(currentY - startY) });
-    };
-    const onMove = (moveEvent: PointerEvent) => updateBox(moveEvent.clientX, moveEvent.clientY);
-    const onUp = (upEvent: PointerEvent) => {
+      setSelectionBox({ x: Math.min(startX, currentX), y: Math.min(startY, currentY), width: Math.abs(currentX - startX), height: Math.abs(currentY - startY)  });
+     };
+    const setEdgeDirection = (direction: -1 | 0 | 1) => {
+      if (direction === edgeDirection) return;
+      stopEdgeScroll();
+      edgeDirection = direction;
+      if (!direction) return;
+      edgeDelayTimer = window.setTimeout(() => {
+        edgeDelayTimer = 0;
+        edgeScrollTimer = window.setInterval(() => {
+          const maxScrollLeft = Math.max(0, scrollNode.scrollWidth - scrollNode.clientWidth);
+          const nextScrollLeft = clamp(scrollNode.scrollLeft + direction * Math.max(10, Math.round(scrollNode.clientWidth * 0.014)), 0, maxScrollLeft);
+          if (nextScrollLeft === scrollNode.scrollLeft) return;
+          scrollNode.scrollLeft = nextScrollLeft;
+          updateBox(lastClientX, lastClientY);
+         }, 16);
+       }, 2000);
+     };
+    const updateEdgeDirection = (clientX: number) => {
+      const scrollRect = scrollNode.getBoundingClientRect();
+      const edgeWidth = Math.min(72, Math.max(44, scrollRect.width * 0.07));
+      const maxScrollLeft = Math.max(0, scrollNode.scrollWidth - scrollNode.clientWidth);
+      const direction: -1 | 0 | 1 = clientX <= scrollRect.left + edgeWidth && scrollNode.scrollLeft > 0
+        ? -1
+        : clientX >= scrollRect.right - edgeWidth && scrollNode.scrollLeft < maxScrollLeft
+          ? 1
+          : 0;
+      setEdgeDirection(direction);
+     };
+    const onMove = (moveEvent: PointerEvent) => {
+      if (!selecting && Math.hypot(moveEvent.clientX - startClientX, moveEvent.clientY - startClientY) >= 5) selecting = true;
+      if (!selecting) return;
+      updateBox(moveEvent.clientX, moveEvent.clientY);
+      updateEdgeDirection(moveEvent.clientX);
+     };
+    const finishSelection = (upEvent: PointerEvent) => {
+      stopEdgeScroll();
+      if (!selecting) {
+        seekFromTimelineClientX(upEvent.clientX);
+        setSelectionBox(null);
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', finishSelection);
+        window.removeEventListener('pointercancel', finishSelection);
+        return;
+      }
       updateBox(upEvent.clientX, upEvent.clientY);
+      const bodyRect = body.getBoundingClientRect();
       const endX = clamp(upEvent.clientX - bodyRect.left, 0, bodyRect.width);
       const endY = clamp(upEvent.clientY - bodyRect.top, 0, bodyRect.height);
       const selectionRect = {
@@ -1610,12 +3021,12 @@ function TimelineEditor({ chart, moves, comboImageStyle, mode, zoom, onZoomChang
         right: bodyRect.left + Math.max(startX, endX),
         top: bodyRect.top + Math.min(startY, endY),
         bottom: bodyRect.top + Math.max(startY, endY)
-      };
+       };
       const hitIds = Array.from(body.querySelectorAll<HTMLElement>('.timeline-editor-block[data-step-id]'))
         .filter((element) => {
           const blockRect = element.getBoundingClientRect();
           return blockRect.left <= selectionRect.right && blockRect.right >= selectionRect.left && blockRect.top <= selectionRect.bottom && blockRect.bottom >= selectionRect.top;
-        })
+         })
         .map((element) => element.dataset.stepId)
         .filter((id): id is string => Boolean(id));
       const hits = chart.steps.filter((step) => hitIds.includes(step.id)).map((step) => step.id);
@@ -1623,384 +3034,761 @@ function TimelineEditor({ chart, moves, comboImageStyle, mode, zoom, onZoomChang
       if (hits[0]) setSelectedId(hits[0]);
       setSelectionBox(null);
       window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
-    };
+      window.removeEventListener('pointerup', finishSelection);
+      window.removeEventListener('pointercancel', finishSelection);
+     };
     window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
-  }
+    window.addEventListener('pointerup', finishSelection);
+    window.addEventListener('pointercancel', finishSelection);
+   }
 
   function hitPeriods(pointerMs: number, slot?: CharacterSlot, lane?: LaneKind) {
     return periods.filter((period) => {
       const sameTime = pointerMs >= period.startMs && pointerMs <= period.endMs;
       const sameScope = period.characterSlot === undefined || (period.characterSlot === slot && (!period.lane || period.lane === lane));
       return sameTime && sameScope;
-    }).sort((a, b) => (b.endMs - b.startMs) - (a.endMs - a.startMs));
-  }
+     }).sort((a, b) => (b.endMs - b.startMs) - (a.endMs - a.startMs));
+   }
 
   function openStepContext(event: ReactMouseEvent<HTMLDivElement>, step: ComboStep | null, laneSteps: ComboStep[]) {
     event.preventDefault();
     event.stopPropagation();
+    setContextMenuPosition({ x: event.clientX, y: event.clientY  });
+    setActiveContextSubmenu(null);
     const pointerMs = pointerTimeInTrack(event, renderTotal);
     const hits = laneSteps.filter((candidate) => pointerMs >= candidate.startMin && pointerMs <= candidate.startMin + candidate.durationMax).sort((a, b) => b.durationMax - a.durationMax);
     const target = step ?? hits[0] ?? null;
-    const lane = target ? { slot: target.characterSlot ?? 1, lane: target.lane } : laneHit(event.clientX, event.clientY) ?? undefined;
+    const lane = target ? { slot: target.characterSlot ?? 1, lane: target.lane  } : laneHit(event.clientX, event.clientY) ?? undefined;
     const periodHits = hitPeriods(pointerMs, lane?.slot, lane?.lane);
     if (!target && !periodHits.length) return;
     if (target) setSelectedId(target.id);
     const contextStepIds = target && selectedIds.includes(target.id) ? selectedIds : target ? [target.id] : [];
     if (target && !selectedIds.includes(target.id)) setSelectedIds([target.id]);
-    setContext({ x: event.clientX, y: event.clientY, stepId: target?.id, stepIds: contextStepIds, periodId: periodHits[0]?.id, coveredSteps: hits, coveredPeriods: periodHits });
-  }
+    setContext({ x: event.clientX, y: event.clientY, stepId: target?.id, stepIds: contextStepIds, periodId: periodHits[0]?.id, coveredSteps: hits, coveredPeriods: periodHits  });
+   }
 
   function openPeriodContext(event: ReactMouseEvent<HTMLElement>, period: ComboPeriod | null, slot?: CharacterSlot, lane?: LaneKind) {
     event.preventDefault();
     event.stopPropagation();
+    setContextMenuPosition({ x: event.clientX, y: event.clientY  });
+    setActiveContextSubmenu(null);
     const pointerMs = pointerTimeInTrack(event, renderTotal);
     const hits = hitPeriods(pointerMs, slot, lane);
     const target = period ?? hits[0] ?? null;
     if (!target) return;
     setSelectedPeriodId(target.id);
-    setContext({ x: event.clientX, y: event.clientY, periodId: target.id, coveredSteps: [], coveredPeriods: hits });
-  }
+    setContext({ x: event.clientX, y: event.clientY, periodId: target.id, coveredSteps: [], coveredPeriods: hits  });
+   }
 
-  function pasteStep() {
-    if (!copied) return;
-    onUpdate('__insert__', normalizeStep({ ...copied, id: crypto.randomUUID(), startMin: copied.startMin + 160, startMax: copied.startMax + 160 }));
+  function startCopyPlacement(selection: CopiedTimelineSelection | null = copiedSelection) {
+    if (!selection) return;
+    setCopiedSelection(selection);
+    setPending({ kind: 'copy', ...selection  });
+    setPendingPoint(null);
     setContext(null);
-  }
+    setCompactAddMenuOpen(false);
+   }
 
-  function pastePeriod() {
-    if (!copiedPeriod) return;
-    const length = copiedPeriod.endMs - copiedPeriod.startMs;
-    onPeriodsChange([...periods, normalizePeriod({ ...copiedPeriod, id: crypto.randomUUID(), startMs: copiedPeriod.startMs + 160, endMs: copiedPeriod.startMs + 160 + length })]);
+  function copyContextStepsAndStartPlacement() {
+    startCopyPlacement(copiedSelectionFromContext('steps'));
+   }
+
+  function copyContextPeriodsAndStartPlacement() {
+    startCopyPlacement(copiedSelectionFromContext('periods'));
+   }
+
+  function contextStepIds() {
+    if (!context?.stepId) return [];
+    return context.stepIds?.length ? context.stepIds : [context.stepId];
+   }
+
+  function deleteContextSteps() {
+    const targetIds = contextStepIds();
+    if (!targetIds.length) return;
+    activeHistoryControl?.onCaptureHistory();
+    onDelete(targetIds);
+    setSelectedIds([]);
     setContext(null);
-  }
+   }
+
+  function deleteContextPeriod() {
+    if (!context?.periodId) return;
+    activeHistoryControl?.onCaptureHistory();
+    onPeriodsChange(periods.filter((period) => period.id !== context.periodId));
+    setContext(null);
+   }
+
+  function toggleContextFreeTag() {
+    const targetIds = contextStepIds();
+    targetIds.forEach((stepId) => onUpdate(stepId, { manualFree: !chart.steps.find((item) => item.id === stepId)?.manualFree  }));
+    setContext(null);
+   }
+
+  function showContextSubmenu(key: TimelineSubmenuKey, event: ReactMouseEvent<HTMLButtonElement>) {
+    contextSubmenuAnchorRef.current = event.currentTarget;
+    const rect = event.currentTarget.getBoundingClientRect();
+    setContextSubmenuPosition({ x: rect.right + 6, y: rect.top - 6  });
+    setActiveContextSubmenu(key);
+   }
+
+  function stepsStartingInPeriod(period: ComboPeriod): ComboStep[] {
+    return [...chart.steps]
+      .filter((step) => step.startMin >= period.startMs && step.startMin < period.endMs)
+      .sort((left, right) => left.startMin - right.startMin || left.startMax - right.startMax || left.id.localeCompare(right.id));
+   }
 
   function firstStepInPeriod(period: ComboPeriod): ComboStep | null {
-    return [...chart.steps]
-      .filter((step) => step.startMin >= period.startMs && step.startMin <= period.endMs)
-      .sort((left, right) => left.startMin - right.startMin || left.startMax - right.startMax || left.id.localeCompare(right.id))[0] ?? null;
-  }
+    return stepsStartingInPeriod(period).find((step) => moves.find((move) => move.id === step.moveId)?.displayOnly !== true) ?? null;
+   }
+
+
+  function renderLoopBoundaryGuides() {
+    const rowHeight = videoCompactMode ? 48 : 68;
+    const periodTrackHeight = videoCompactMode ? 26 : 42;
+    const rulerHeight = videoCompactMode ? 22 : 28;
+    const periodGap = videoCompactMode ? 4 : 6;
+    const guideTop = (zoomFrameTrack ? periodTrackHeight + periodGap : 0) + periodTrackHeight + periodGap + rulerHeight;
+    const stepCenterOffset = videoCompactMode ? 24 : 34;
+    const guides = periods.filter((period) => period.kind === 'loop_axis').flatMap((period) => {
+      const periodSteps = stepsStartingInPeriod(period);
+      const first = periodSteps[0];
+      const last = periodSteps[periodSteps.length - 1];
+      if (!first || !last) return [];
+      const periodStartX = 112 + (period.startMs / renderTotal) * trackWidth;
+      const periodEndX = 112 + (period.endMs / renderTotal) * trackWidth;
+      const firstX = 112 + (first.startMin / renderTotal) * trackWidth;
+      const lastX = 112 + ((last.startMin + last.durationMax) / renderTotal) * trackWidth;
+      const firstY = guideTop + timelineLaneIndex(first) * rowHeight + stepCenterOffset;
+      const lastY = guideTop + timelineLaneIndex(last) * rowHeight + stepCenterOffset;
+      const periodY = (zoomFrameTrack ? periodTrackHeight + periodGap : 0) + periodTrackHeight;
+      const bendY = guideTop - 5;
+      return [
+        <polyline key={`${period.id}-start` } points={`${periodStartX},${periodY } ${periodStartX},${bendY } ${firstX},${bendY } ${firstX},${firstY }` } />,
+        <polyline key={`${period.id}-end` } points={`${periodEndX},${periodY } ${periodEndX},${bendY } ${lastX},${bendY } ${lastX},${lastY }` } />
+       ];
+     });
+    if (!guides.length) return null;
+    return <svg className="timeline-loop-guides" width={trackWidth + 112 } height={guideTop + lanes.length * rowHeight } aria-hidden="true">{guides }</svg>;
+   }
 
   function isValidLoopStarter(step: ComboStep | null): boolean {
     return Boolean(step && (step.moveId === 'liberation' || step.moveId.startsWith('switch_')));
-  }
+   }
 
   function renderPeriodBlock(period: ComboPeriod, roleScoped = false) {
     const invalidLoopStarter = period.kind === 'loop_axis' && !isValidLoopStarter(firstStepInPeriod(period));
-    const periodClass = `timeline-period ${period.kind} ${invalidLoopStarter ? 'invalid-loop' : ''} ${roleScoped ? 'role-scoped' : ''} ${selectedPeriodId === period.id ? 'selected' : ''} ${raisedPeriodId === period.id ? 'raised' : ''}`;
-    return <div key={period.id} className={periodClass} style={{ left: `${(period.startMs / renderTotal) * 100}%`, width: `${Math.max(1.8, ((period.endMs - period.startMs) / renderTotal) * 100)}%`, zIndex: raisedPeriodId === period.id ? 7 : roleScoped ? 0 : 1 }} onPointerDown={(event) => beginPeriodDrag(event, period.id, 'move')} onContextMenu={(event) => openPeriodContext(event, period, period.characterSlot, period.lane)}><span className="period-edge left" onPointerDown={(event) => beginPeriodDrag(event, period.id, 'start')} /><strong>{period.label}</strong><span>{((period.endMs - period.startMs) / 1000).toFixed(2)}s</span><span className="period-edge right" onPointerDown={(event) => beginPeriodDrag(event, period.id, 'end')} /></div>;
-  }
+    const periodClass = `timeline-period ${period.kind } ${invalidLoopStarter ? 'invalid-loop' : '' } ${roleScoped ? 'role-scoped' : '' } ${selectedPeriodId === period.id ? 'selected' : '' } ${raisedPeriodId === period.id ? 'raised' : '' }`;
+    return <div key={period.id } className={periodClass  } style={{ left: `${(period.startMs / renderTotal) * 100 }%`, width: `${Math.max(1.8, ((period.endMs - period.startMs) / renderTotal) * 100) }%`, zIndex: raisedPeriodId === period.id || selectedPeriodId === period.id ? 7 : roleScoped ? 0 : 1  } } onPointerDown={(event) => beginPeriodDrag(event, period.id, 'move') } onContextMenu={(event) => handleSpecialContextMenu(event, () => openPeriodContext(event, period, period.characterSlot, period.lane)) }><span className="period-edge left" onPointerDown={(event) => beginPeriodDrag(event, period.id, 'start') } /><strong>{period.label }</strong><span>{((period.endMs - period.startMs) / 1000).toFixed(2) }s</span><span className="period-edge right" onPointerDown={(event) => beginPeriodDrag(event, period.id, 'end') } /></div>;
+   }
 
   function renderStepLabel(step: ComboStep) {
     if (mode === 'content') {
-      const defaultLabel = defaultComboContentLabelForMoveId(step.moveId) ?? displayMoveLabel(step);
-      return <label className="timeline-content-label" onPointerDown={(event) => event.stopPropagation()}><input value={comboImageStyle.contentLabels[step.id] ?? ''} placeholder={defaultLabel} onChange={(event) => onContentChange({ contentLabels: { ...comboImageStyle.contentLabels, [step.id]: event.target.value } })} onBlur={(event) => setContentLabel(step.id, event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); }} /><span>{defaultLabel}</span></label>;
-    }
-    return <strong>{displayMoveLabel(step)}</strong>;
-  }
+      const defaultLabel = defaultComboContentLabelForMoveId(step.moveId) ?? localizedMoveLabel(step, language);
+      return <label className="timeline-content-label" onPointerDown={(event) => event.stopPropagation() }><input data-step-nav-id={step.id } data-step-nav-field="content" value={comboImageStyle.contentLabels[step.id] ?? '' } placeholder={defaultLabel } onChange={(event) => onContentChange({ contentLabels: { ...comboImageStyle.contentLabels, [step.id]: event.target.value  }  }) } onBlur={(event) => setContentLabel(step.id, event.target.value) } onKeyDown={(event) => handleStepInputNavigation(event, step.id, 'content') } /><span>{defaultLabel }</span></label>;
+     }
+    return <strong>{localizedMoveLabel(step, language) }</strong>;
+   }
 
   function renderZoomFrameTrack() {
     if (!zoomFrameTrack) return null;
     const frames = [...zoomFrameTrack.frames].sort((left, right) => left.timeMs - right.timeMs || left.id.localeCompare(right.id));
     return (
-      <div className="timeline-zoom-frame-track" style={{ width: trackWidth }} onPointerMove={zoomFrameTrack.onDragMove} onPointerUp={zoomFrameTrack.onDragEnd} onPointerCancel={zoomFrameTrack.onDragEnd}>
-        <div className="timeline-editor-lane period-lane-label">缩放帧</div>
-        <button className="timeline-zoom-frame-add" onClick={zoomFrameTrack.onAdd}><Plus size={14} />添加</button>
-        <div className="timeline-zoom-playhead" style={{ left: `${(zoomFrameTrack.playbackMs / renderTotal) * 100}%` }} />
+      <div className="timeline-zoom-frame-track" style={{ width: trackWidth  } } onPointerMove={(event) => { if (pending?.kind === 'zoom') setTrackPendingPoint(event); zoomFrameTrack.onDragMove(event);  } } onClick={(event) => { if (pending?.kind === 'zoom') placePending({ startMs: pointerTime(event)  });  } } onContextMenu={(event) => handleSpecialContextMenu(event) } onPointerUp={zoomFrameTrack.onDragEnd } onPointerCancel={zoomFrameTrack.onDragEnd }>
+         <div className="timeline-editor-lane period-lane-label">{text('缩放帧', 'Zoom Frames') }</div>
+         {!videoCompactMode && <button className="timeline-zoom-frame-add" onClick={() => { setPending({ kind: 'zoom'  }); setPendingPoint(null);  } }><Plus size={14 } />{text('添加', 'Add') }</button> }
+        {playheadOffscreenDirection && activePlayheadControl && <button className={`timeline-playhead-offscreen ${playheadOffscreenDirection }`  } style={{ left: playheadArrowTrackX  } } title={playheadOffscreenDirection === 'left' ? text('当前播放位置在左侧', 'The current playback position is to the left') : text('当前播放位置在右侧', 'The current playback position is to the right') } onClick={(event) => { event.stopPropagation(); scrollToTimelineMs(activePlayheadControl.playbackMs);  } }>{playheadOffscreenDirection === 'left' ? <ChevronLeft size={16 } /> : <ChevronRight size={16 } /> }</button> }
+        {pending?.kind === 'zoom' && pendingPoint && <button className="timeline-zoom-placement-ghost" style={{ left: `${(pendingPoint.startMs / renderTotal) * 100 }%`  } }><span /><em>{frames.length + 1 }</em></button> }
         {frames.map((frame, index) => (
-          <button key={frame.id} className="timeline-zoom-frame-marker" style={{ left: `${(frame.timeMs / renderTotal) * 100}%` }} title={`缩放帧 ${index + 1} ${formatTimelineMs(frame.timeMs)}`} onClick={() => zoomFrameTrack.onSeek(frame.timeMs)} onPointerDown={(event) => zoomFrameTrack.onBeginDrag(event, frame.id, renderTotal)}>
+          <button key={frame.id } className="timeline-zoom-frame-marker" style={{ left: `${(frame.timeMs / renderTotal) * 100 }%`  } } title={text(`缩放帧 ${index + 1 } ${formatTimelineMs(frame.timeMs) }`, `Zoom Frame ${index + 1 } ${formatTimelineMs(frame.timeMs) }`) } onClick={() => { if (!pending) zoomFrameTrack.onSeek(frame.timeMs);  } } onPointerDown={(event) => { if (!pending) zoomFrameTrack.onBeginDrag(event, frame.id, renderTotal);  } }>
             <span />
-            <em>{index + 1}</em>
-            {frames.length > 2 && <Trash2 size={13} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); zoomFrameTrack.onDelete(frame.id); }} />}
+            <em>{index + 1 }</em>
+            {frames.length > 2 && <Trash2 size={13 } onPointerDown={(event) => event.stopPropagation() } onClick={(event) => { event.stopPropagation(); zoomFrameTrack.onDelete(frame.id);  } } /> }
           </button>
-        ))}
+        )) }
       </div>
     );
-  }
+   }
 
   const inspectorContent = (
     <>
       {selectedPeriod && (
         <div className="timeline-period-inspector">
-          <strong>{selectedPeriod.label}</strong>
-          <label>类型<select value={selectedPeriod.kind} onChange={(event) => setPeriodKind(selectedPeriod.id, event.target.value as ComboPeriodKind)}><option value="draft_period">待设置</option><option value="free_fire">自由开火</option><option value="startup_axis">启动轴</option><option value="loop_axis">循环轴</option></select></label>
-          <label>名称<input value={selectedPeriod.label} onChange={(event) => updatePeriod(selectedPeriod.id, { label: event.target.value })} /></label>
-          {selectedPeriod.kind === 'loop_axis' && <label>编号<input type="number" value={selectedPeriod.loopIndex ?? 1} onChange={(event) => updatePeriod(selectedPeriod.id, { loopIndex: Number(event.target.value) })} /></label>}
-          <label>开始 s<input type="number" step="0.001" disabled={selectedPeriod.kind === 'startup_axis'} value={msToSeconds(selectedPeriod.startMs)} onChange={(event) => updatePeriod(selectedPeriod.id, { startMs: secondsToMs(event.target.value) })} /></label>
-          <label>结束 s<input type="number" step="0.001" value={msToSeconds(selectedPeriod.endMs)} onChange={(event) => updatePeriod(selectedPeriod.id, { endMs: secondsToMs(event.target.value) })} /></label>
-          <button onClick={() => onPeriodsChange(periods.filter((period) => period.id !== selectedPeriod.id))}>删除时段</button>
+          <strong>{selectedPeriod.label }</strong>
+           <label>{text('类型', 'Type') }<select value={selectedPeriod.kind } onChange={(event) => setPeriodKind(selectedPeriod.id, event.target.value as ComboPeriodKind) }><option value="draft_period">{text('待设置', 'Unassigned') }</option><option value="free_fire">{text('自由开火', 'Free Action') }</option><option value="startup_axis">{text('启动轴', 'Startup Axis') }</option><option value="loop_axis">{text('循环轴', 'Loop Axis') }</option></select></label>
+           <label>{text('名称', 'Name') }<input value={selectedPeriod.label } onChange={(event) => updatePeriod(selectedPeriod.id, { label: event.target.value  }) } /></label>
+           {selectedPeriod.kind === 'loop_axis' && <label>{text('编号', 'Index') }<input type="number" value={selectedPeriod.loopIndex ?? 1 } onChange={(event) => updatePeriod(selectedPeriod.id, { loopIndex: Number(event.target.value)  }) } /></label> }
+           <label>{text('开始 s', 'Start s') }<input type="number" step="0.001" disabled={selectedPeriod.kind === 'startup_axis' } value={msToSeconds(selectedPeriod.startMs) } onChange={(event) => updatePeriod(selectedPeriod.id, { startMs: secondsToMs(event.target.value)  }) } /></label>
+           <label>{text('结束 s', 'End s') }<input type="number" step="0.001" value={msToSeconds(selectedPeriod.endMs) } onChange={(event) => updatePeriod(selectedPeriod.id, { endMs: secondsToMs(event.target.value)  }) } /></label>
+           <button onClick={() => onPeriodsChange(periods.filter((period) => period.id !== selectedPeriod.id)) }>{text('删除时段', 'Delete Period') }</button>
         </div>
-      )}
+      ) }
       {selected && (
         <div className="timeline-editor-inspector">
-          <strong style={{ color: selected.color }}>{selectedSteps.length > 1 ? `已选 ${selectedSteps.length} 个` : selected.label}</strong>
-          <label className="timeline-label-wide">招式块文本<input value={comboImageStyle.contentLabels[selected.id] ?? ''} placeholder={defaultComboContentLabelForMoveId(selected.moveId) ?? displayMoveLabel(selected)} onChange={(event) => setContentLabel(selected.id, event.target.value)} /></label>
-          <label>角色<select value={selected.characterSlot ?? 1} onChange={(event) => selectedSteps.length > 1 ? updateSelectedSteps({ characterSlot: Number(event.target.value) as CharacterSlot }) : onUpdate(selected.id, { characterSlot: Number(event.target.value) as CharacterSlot })}>{CHARACTER_SLOTS.map((slot) => <option key={slot} value={slot}>角色 {slot}</option>)}</select></label>
-          <label>轨道<select value={selected.lane} onChange={(event) => selectedSteps.length > 1 ? updateSelectedSteps({ lane: event.target.value as LaneKind }) : onUpdate(selected.id, { lane: event.target.value as LaneKind })}><option value="main">轨道 1</option><option value="independent">轨道 2</option></select></label>
-          <label><input type="checkbox" checked={Boolean(selected.manualFree)} onChange={(event) => selectedSteps.length > 1 ? updateSelectedSteps({ manualFree: event.target.checked }) : onUpdate(selected.id, { manualFree: event.target.checked })} />自由</label>
-          <label>最早开始 s<input type="number" step="0.001" value={msToSeconds(selected.startMin)} onChange={(event) => selectedSteps.length > 1 ? updateSelectedSteps({ startMin: secondsToMs(event.target.value) }) : onUpdate(selected.id, { startMin: secondsToMs(event.target.value) })} /></label>
-          <label>最长持续 s<input type="number" step="0.001" value={msToSeconds(selected.durationMax)} onChange={(event) => selectedSteps.length > 1 ? updateSelectedSteps({ durationMax: secondsToMs(event.target.value) }) : onUpdate(selected.id, { durationMax: secondsToMs(event.target.value) })} /></label>
-          <label>预热 s<input type="number" step="0.001" value={msToSeconds(selected.preheatMs ?? 0)} onChange={(event) => selectedSteps.length > 1 ? updateSelectedSteps({ preheatMs: secondsToMs(event.target.value) }) : onUpdate(selected.id, { preheatMs: secondsToMs(event.target.value) })} /></label>
-          <label>后摇 s<input type="number" step="0.001" value={msToSeconds(selected.recoveryMs ?? 0)} onChange={(event) => selectedSteps.length > 1 ? updateSelectedSteps({ recoveryMs: secondsToMs(event.target.value) }) : onUpdate(selected.id, { recoveryMs: secondsToMs(event.target.value) })} /></label>
+           <strong style={{ color: selected.color  } }>{selectedSteps.length > 1 ? text(`已选 ${selectedSteps.length } 个`, `${selectedSteps.length } selected`) : localizedMoveLabel(selected, language) }</strong>
+           <label className="timeline-label-wide">{text('招式块文本', 'Block Text') }<input data-step-nav-id={selected.id } data-step-nav-field="content" value={comboImageStyle.contentLabels[selected.id] ?? '' } placeholder={defaultComboContentLabelForMoveId(selected.moveId) ?? localizedMoveLabel(selected, language) } onChange={(event) => setContentLabel(selected.id, event.target.value) } onKeyDown={(event) => handleStepInputNavigation(event, selected.id, 'content') } /></label>
+           <label className="timeline-label-wide">{text('备注', 'Note') }<input data-step-nav-id={selected.id } data-step-nav-field="note" value={selectedSteps.length > 1 ? '' : selected.note ?? '' } placeholder={selectedSteps.length > 1 ? text('批量修改招式提示', 'Edit notes for selected actions') : defaultPromptTextForStep(selected, language, comboImageStyle) } onChange={(event) => selectedSteps.length > 1 ? updateSelectedSteps({ note: event.target.value  }) : onUpdate(selected.id, { note: event.target.value  }) } onKeyDown={(event) => handleStepInputNavigation(event, selected.id, 'note') } /></label>
+           <label className="timeline-free-toggle"><input type="checkbox" checked={Boolean(selected.manualFree) } onChange={(event) => selectedSteps.length > 1 ? updateSelectedSteps({ manualFree: event.target.checked  }) : onUpdate(selected.id, { manualFree: event.target.checked  }) } />{text('自由', 'Free') }</label>
+           <label>{text('最早开始 s', 'Earliest Start s') }<input type="number" step="0.001" value={msToSeconds(selected.startMin) } onChange={(event) => selectedSteps.length > 1 ? updateSelectedSteps({ startMin: secondsToMs(event.target.value)  }) : onUpdate(selected.id, { startMin: secondsToMs(event.target.value)  }) } /></label>
+           <label>{text('最长持续 s', 'Max Duration s') }<input type="number" step="0.001" value={msToSeconds(selected.durationMax) } onChange={(event) => selectedSteps.length > 1 ? updateSelectedSteps({ durationMax: secondsToMs(event.target.value)  }) : onUpdate(selected.id, { durationMax: secondsToMs(event.target.value)  }) } /></label>
+           <label>{text('预热 s', 'Warm-up s') }<input type="number" step="0.001" value={msToSeconds(selected.preheatMs ?? 0) } onChange={(event) => selectedSteps.length > 1 ? updateSelectedSteps({ preheatMs: secondsToMs(event.target.value)  }) : onUpdate(selected.id, { preheatMs: secondsToMs(event.target.value)  }) } /></label>
+           <label>{text('后摇 s', 'Recovery s') }<input type="number" step="0.001" value={msToSeconds(selected.recoveryMs ?? 0) } onChange={(event) => selectedSteps.length > 1 ? updateSelectedSteps({ recoveryMs: secondsToMs(event.target.value)  }) : onUpdate(selected.id, { recoveryMs: secondsToMs(event.target.value)  }) } /></label>
         </div>
-      )}
+      ) }
     </>
   );
   const inspectorNode = inspectorPortalTarget ? createPortal(inspectorContent, inspectorPortalTarget) : inspectorContent;
+  const toolbarNode = videoCompactMode ? (
+    <div className="timeline-editor-video-tools" onPointerDown={(event) => event.stopPropagation()}>
+       {onModeChange && <button className={`icon-button ${mode === 'content' ? 'active' : ''}`} title={mode === 'timeline' ? text('切换到内容编辑', 'Switch to content editing') : text('切换到时间编辑', 'Switch to timing editing')} onClick={() => onModeChange(mode === 'timeline' ? 'content' : 'timeline')}><Repeat2 size={16} /></button>}
+       {zoomFrameTrack && <button className={`icon-button ${pending?.kind === 'zoom' ? 'active' : ''}`} title={text('添加缩放帧', 'Add Zoom Frame') } onClick={() => { if (pending?.kind === 'zoom') endSpecialPlacement(); else { setPending({ kind: 'zoom' }); setPendingPoint(null); setCompactAddMenuOpen(false); } }}><ZoomKeyframeIcon size={16} /></button>}
+       {zoomFrameTrack && <button className={`icon-button ${pending?.kind === 'cut' ? 'active' : ''}`} title={text('裁剪招式块', 'Split Action Block') } onClick={() => { if (pending?.kind === 'cut') endSpecialPlacement(); else { setPending({ kind: 'cut' }); setPendingPoint(null); setCompactAddMenuOpen(false); } }}><Scissors size={16} /></button>}
+       {zoomFrameTrack && videoLayerTransformControl && <button className={`icon-button ${videoLayerTransformControl.active ? 'active' : ''}`} title={text('移动缩放', 'Move / Scale') } onClick={videoLayerTransformControl.onToggle} onPointerDown={videoLayerTransformControl.onScalePointerDown} onPointerMove={videoLayerTransformControl.onScalePointerMove} onPointerUp={videoLayerTransformControl.onScalePointerUp} onPointerCancel={videoLayerTransformControl.onScalePointerUp}><Move size={16} /></button>}
+      <button className={`icon-button ${pending?.kind === 'move' || pending?.kind === 'period' ? 'active' : ''}`} title={activePlacedMove ? text(`添加：${localizedMoveDefinitionLabel(activePlacedMove, language)}；按 X 切时段`, `Add: ${localizedMoveDefinitionLabel(activePlacedMove, language)}; press X for periods`) : text('添加', 'Add')} onClick={() => { if (pending?.kind === 'move' || pending?.kind === 'period') endSpecialPlacement(); else if (placeableMoves[0]) { setPending({ kind: 'move', moveId: placeableMoves[0].id }); setLastPlacementMoveId(placeableMoves[0].id); setPendingPoint(null); setCompactAddMenuOpen(false); } }}><Plus size={16} /></button>
+    </div>
+  ) : (
+    <div className="timeline-editor-toolbar"><div className="timeline-editor-add">
+       {onModeChange && <div className="segmented timeline-mode-switch-inline"><button className={mode === 'timeline' ? 'active' : '' } onClick={() => onModeChange('timeline') }>{text('时间', 'Timing') }</button><button className={mode === 'content' ? 'active' : '' } onClick={() => onModeChange('content') }>{text('内容', 'Content') }</button></div>}
+       <button className={`timeline-continuous-place ${pending?.kind === 'move' || pending?.kind === 'period' ? 'active' : ''}`} title={activePlacedMove ? text(`添加：${localizedMoveDefinitionLabel(activePlacedMove, language)}；按 X 切时段`, `Add: ${localizedMoveDefinitionLabel(activePlacedMove, language)}; press X for periods`) : text('添加', 'Add')} onClick={() => { if (pending?.kind === 'move' || pending?.kind === 'period') endSpecialPlacement(); else if (placeableMoves[0]) { setPending({ kind: 'move', moveId: placeableMoves[0].id }); setLastPlacementMoveId(placeableMoves[0].id); setPendingPoint(null); setCompactAddMenuOpen(false); } }}><Plus size={16} />{text('添加', 'Add') }</button>
+       <button className={`icon-button ${pending?.kind === 'cut' ? 'active' : ''}`} title={text('裁剪招式块', 'Split Action Block') } onClick={() => { if (pending?.kind === 'cut') endSpecialPlacement(); else { setPending({ kind: 'cut' }); setPendingPoint(null); } }}><Scissors size={16} /></button>
+       <label className="timeline-zoom-control">{text('缩放', 'Zoom') }<input type="range" min="0.05" max="1.6" step="0.01" value={zoom} onChange={(event) => onZoomChange(Number(event.target.value))} /></label>
+       <button className="primary" onClick={onSave}><Save size={18} />{text('保存连段谱', 'Save Combo Chart') }</button>
+       {pending && <button onClick={endSpecialPlacement}>{text('取消放置', 'Cancel Placement') }</button>}
+       {pending && <span className="timeline-hint">{text('点击轨道放置，右键退出放置状态', 'Click a lane to place; right-click to exit placement mode') }</span>}
+    </div></div>
+  );  const renderedToolbarNode = videoCompactMode && toolbarPortalTarget ? createPortal(toolbarNode, toolbarPortalTarget) : toolbarNode;
 
   return (
-    <div className="timeline-editor">
-      <div className="timeline-editor-toolbar"><div className="timeline-editor-add">
-        <button className={pending?.kind === 'step' ? 'active' : ''} onClick={() => setPending({ kind: 'step' })}><Plus size={16} />添加指令</button>
-        <button className={pending?.kind === 'period' ? 'active' : ''} onClick={() => setPending({ kind: 'period' })}><Plus size={16} />添加时段</button>
-        {!zoomFrameTrack && <label className="timeline-zoom-control">缩放<input type="range" min="0.05" max="1.6" step="0.01" value={zoom} onChange={(event) => onZoomChange(Number(event.target.value))} /><span>{Math.round(zoom * 100)}%</span></label>}
-        {zoomFrameTrack && <button onClick={() => scrollToTimelineMs(zoomFrameTrack.playbackMs)}>定位到播放进度</button>}
-        <button className="primary" onClick={onSave}><Save size={18} />{'保存连段谱'}</button>
-        {mode === 'content' && <label className="checkline timeline-icon-convert"><input type="checkbox" checked={comboImageStyle.convertIcons} onChange={(event) => onContentChange({ convertIcons: event.target.checked })} />图标转换</label>}
-        {mode === 'content' && <label className="checkline timeline-icon-convert"><input type="checkbox" checked={comboImageStyle.mergeSameRoleSteps} onChange={(event) => onContentChange({ mergeSameRoleSteps: event.target.checked })} />同角色合并</label>}
-        {mode === 'content' && <button className="danger" onClick={() => onQuickInput(selected?.id ?? null)}>快捷输入</button>}
-        {pending && <button onClick={() => { setPending(null); setPendingPoint(null); }}>取消放置</button>}
-        {pending && <span className="timeline-hint">点击轨道放置{pending.kind === 'step' ? '灰色指令块' : '黑色时段块'}，再右键选择内容</span>}
-      </div></div>
-      <div className="timeline-editor-scroll" ref={scrollRef}>
-        {renderZoomFrameTrack()}
-        <div className={`timeline-editor-period-track ${pending ? 'placing' : ''}`} style={{ width: trackWidth }} onPointerMove={(event) => { if (!pending || pending.kind !== 'period') return; setPendingPoint({ startMs: pointerTime(event) }); }} onClick={(event) => { if (!pending || pending.kind !== 'period') return; placePending({ startMs: pointerTime(event) }); }} onContextMenu={(event) => openPeriodContext(event, null)}>
-          <div className="timeline-editor-lane period-lane-label">时段</div>
-          {globalPeriods.map((period) => renderPeriodBlock(period))}
-          {pending?.kind === 'period' && pendingPoint && pendingPoint.slot === undefined && <div className="timeline-placement-ghost period" style={{ left: `${(pendingPoint.startMs / renderTotal) * 100}%`, width: `${Math.max(1.8, (1000 / renderTotal) * 100)}%` }}>待设置时段</div>}
+    <div className={`timeline-editor ${videoCompactMode ? 'video-compact-mode' : '' }` }>
+      {renderedToolbarNode }
+      <div className="timeline-editor-scroll" ref={scrollRef } onContextMenu={(event) => { if (pending) handleSpecialContextMenu(event);  } }>
+        <div className="timeline-scroll-content" style={{ width: trackWidth + 112  } }>
+          {activePlayheadControl && <div className={`timeline-playhead-overlay ${pending ? 'placement-active' : '' } ${activePlayheadControl.disabled ? 'disabled' : '' }`  } style={{ left: playheadContentX  } } onPointerDown={beginPlayheadDrag }><span /></div> }
+        {renderLoopBoundaryGuides() }
+        {renderZoomFrameTrack() }
+        <div className={`timeline-editor-period-track ${pending ? 'placing' : '' }`  } style={{ width: trackWidth  } } onPointerMove={(event) => { if (!pending || (pending.kind !== 'period' && pending.kind !== 'copy')) return; setTrackPendingPoint(event);  } } onClick={(event) => { if (!pending || (pending.kind !== 'period' && pending.kind !== 'copy')) return; placePending({ startMs: pointerTime(event)  });  } } onContextMenu={(event) => handleSpecialContextMenu(event, () => openPeriodContext(event, null)) }>
+           <div className="timeline-editor-lane period-lane-label">{text('时段', 'Periods') }</div>
+          {globalPeriods.map((period) => renderPeriodBlock(period)) }
+          {pending?.kind === 'period' && pendingPoint && pendingPoint.slot === undefined && pendingPeriodPreview && <div className={`timeline-placement-ghost period ${pendingPeriodPreview.kind}` } style={{ left: `${(pendingPoint.startMs / renderTotal) * 100 }%`, width: `${Math.max(1.8, ((pendingPeriodPreview.kind === 'startup_axis' || pendingPeriodPreview.kind === 'loop_axis' ? DEFAULT_AXIS_DURATION : DEFAULT_FREE_FIRE_DURATION) / renderTotal) * 100) }%`  } }>{pendingPeriodPreview.label}</div> }
+          {copiedGhost && copiedGhostPoint?.slot === undefined && copiedGhost.periods.map((period) => {
+            const delta = copyPlacementStartMs(copiedGhost, copiedGhostPoint!.startMs) - copiedGhost.anchorMs;
+            return <div key={`ghost-${period.id }` } className={`timeline-placement-ghost copy period ${period.kind }`  } style={{ left: `${((period.startMs + delta) / renderTotal) * 100 }%`, width: `${Math.max(1.8, ((period.endMs - period.startMs) / renderTotal) * 100) }%`  } }><strong>{period.label }</strong></div>;
+           }) }
         </div>
-        <div className="timeline-editor-ruler" style={{ width: trackWidth }}>{Array.from({ length: Math.ceil(renderTotal / 500) + 1 }, (_, index) => <span key={index} style={{ left: `${((index * 500) / renderTotal) * 100}%` }}>{(index * 0.5).toFixed(index % 2 === 0 ? 0 : 1)}s</span>)}</div>
-        <div className="timeline-editor-body" style={timelineBodyStyle}>
+        <div className="timeline-editor-ruler" style={{ width: trackWidth  } }>{Array.from({ length: Math.ceil(renderTotal / 500) + 1  }, (_, index) => <span key={index  } style={{ left: `${((index * 500) / renderTotal) * 100 }%`  } }>{(index * 0.5).toFixed(index % 2 === 0 ? 0 : 1) }s</span>) }</div>
+        <div className="timeline-editor-body" style={timelineBodyStyle }>
           {lanes.map((lane) => {
             const roleStyle = comboImageStyle.roleStyles[lane.slot];
             const laneSteps = chart.steps.filter((step) => (step.characterSlot ?? 1) === lane.slot && step.lane === lane.lane);
             const scopedPeriods = periods.filter((period) => period.characterSlot === lane.slot && period.lane === lane.lane && period.kind === 'free_fire');
-            return <div className="timeline-editor-row" key={lane.id} data-slot={lane.slot} data-lane={lane.lane}>
-              <div className="timeline-editor-lane avatar-lane-label">{lane.laneNumber === 1 && <><span className="lane-avatar" style={{ backgroundImage: roleStyle.avatar ? `url(${roleStyle.avatar})` : undefined, borderColor: roleStyle.color }}>{roleStyle.avatar ? null : lane.slot}</span><span>{roleStyle.name || `角色${lane.slot}`}</span></>}</div>
-              <div className={`timeline-editor-track ${pending ? 'placing' : ''}`} onPointerMove={(event) => { if (!pending) return; setPendingPoint({ slot: lane.slot, lane: lane.lane, startMs: pointerTime(event) }); }} onClick={(event) => { if (!pending) return; placePending({ slot: lane.slot, lane: lane.lane, startMs: pointerTime(event) }); }} onContextMenu={(event) => openStepContext(event, null, laneSteps)} onPointerDown={beginBoxSelect}>
-                {scopedPeriods.map((period) => renderPeriodBlock(period, true))}
+            return <div className="timeline-editor-row" key={lane.id } data-slot={lane.slot } data-lane={lane.lane }>
+              <div className="timeline-editor-lane avatar-lane-label">{lane.laneNumber === 1 && <><span className="lane-avatar" style={{ backgroundImage: roleStyle.avatar ? `url(${roleStyle.avatar })` : undefined, borderColor: roleStyle.color  } }>{roleStyle.avatar ? null : lane.slot }</span><span>{localizeDefaultCharacterName(roleStyle.name, lane.slot, language) }</span></> }</div>
+              <div className={`timeline-editor-track ${pending ? 'placing' : '' }` } onPointerMove={(event) => setTrackPendingPoint(event, lane.slot, lane.lane) } onClick={(event) => { if (!pending) return; placePending({ slot: lane.slot, lane: lane.lane, startMs: pointerTime(event)  });  } } onContextMenu={(event) => handleSpecialContextMenu(event, () => openStepContext(event, null, laneSteps)) } onPointerDown={beginBoxSelect }>
+                {scopedPeriods.map((period) => renderPeriodBlock(period, true)) }
                 {laneSteps.map((step) => {
                   const preheatPercent = clamp(((step.preheatMs ?? 0) / step.durationMax) * 100, 0, 88);
                   const recoveryPercent = clamp(((step.recoveryMs ?? 0) / step.durationMax) * 100, 0, 88 - preheatPercent);
                   const isDraft = step.moveId === DRAFT_MOVE_ID;
-                  return <div key={step.id} data-step-id={step.id} className={`timeline-editor-block ${step.free ? 'free' : ''} ${isDraft ? 'draft' : ''} ${selectedIds.includes(step.id) ? 'selected' : ''} ${raisedStepId === step.id ? 'raised' : ''}`} style={{ left: `${(step.startMin / renderTotal) * 100}%`, width: `${Math.max(1.8, (step.durationMax / renderTotal) * 100)}%`, '--move-color': step.color, zIndex: raisedStepId === step.id ? 8 : selectedIds.includes(step.id) ? 5 : 2 } as CSSProperties} onPointerDown={(event) => { if (event.ctrlKey) { event.preventDefault(); event.stopPropagation(); toggleStepSelection(step.id, true); return; } beginDrag(event, step.id, 'move'); }} onContextMenu={(event) => openStepContext(event, step, laneSteps)}><div className="resize-handle left" onPointerDown={(event) => { event.stopPropagation(); beginDrag(event, step.id, 'start'); }} /><div className="warmup-zone left" style={{ width: `${preheatPercent}%` }} /><div className="warmup-zone right" style={{ width: `${recoveryPercent}%` }} /><div className="warmup-divider preheat" style={{ left: `${preheatPercent}%` }} onPointerDown={(event) => { if (event.altKey) { event.stopPropagation(); beginDrag(event, step.id, 'preheat'); } }} /><div className="warmup-divider recovery" style={{ right: `${recoveryPercent}%` }} onPointerDown={(event) => { if (event.altKey) { event.stopPropagation(); beginDrag(event, step.id, 'recovery'); } }} />{renderStepLabel(step)}{step.free && <em>自由</em>}{mode === 'content' && <div className="timeline-block-meta"><span className="move-type">{displayMoveLabel(step)}</span><span className="duration">{(step.durationMax / 1000).toFixed(2)}s</span></div>}<div className="resize-handle right" onPointerDown={(event) => { event.stopPropagation(); beginDrag(event, step.id, 'end'); }} /></div>;
-                })}
-                {pending && pendingPoint?.slot === lane.slot && pendingPoint.lane === lane.lane && <div className={`timeline-placement-ghost ${pending.kind}`} style={{ left: `${(pendingPoint.startMs / renderTotal) * 100}%`, width: pending.kind === 'period' ? `${Math.max(1.8, (1000 / renderTotal) * 100)}%` : `${Math.max(1.8, (300 / renderTotal) * 100)}%` }}>{pending.kind === 'step' ? '待设置指令' : '待设置时段'}</div>}
+                  const nearbyStartIndex = [...laneSteps].filter((candidate) => Math.abs(candidate.startMin - step.startMin) * zoom < 30).sort((left, right) => left.startMin - right.startMin || left.id.localeCompare(right.id)).findIndex((candidate) => candidate.id === step.id);
+                  return <div key={step.id } data-step-id={step.id } className={`timeline-editor-block ${step.free ? 'free' : '' } ${isDraft ? 'draft' : '' } ${selectedIds.includes(step.id) ? 'selected' : '' } ${raisedStepId === step.id ? 'raised' : '' }`  } style={{ left: `${(step.startMin / renderTotal) * 100 }%`, width: `${Math.max(0.01, (step.durationMax / renderTotal) * 100) }%`, '--move-color': step.color, '--drag-tab-offset': `${Math.max(0, nearbyStartIndex) * 24 }px`, zIndex: pending?.kind === 'cut' ? 120 : raisedStepId === step.id ? 8 : selectedIds.includes(step.id) ? 5 : 2  } as CSSProperties } onPointerDown={(event) => { if (pending?.kind === 'cut') { cutStepAtPointer(event, step); return;  } if (pending) return; if (event.ctrlKey) { event.preventDefault(); event.stopPropagation(); toggleStepSelection(step.id, true); return;  } beginDrag(event, step.id, 'move');  } } onContextMenu={(event) => handleSpecialContextMenu(event, () => openStepContext(event, step, laneSteps)) }><span className="timeline-block-drag-tab" title={text('拖动招式块', 'Drag Action Block') } onPointerDown={(event) => { event.stopPropagation(); setRaisedStepId(step.id); beginDrag(event, step.id, 'move');  } } /><div className="resize-handle left" onPointerDown={(event) => { event.stopPropagation(); beginDrag(event, step.id, 'start');  } } /><div className="warmup-zone left" style={{ width: `${preheatPercent }%`  } } /><div className="warmup-zone right" style={{ width: `${recoveryPercent }%`  } } /><div className="warmup-divider preheat" style={{ left: `${preheatPercent }%`  } } onPointerDown={(event) => { if (event.altKey) { event.stopPropagation(); beginDrag(event, step.id, 'preheat');  }  } } /><div className="warmup-divider recovery" style={{ right: `${recoveryPercent }%`  } } onPointerDown={(event) => { if (event.altKey) { event.stopPropagation(); beginDrag(event, step.id, 'recovery');  }  } } />{renderStepLabel(step) }{step.free && <em>{text('自由', 'Free') }</em> }{mode === 'content' && <div className="timeline-block-meta"><span className="move-type">{displayMoveLabel(step) }</span><span className="duration">{(step.durationMax / 1000).toFixed(2) }s</span></div> }<div className="resize-handle right" onPointerDown={(event) => { event.stopPropagation(); beginDrag(event, step.id, 'end');  } } /></div>;
+                 }) }
+                {pending && pending.kind !== 'copy' && pending.kind !== 'zoom' && pending.kind !== 'cut' && pendingPoint?.slot === lane.slot && pendingPoint.lane === lane.lane && <div className={`timeline-placement-ghost ${pending.kind } ${pending.kind === 'period' && pendingPeriodPreview ? pendingPeriodPreview.kind : ''}`  } style={{ left: `${(pendingPoint.startMs / renderTotal) * 100 }%`, width: pending.kind === 'period' ? `${Math.max(1.8, (DEFAULT_FREE_FIRE_DURATION / renderTotal) * 100) }%` : pending.kind === 'move' ? `${Math.max(0.01, (500 / renderTotal) * 100) }%` : `${Math.max(1.8, (300 / renderTotal) * 100) }%`, ...(pending.kind === 'move' && activePlacedMove ? { '--move-color': activePlacedMove.color  } : { })  } as CSSProperties }>{pending.kind === 'move' && activePlacedMove ? <strong>{localizedMoveDefinitionLabel(activePlacedMove, language) }</strong> : pending.kind === 'period' && pendingPeriodPreview ? pendingPeriodPreview.label : pending.kind === 'step' ? text('待设置指令', 'Unassigned Action') : text('待设置时段', 'Unassigned Period') }</div> }
+                {copiedGhost && copiedGhostPoint && copiedGhost.steps.filter((step) => (step.characterSlot ?? 1) === lane.slot && step.lane === lane.lane).map((step) => {
+                  const delta = copyPlacementStartMs(copiedGhost, copiedGhostPoint!.startMs) - copiedGhost.anchorMs;
+                  return <div key={`ghost-${step.id }` } className={`timeline-placement-ghost copy step ${step.free ? 'free' : '' }`  } style={{ left: `${((step.startMin + delta) / renderTotal) * 100 }%`, width: `${Math.max(0.01, (step.durationMax / renderTotal) * 100) }%`, '--move-color': step.color  } as CSSProperties }><strong>{displayMoveLabel(step) }</strong></div>;
+                 }) }
               </div>
             </div>;
-          })}
-          {selectionBox && <div className="timeline-selection-box" style={{ left: selectionBox.x, top: selectionBox.y, width: selectionBox.width, height: selectionBox.height }} />}
+           }) }
+          {selectionBox && <div className="timeline-selection-box" style={{ left: selectionBox.x, top: selectionBox.y, width: selectionBox.width, height: selectionBox.height  } } /> }
+        </div>
         </div>
       </div>
-      {context && <div className="timeline-context-menu" style={{ left: context.x, top: context.y }} onClick={(event) => event.stopPropagation()}>
-        {context.stepIds?.some((stepId) => chart.steps.find((step) => step.id === stepId)?.moveId === DRAFT_MOVE_ID) && <div className="context-menu-title">选择指令</div>}
-        {context.stepIds?.some((stepId) => chart.steps.find((step) => step.id === stepId)?.moveId === DRAFT_MOVE_ID) && actionMoves.map((move) => <button key={move.id} onClick={() => applyMoveToSteps(context.stepIds!.filter((stepId) => chart.steps.find((step) => step.id === stepId)?.moveId === DRAFT_MOVE_ID), move)}>{move.label}</button>)}
-        {context.periodId && <div className="context-menu-title">切换时段类型</div>}
-        {context.periodId && (['free_fire', 'startup_axis', 'loop_axis'] as ComboPeriodKind[]).map((kind) => <button key={kind} onClick={() => { setPeriodKind(context.periodId!, kind); setContext(null); }}>{moveLabelForPeriodKind(kind, periods)}</button>)}
-        {context.stepId && <><div className="context-menu-title">{(context.stepIds?.length ?? 0) > 1 ? `已选 ${context.stepIds!.length} 个指令` : '指令'}</div><button onClick={() => { const step = chart.steps.find((item) => item.id === context.stepId); if (step) setCopied(step); setContext(null); }}>复制指令</button><button onClick={pasteStep} disabled={!copied}>粘贴指令</button><button onClick={() => { const targetIds = context.stepIds?.length ? context.stepIds : [context.stepId!]; targetIds.forEach((stepId) => onUpdate(stepId, { manualFree: !chart.steps.find((item) => item.id === stepId)?.manualFree })); setContext(null); }}>切换自由标签</button><button onClick={() => { const targetIds = context.stepIds?.length ? context.stepIds : [context.stepId!]; targetIds.forEach((stepId) => onDelete(stepId)); setContext(null); }}>删除指令</button></>}
-        {context.periodId && <><div className="context-menu-title">时段</div><button onClick={() => { const period = periods.find((item) => item.id === context.periodId); if (period) setCopiedPeriod(period); setContext(null); }}>复制时段</button><button onClick={pastePeriod} disabled={!copiedPeriod}>粘贴时段</button><button onClick={() => { onPeriodsChange(periods.filter((period) => period.id !== context.periodId)); setContext(null); }}>删除时段</button></>}
-        {context.coveredSteps.length > 1 && <div className="context-menu-title">光标下的指令</div>}
-        {context.coveredSteps.map((step) => <button key={step.id} onClick={() => { setSelectedId(step.id); setSelectedIds([step.id]); setRaisedStepId(step.id); setContext(null); }}>{step.label} 路 {(step.durationMax / 1000).toFixed(2)}s</button>)}
-        {context.coveredPeriods.length > 1 && <div className="context-menu-title">光标下的时段</div>}
-        {context.coveredPeriods.map((period) => <button key={period.id} onClick={() => { setSelectedPeriodId(period.id); setRaisedPeriodId(period.id); setContext(null); }}>{period.label} 路 {((period.endMs - period.startMs) / 1000).toFixed(2)}s</button>)}
-      </div>}
-      {inspectorNode}
+            {context && <div className="timeline-context-menu" ref={contextMenuRef  } style={{ left: contextMenuPosition.x, top: contextMenuPosition.y  } } onClick={(event) => event.stopPropagation() }>
+        {context.stepId && <>
+          <div className="context-menu-title">{(context.stepIds?.length ?? 0) > 1 ? text(`已选 ${context.stepIds!.length } 个指令`, `${context.stepIds!.length } Actions Selected`) : text('指令', 'Action') }</div>
+          <div className="context-menu-row">
+            <button className="context-menu-item" onMouseEnter={() => setActiveContextSubmenu(null) } onClick={copyContextStepsAndStartPlacement }>{text('复制指令', 'Copy Action') }</button>
+            <button className="context-menu-item danger-context-item" onMouseEnter={() => setActiveContextSubmenu(null) } onClick={deleteContextSteps }>{text('删除指令', 'Delete Action') }</button>
+          </div>
+          <button className={activeContextSubmenu === 'stepSettings' ? 'context-menu-item has-submenu active' : 'context-menu-item has-submenu' } onMouseEnter={(event) => showContextSubmenu('stepSettings', event) } onClick={(event) => { event.preventDefault(); showContextSubmenu('stepSettings', event);  } }>{text('指令', 'Action') }</button>
+        </> }
+        {context.periodId && <>
+          <div className="context-menu-title">{text('时段', 'Period') }</div>
+          <div className="context-menu-row">
+            <button className="context-menu-item" onMouseEnter={() => setActiveContextSubmenu(null) } onClick={copyContextPeriodsAndStartPlacement }>{text('复制时段', 'Copy Period') }</button>
+            <button className="context-menu-item danger-context-item" onMouseEnter={() => setActiveContextSubmenu(null) } onClick={deleteContextPeriod }>{text('删除时段', 'Delete Period') }</button>
+          </div>
+          <button className={activeContextSubmenu === 'periodSettings' ? 'context-menu-item has-submenu active' : 'context-menu-item has-submenu' } onMouseEnter={(event) => showContextSubmenu('periodSettings', event) } onClick={(event) => { event.preventDefault(); showContextSubmenu('periodSettings', event);  } }>{text('时段', 'Period') }</button>
+        </> }
+        {(context.stepId || context.periodId) && <button className={activeContextSubmenu === 'paste' ? 'context-menu-item has-submenu active' : 'context-menu-item has-submenu' } onMouseEnter={(event) => showContextSubmenu('paste', event) } onClick={(event) => { event.preventDefault(); showContextSubmenu('paste', event);  } }>{text('粘贴', 'Paste') }</button> }
+        {context.coveredSteps.length > 1 && <button className={activeContextSubmenu === 'stepTargets' ? 'context-menu-item has-submenu active' : 'context-menu-item has-submenu' } onMouseEnter={(event) => showContextSubmenu('stepTargets', event) } onClick={(event) => { event.preventDefault(); showContextSubmenu('stepTargets', event);  } }>{text('光标下指令', 'Actions Under Cursor') }</button> }
+        {context.coveredPeriods.length > 1 && <button className={activeContextSubmenu === 'periodTargets' ? 'context-menu-item has-submenu active' : 'context-menu-item has-submenu' } onMouseEnter={(event) => showContextSubmenu('periodTargets', event) } onClick={(event) => { event.preventDefault(); showContextSubmenu('periodTargets', event);  } }>{text('光标下时段', 'Periods Under Cursor') }</button> }
+      </div> }
+      {activeContextSubmenu && context && <div className="timeline-context-submenu" ref={contextSubmenuRef  } style={{ left: contextSubmenuPosition.x, top: contextSubmenuPosition.y  } } onClick={(event) => event.stopPropagation() }>
+        {activeContextSubmenu === 'paste' && <>
+          {copiedSelection && <button onMouseEnter={() => { } } onClick={() => startCopyPlacement(copiedSelection) }>{text('从上次复制粘贴', 'Paste Last Copy') }</button> }
+          <button onClick={copyContextStepsAndStartPlacement } disabled={!context.stepId }>{text('复制指令并放置', 'Copy and Place Action') }</button>
+          <button onClick={copyContextPeriodsAndStartPlacement } disabled={!context.periodId }>{text('复制时段并放置', 'Copy and Place Period') }</button>
+        </> }
+        {activeContextSubmenu === 'stepSettings' && <>
+          {context.stepIds?.some((stepId) => chart.steps.find((step) => step.id === stepId)?.moveId === DRAFT_MOVE_ID) && <div className="context-menu-title">{text('选择指令', 'Select Action') }</div> }
+          {context.stepIds?.some((stepId) => chart.steps.find((step) => step.id === stepId)?.moveId === DRAFT_MOVE_ID) && actionMoves.map((move) => <button key={move.id } onClick={() => applyMoveToSteps(context.stepIds!.filter((stepId) => chart.steps.find((step) => step.id === stepId)?.moveId === DRAFT_MOVE_ID), move) }>{localizedMoveDefinitionLabel(move, language) }</button>) }
+          {context.stepId && <button onClick={toggleContextFreeTag }>{text('切换自由标签', 'Toggle Free Tag') }</button> }
+        </> }
+        {activeContextSubmenu === 'periodSettings' && context.periodId && <>
+          {(['free_fire', 'startup_axis', 'loop_axis'] as ComboPeriodKind[]).map((kind) => <button key={kind } onClick={() => { setPeriodKind(context.periodId!, kind); setContext(null);  } }>{moveLabelForPeriodKind(kind, periods) }</button>) }
+        </> }
+        {activeContextSubmenu === 'stepTargets' && context.coveredSteps.map((step) => <button key={step.id } onClick={() => { setSelectedId(step.id); setSelectedIds([step.id]); setRaisedStepId(step.id); setContext(null);  } }>{localizedMoveLabel(step, language) } {text('路', 'Lane') } {(step.durationMax / 1000).toFixed(2) }s</button>) }
+        {activeContextSubmenu === 'periodTargets' && context.coveredPeriods.map((period) => <button key={period.id } onClick={() => { setSelectedPeriodId(period.id); setRaisedPeriodId(period.id); setContext(null);  } }>{period.label } {text('路', 'Lane') } {((period.endMs - period.startMs) / 1000).toFixed(2) }s</button>) }
+      </div> }
+      {inspectorNode }
     </div>
   );
-}
-function ComboContentEditor({ chart, style, onChange, onQuickInput }: { chart: ComboChart; style: ComboImageStyle; onChange: (patch: Partial<ComboImageStyle>) => void; onQuickInput: () => void }) {
+ }
+function ComboContentEditor({ chart, style, onChange, onQuickInput  }: { chart: ComboChart; style: ComboImageStyle; onChange: (patch: Partial<ComboImageStyle>) => void; onQuickInput: () => void  }) {
+  const { text  } = useI18n();
+  const panelRef = useRef<HTMLDivElement | null>(null);
   const items = chartToComboImageItems(chart, style);
   const total = Math.max(1000, ...chart.steps.map((step) => step.startMin + step.durationMax + 500));
   const pxPerMs = 0.16;
   const rows = CHARACTER_SLOTS.flatMap((slot) => ([
-    { slot, lane: 'main' as LaneKind, id: `${slot}-main` },
-    { slot, lane: 'independent' as LaneKind, id: `${slot}-independent` }
+    { slot, lane: 'main' as LaneKind, id: `${slot }-main`  },
+    { slot, lane: 'independent' as LaneKind, id: `${slot }-independent`  }
   ]));
-  const setLabel = (stepId: string, value: string) => onChange({ contentLabels: { ...style.contentLabels, [stepId]: maybeConvertTextToIconLabel(value, style.convertIcons) } });
+  const setLabel = (stepId: string, value: string) => onChange({ contentLabels: { ...style.contentLabels, [stepId]: maybeConvertTextToIconLabel(value, style.convertIcons)  }  });
+  const laneIndex = (step: ComboStep) => Math.max(0, CHARACTER_SLOTS.indexOf((step.characterSlot ?? 1) as CharacterSlot)) * 2 + (step.lane === 'independent' ? 1 : 0);
+  function nearestStep(stepId: string, direction: 'left' | 'right' | 'up' | 'down'): ComboStep | null {
+    const current = chart.steps.find((step) => step.id === stepId);
+    if (!current) return null;
+    const currentLane = laneIndex(current);
+    const currentCenter = current.startMin + current.durationMax / 2;
+    const sorted = [...chart.steps].sort((left, right) => left.startMin - right.startMin || left.startMax - right.startMax || left.id.localeCompare(right.id));
+    if (direction === 'left') return [...sorted].reverse().find((step) => step.id !== stepId && laneIndex(step) === currentLane && step.startMin < current.startMin) ?? null;
+    if (direction === 'right') return sorted.find((step) => step.id !== stepId && laneIndex(step) === currentLane && step.startMin > current.startMin) ?? null;
+    const targetLane = direction === 'up' ? currentLane - 1 : currentLane + 1;
+    return sorted.filter((step) => step.id !== stepId && laneIndex(step) === targetLane).sort((left, right) => Math.abs(left.startMin + left.durationMax / 2 - currentCenter) - Math.abs(right.startMin + right.durationMax / 2 - currentCenter) || left.startMin - right.startMin)[0] ?? null;
+   }
+  function handleContentNavigation(event: ReactKeyboardEvent<HTMLInputElement>, stepId: string) {
+    if (event.ctrlKey || event.metaKey || event.altKey) return;
+    const input = event.currentTarget;
+    const selectionStart = input.selectionStart ?? 0;
+    const selectionEnd = input.selectionEnd ?? selectionStart;
+    if (event.key === 'Enter') {
+      input.blur();
+      return;
+    }
+    const direction = event.key === 'ArrowUp' ? 'up' : event.key === 'ArrowDown' ? 'down' : event.key === 'ArrowLeft' && selectionStart === 0 && selectionEnd === 0 ? 'left' : event.key === 'ArrowRight' && selectionStart === input.value.length && selectionEnd === input.value.length ? 'right' : null;
+    if (!direction) return;
+    const target = nearestStep(stepId, direction);
+    if (!target) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const targetInput = panelRef.current?.querySelector<HTMLInputElement>(`input[data-content-nav-id="${CSS.escape(target.id)}"]`);
+    targetInput?.focus();
+    const end = targetInput?.value.length ?? 0;
+    targetInput?.setSelectionRange(end, end);
+   }
   return (
-    <div className="combo-customizer-panel content-timeline-panel">
+    <div ref={panelRef } className="combo-customizer-panel content-timeline-panel">
       <div className="combo-content-toolbar">
-        <button onClick={onQuickInput}>快捷输入</button>
-        <label className="checkline"><input type="checkbox" checked={style.convertIcons} onChange={(event) => onChange({ convertIcons: event.target.checked })} />图标转换</label>
-        <span>点击块即可编辑连段图实际显示文字，底部浅色文字是默认招式名。</span>
+         <span>{text('点击块即可编辑连段图实际显示文字，底部浅色文字是默认招式名。', 'Select a block to edit its displayed text. The muted text below is the default action name.') }</span>
       </div>
       <div className="content-timeline-scroll">
-        <div className="content-timeline-ruler" style={{ width: Math.max(960, total * pxPerMs) }}>
-          {Array.from({ length: Math.ceil(total / 1000) + 1 }, (_, index) => <span key={index} style={{ left: index * 1000 * pxPerMs }}>{index}s</span>)}
+        <div className="content-timeline-ruler" style={{ width: Math.max(960, total * pxPerMs)  } }>
+          {Array.from({ length: Math.ceil(total / 1000) + 1  }, (_, index) => <span key={index  } style={{ left: index * 1000 * pxPerMs  } }>{index }s</span>) }
         </div>
-        <div className="content-timeline-body" style={{ width: Math.max(960, total * pxPerMs) }}>
+        <div className="content-timeline-body" style={{ width: Math.max(960, total * pxPerMs)  } }>
           {rows.map((row) => {
             const role = style.roleStyles[row.slot];
             return (
-              <div key={row.id} className={`content-timeline-row role-${row.slot}`}>
-                <div className="content-timeline-lane"><span style={avatarBackgroundStyle(role.avatar)}>{role.avatar ? null : row.slot}</span></div>
+              <div key={row.id } className={`content-timeline-row role-${row.slot }` }>
+                <div className="content-timeline-lane"><span style={avatarBackgroundStyle(role.avatar) }>{role.avatar ? null : row.slot }</span></div>
                 <div className="content-timeline-track">
                   {items.filter((item) => (item.step.characterSlot ?? 1) === row.slot && item.step.lane === row.lane).map((item) => {
                     const width = Math.max(92, item.step.durationMax * pxPerMs);
                     const custom = style.contentLabels[item.step.id] ?? '';
                     return (
-                      <label key={item.step.id} className={`content-timeline-block ${item.isSwitch ? 'is-switch' : ''}`} style={{ left: item.step.startMin * pxPerMs, width, '--move-color': role.color } as CSSProperties}>
-                        <input value={custom} placeholder=" " onChange={(event) => onChange({ contentLabels: { ...style.contentLabels, [item.step.id]: event.target.value } })} onBlur={(event) => setLabel(item.step.id, event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); }} />
-                        <span>{item.step.label}</span>
+                      <label key={item.step.id } className={`content-timeline-block ${item.isSwitch ? 'is-switch' : '' }`  } style={{ left: item.step.startMin * pxPerMs, width, '--move-color': role.color  } as CSSProperties }>
+                        <input data-content-nav-id={item.step.id } value={custom } placeholder=" " onChange={(event) => onChange({ contentLabels: { ...style.contentLabels, [item.step.id]: event.target.value  }  }) } onBlur={(event) => setLabel(item.step.id, event.target.value) } onKeyDown={(event) => handleContentNavigation(event, item.step.id) } />
+                        <span>{item.step.label }</span>
                       </label>
                     );
-                  })}
+                   }) }
                 </div>
               </div>
             );
-          })}
+           }) }
         </div>
       </div>
     </div>
   );
+ }
+
+function avatarPresetCrop(preset: DefaultAvatarEntry | ComboImageStyle['avatarPresets'][number]) {
+  return 'crop' in preset ? preset.crop : undefined;
 }
 
-function SimpleAppearanceEditor({ style, avatarPresets, basePresets, onChange, onRoleChange, onPickAvatar, onPickCapsule, avatarInputRefs, capsuleInputRef }: { style: ComboImageStyle; avatarPresets: DefaultAvatarEntry[]; basePresets: DefaultBasePresetEntry[]; onChange: (patch: Partial<ComboImageStyle>) => void; onRoleChange: (slot: CharacterSlot, patch: Partial<ComboImageStyle['roleStyles'][CharacterSlot]>) => void; onPickAvatar: (slot: CharacterSlot, file: File | null) => void; onPickCapsule: (file: File | null) => void; avatarInputRefs: React.MutableRefObject<Record<number, HTMLInputElement | null>>; capsuleInputRef: React.MutableRefObject<HTMLInputElement | null> }) {
+function presetMatchNames(name: string): string[] {
+  const trimmed = name.trim();
+  const names = [trimmed];
+  if (trimmed.includes('·')) names.push(trimmed.split('·')[0].trim());
+  if (trimmed.includes('.')) names.push(trimmed.split('.')[0].trim());
+  return Array.from(new Set(names.filter(Boolean)));
+}
+
+function SimpleAppearanceEditor({ style, avatarPresets, basePresets, onChange, onRoleChange, onPickAvatar, avatarInputRefs, blockSettingsReplacement  }: { style: ComboImageStyle; avatarPresets: DefaultAvatarEntry[]; basePresets: DefaultBasePresetEntry[]; onChange: (patch: Partial<ComboImageStyle>) => void; onRoleChange: (slot: CharacterSlot, patch: Partial<ComboImageStyle['roleStyles'][CharacterSlot]>) => void; onPickAvatar: (slot: CharacterSlot, file: File | null) => void; avatarInputRefs: React.MutableRefObject<Record<number, HTMLInputElement | null>>; blockSettingsReplacement?: ReactNode  }) {
+  const { language  } = useI18n();
+  const englishLabels = {
+    customBase: 'Custom Background',
+    role: 'Character',
+    roleHint: 'Character names are provided by the online character library',
+    setting: 'Set',
+    base: 'Background',
+    blockStyle: 'Block Style',
+    blockHint: 'Capsule, background, width, and scroll anchor',
+    capsule: 'Capsule',
+    capsuleShape: 'Capsule Shape',
+    rect: 'Rectangle',
+    autoWidth: 'Fit Content',
+    fixedWidth: 'Fixed Width',
+    globalBase: 'Global Background',
+    start: 'Start',
+    center: 'Center',
+    fade: 'Fade',
+    fadeStrength: 'Fade Strength',
+    settings: 'Block Style Settings',
+    close: 'Close',
+    sizeLayout: 'Size & Layout',
+    overallScale: 'Overall Scale %',
+    height: 'Height px',
+    gap: 'Gap px',
+    startOffset: 'Start Offset px',
+    fontSize: 'Font Size px',
+    font: 'Font',
+    avatarDisplay: 'Avatar & Display',
+    prePrompt: 'Pre-prompt',
+    iconConversion: 'Icon Conversion',
+    mergeSameCharacter: 'Merge Same Character',
+    avatarSize: 'Avatar Size',
+    avatarX: 'Avatar X',
+    avatarY: 'Avatar Y',
+    textColor: 'Text Color',
+    baseScale: 'Background Scale',
+    mergeLimit: 'Merge Limit',
+    savePreset: 'Save Preset',
+    crop: 'Crop',
+    deleteUserPreset: 'Delete User Presets',
+    baseHelp: 'Select a preset for the target. Delete mode only removes user presets.',
+    all: 'All',
+    addBase: 'Add Background',
+    reuseGlobal: 'Use Global',
+    customBaseHelp: 'Upload an image, then adjust its crop and stretch guides. Apply uses it for the current target; Save Preset also adds it to the preset list.',
+    presetName: 'Preset Name',
+    replaceImage: 'Replace Image',
+    uploadImage: 'Upload Image',
+    chooseBaseImage: 'Choose Background Image',
+    cancel: 'Cancel',
+    apply: 'Apply',
+    avatarTitle: 'Avatar Settings',
+    avatarHelp: 'Select a preset to change the character. Imported avatars only replace the current character image.',
+    importAvatar: 'Import Avatar',
+    avatarCrop: 'Avatar Crop',
+    avatarCropHelp: 'Drag the crop frame to adjust the visible area of the current character avatar.'
+  };
+  const chineseLabels: typeof englishLabels = {
+    customBase: '\u81ea\u5b9a\u4e49\u5e95\u56fe',
+    role: '\u89d2\u8272',
+    roleHint: '\u89d2\u8272\u540d\u7531\u5728\u7ebf\u89d2\u8272\u5e93\u7edf\u4e00\u63d0\u4f9b',
+    setting: '\u8bbe\u5b9a',
+    base: '\u5e95\u56fe',
+    blockStyle: '\u5757\u6837\u5f0f',
+    blockHint: '\u80f6\u56ca\u3001\u5e95\u56fe\u3001\u5bbd\u5ea6\u4e0e\u6eda\u52a8\u951a\u70b9',
+    capsule: '\u80f6\u56ca',
+    capsuleShape: '\u80f6\u56ca\u578b',
+    rect: '\u77e9\u5f62',
+    autoWidth: '\u8ddf\u968f\u5185\u5bb9',
+    fixedWidth: '\u56fa\u5b9a\u5bbd\u5ea6',
+    globalBase: '\u5168\u5c40\u5e95\u56fe',
+    start: '\u9876\u7aef',
+    center: '\u5c45\u4e2d',
+    fade: '\u6e10\u9690',
+    fadeStrength: '\u6e10\u9690\u5f3a\u5ea6',
+    settings: '\u5757\u6837\u5f0f\u8bbe\u7f6e',
+    close: '\u5173\u95ed',
+    sizeLayout: '\u5c3a\u5bf8\u4e0e\u6392\u7248',
+    overallScale: '\u6574\u4f53\u7f29\u653e %',
+    height: '\u9ad8\u5ea6 px',
+    gap: '\u95f4\u8ddd px',
+    startOffset: '\u8d77\u59cb\u4f4d\u7f6e px',
+    fontSize: '\u5b57\u4f53 px',
+    font: '\u5b57\u4f53',
+    avatarDisplay: '\u5934\u50cf\u4e0e\u663e\u793a',
+    prePrompt: '\u9884\u63d0\u793a',
+    iconConversion: '\u56fe\u6807\u8f6c\u6362',
+    mergeSameCharacter: '\u540c\u89d2\u8272\u5408\u5e76',
+    avatarSize: '\u5934\u50cf\u5927\u5c0f',
+    avatarX: '\u5934\u50cf X',
+    avatarY: '\u5934\u50cf Y',
+    textColor: '\u6587\u5b57\u989c\u8272',
+    baseScale: '\u5e95\u56fe\u7f29\u653e',
+    mergeLimit: '\u5408\u5e76\u4e0a\u9650',
+    savePreset: '\u4fdd\u5b58\u9884\u8bbe',
+    crop: '\u88c1\u526a',
+    deleteUserPreset: '\u5220\u9664\u7528\u6237\u9884\u8bbe',
+    baseHelp: '\u70b9\u51fb\u9884\u8bbe\u5e94\u7528\u5230\u5e95\u56fe\u76ee\u6807\uff1b\u5220\u9664\u6a21\u5f0f\u53ea\u80fd\u5220\u9664\u7528\u6237\u4fdd\u5b58\u7684\u9884\u8bbe\u3002',
+    all: '\u5168',
+    addBase: '\u6dfb\u52a0\u5e95\u56fe',
+    reuseGlobal: '\u590d\u7528\u5168\u5c40',
+    customBaseHelp: '\u4e0a\u4f20\u56fe\u7247\u540e\u62d6\u52a8\u88c1\u526a\u6846\u548c\u84dd\u8272\u62c9\u4f38\u7ebf\u3002\u5e94\u7528\u53ea\u7528\u4e8e\u5f53\u524d\u76ee\u6807\uff0c\u4fdd\u5b58\u9884\u8bbe\u4f1a\u540c\u65f6\u52a0\u5165\u5e95\u56fe\u9884\u8bbe\u5217\u8868\u3002',
+    presetName: '\u9884\u8bbe\u540d\u79f0',
+    replaceImage: '\u66f4\u6362\u56fe\u7247',
+    uploadImage: '\u4e0a\u4f20\u56fe\u7247',
+    chooseBaseImage: '\u9009\u62e9\u5e95\u56fe\u56fe\u7247',
+    cancel: '\u53d6\u6d88',
+    apply: '\u5e94\u7528',
+    avatarTitle: '\u5934\u50cf\u8bbe\u5b9a',
+    avatarHelp: '\u70b9\u51fb\u9884\u8bbe\u5207\u6362\u89d2\u8272\uff0c\u65b0\u89d2\u8272\u7531\u5728\u7ebf\u89d2\u8272\u5e93\u66f4\u65b0\uff1b\u5bfc\u5165\u5934\u50cf\u53ea\u66ff\u6362\u5f53\u524d\u89d2\u8272\u5934\u50cf\u3002',
+    importAvatar: '\u5bfc\u5165\u5934\u50cf',
+    avatarCrop: '\u5934\u50cf\u88c1\u526a',
+    avatarCropHelp: '\u62d6\u52a8\u88c1\u526a\u6846\u8c03\u6574\u5f53\u524d\u89d2\u8272\u5934\u50cf\u663e\u793a\u8303\u56f4\u3002'
+  };
+  const L = language === 'zh-CN'
+    ? chineseLabels
+    : Object.fromEntries(Object.entries(englishLabels).map(([key, value]) => [key, localizeEnglish(value, language)])) as typeof englishLabels;
   const safeAvatarPresets = normalizeAvatarPresets(avatarPresets);
-  const safeBasePresets = [...basePresets, ...style.basePresets];
+  const safeBasePresets = sortBasePresets([...basePresets, ...style.basePresets]);
+  const commonBasePreset = safeBasePresets.find((preset) => preset.name.trim() === '\u901a\u7528' || preset.name.trim() === '\u95ab\u6c13\u657c\u7528');
+  const sortedBasePresets = safeBasePresets.filter((preset) => preset !== commonBasePreset);
   const [avatarPickerSlot, setAvatarPickerSlot] = useState<CharacterSlot | null>(null);
   const [basePresetOpen, setBasePresetOpen] = useState(false);
-  const [capsuleEditorOpen, setCapsuleEditorOpen] = useState(false);
-  const [styleSettingsOpen, setStyleSettingsOpen] = useState(false);
-  const activeRole = avatarPickerSlot ? style.roleStyles[avatarPickerSlot] : null;
-  function applyAvatarPreset(slot: CharacterSlot, preset: DefaultAvatarEntry) {
-    onRoleChange(slot, { name: preset.name, avatar: preset.src, avatarCrop: { x: 0, y: 0, w: 100, h: 100 } });
+  const [basePresetTargets, setBasePresetTargets] = useState<Array<'global' | CharacterSlot>>(['global']);
+  const [basePresetDeleteMode, setBasePresetDeleteMode] = useState(false);
+  const [avatarPresetDeleteMode, setAvatarPresetDeleteMode] = useState(false);
+  const [customBaseDraft, setCustomBaseDraft] = useState<ComboImageStyle | null>(null);
+  const [customBaseName, setCustomBaseName] = useState(L.customBase);
+  const [avatarCropOpen, setAvatarCropOpen] = useState(false);
+  const customBaseInputRef = useRef<HTMLInputElement | null>(null);
+  const activeAvatarRole = avatarPickerSlot ? style.roleStyles[avatarPickerSlot] : null;
+  const basePresetSingleRoleTarget = basePresetTargets.length === 1 && basePresetTargets[0] !== 'global' ? basePresetTargets[0] as CharacterSlot : null;
+  const apiCharacterNames = new Set(safeAvatarPresets.map((preset) => preset.name.trim()));
+  const combinedAvatarPresets: Array<DefaultAvatarEntry | ComboImageStyle['avatarPresets'][number]> = sortAvatarPresets([...safeAvatarPresets, ...style.avatarPresets.map((preset) => ({ ...preset, name: normalizeCharacterName(preset.name)  })).filter((preset) => apiCharacterNames.has(preset.name.trim()))]);
+
+  function applyAvatarPreset(slot: CharacterSlot, preset: DefaultAvatarEntry | ComboImageStyle['avatarPresets'][number]) {
+    if (avatarPresetDeleteMode) {
+      if (!('user' in preset) || !preset.user) return;
+      onChange({ avatarPresets: style.avatarPresets.filter((item) => item.src !== preset.src)  });
+      return;
+    }
+    const presetNames = presetMatchNames(preset.name);
+    const matchingBasePreset = safeBasePresets.find((item) => presetNames.includes(item.name.trim()));
+    const rolePatch: Partial<ComboImageStyle['roleStyles'][CharacterSlot]> = { name: preset.name, avatar: preset.src, avatarCrop: normalizeRectPercent(avatarPresetCrop(preset), { x: 0, y: 0, w: 100, h: 100  })  };
+    if (matchingBasePreset) {
+      Object.assign(rolePatch, basePresetPatch(matchingBasePreset));
+      onChange({ blockMode: 'image'  });
+    }
+    onRoleChange(slot, rolePatch);
     setAvatarPickerSlot(null);
   }
-  function applyBasePreset(preset: DefaultBasePresetEntry) {
-    onChange({
-      blockMode: 'image',
+
+  function toggleBasePresetTarget(target: 'global' | CharacterSlot) {
+    setBasePresetTargets((current) => current.includes(target) ? (current.length > 1 ? current.filter((item) => item !== target) : current) : [...current, target]);
+  }
+
+  function basePresetPatch(preset: DefaultBasePresetEntry) {
+    return {
       capsuleImage: preset.src,
       capsuleImageWidth: preset.imageWidth,
       capsuleImageHeight: preset.imageHeight,
-      capsuleCrop: preset.crop ?? { x: 0, y: 0, w: 100, h: 100 },
-      capsuleStretch: preset.stretch ?? { left: 25, right: 75 }
-    });
+      capsuleCrop: preset.crop ?? { x: 0, y: 0, w: 100, h: 100  },
+      capsuleStretch: preset.stretch ?? { left: 25, right: 75  }
+    };
+  }
+
+  function roleStylesWithoutBaseOverrides(): ComboImageStyle['roleStyles'] {
+    const clearBaseOverride = {
+      capsuleImage: undefined,
+      capsuleImageWidth: undefined,
+      capsuleImageHeight: undefined,
+      capsuleCrop: undefined,
+      capsuleStretch: undefined
+    };
+    return {
+      1: { ...style.roleStyles[1], ...clearBaseOverride  },
+      2: { ...style.roleStyles[2], ...clearBaseOverride  },
+      3: { ...style.roleStyles[3], ...clearBaseOverride  }
+    };
+  }
+
+  function clearRoleBaseOverride(slot: CharacterSlot) {
+    onRoleChange(slot, { capsuleImage: undefined, capsuleImageWidth: undefined, capsuleImageHeight: undefined, capsuleCrop: undefined, capsuleStretch: undefined  });
     setBasePresetOpen(false);
   }
+
+  function renderBasePresetTile(preset: DefaultBasePresetEntry) {
+    const userPreset = preset.user === true;
+    return <button key={`${preset.id }-${preset.src }` } className={`preset-tile base-preset-tile ${basePresetDeleteMode ? userPreset ? 'delete-mode' : 'locked-preset' : '' }` } onClick={() => applyBasePreset(preset) }><BasePresetPreview preset={preset } /><strong>{preset.name }</strong>{basePresetDeleteMode && userPreset && <span className="preset-delete-x" aria-hidden="true">?</span>}</button>;
+  }
+
+  function applyBasePreset(preset: DefaultBasePresetEntry) {
+    if (basePresetDeleteMode) {
+      if (!preset.user) return;
+      onChange({ basePresets: style.basePresets.filter((item) => item.id !== preset.id && item.src !== preset.src)  });
+      return;
+    }
+    const patch = basePresetPatch(preset);
+    if (basePresetTargets.includes('global')) onChange({ blockMode: 'image', ...patch, roleStyles: roleStylesWithoutBaseOverrides()  });
+    else onChange({ blockMode: 'image'  });
+    basePresetTargets.filter((target): target is CharacterSlot => target !== 'global').forEach((slot) => onRoleChange(slot, patch));
+    setBasePresetOpen(false);
+  }
+
+  function openBasePresetFor(target: 'global' | CharacterSlot) {
+    setBasePresetTargets([target]);
+    setBasePresetDeleteMode(false);
+    setBasePresetOpen(true);
+  }
+
+  function openCustomBaseEditor() {
+    setCustomBaseName(L.customBase);
+    setCustomBaseDraft({ ...style, blockMode: 'image', capsuleImage: undefined, capsuleImageWidth: undefined, capsuleImageHeight: undefined, capsuleCrop: { x: 0, y: 0, w: 100, h: 100  }, capsuleStretch: { left: 25, right: 75  }  });
+  }
+
+  async function pickCustomBase(file: File | null) {
+    if (!file) return;
+    const source = await readFileAsDataUrl(file);
+    const optimized = await optimizePresetImage(source);
+    setCustomBaseDraft((current) => normalizeComboImageStyle({ ...(current ?? style), blockMode: 'image', capsuleImage: optimized.src, capsuleImageWidth: optimized.width, capsuleImageHeight: optimized.height, capsuleCrop: { x: 0, y: 0, w: 100, h: 100  }, capsuleStretch: { left: 25, right: 75  }  }));
+  }
+
+  function applyCustomBase(savePreset: boolean) {
+    if (!customBaseDraft?.capsuleImage) return;
+    const preset: DefaultBasePresetEntry = { id: `base_preset_${crypto.randomUUID() }`, name: customBaseName.trim() || L.customBase, src: customBaseDraft.capsuleImage, imageWidth: customBaseDraft.capsuleImageWidth, imageHeight: customBaseDraft.capsuleImageHeight, crop: normalizeRectPercent(customBaseDraft.capsuleCrop, { x: 0, y: 0, w: 100, h: 100  }), stretch: customBaseDraft.capsuleStretch ?? { left: 25, right: 75  }, user: true  };
+    const patch = basePresetPatch(preset);
+    if (basePresetTargets.includes('global')) onChange({ blockMode: 'image', ...patch, roleStyles: roleStylesWithoutBaseOverrides(), ...(savePreset ? { basePresets: [...style.basePresets, preset]  } : { })  });
+    else onChange({ blockMode: 'image', ...(savePreset ? { basePresets: [...style.basePresets, preset]  } : { })  });
+    basePresetTargets.filter((target): target is CharacterSlot => target !== 'global').forEach((slot) => onRoleChange(slot, patch));
+    setCustomBaseDraft(null);
+    setBasePresetOpen(false);
+  }
+
+  function currentBaseSource() {
+    return basePresetSingleRoleTarget ? style.roleStyles[basePresetSingleRoleTarget] : style;
+  }
+
+  function saveCurrentBasePreset() {
+    const effective = currentBaseSource();
+    if (!effective.capsuleImage) return;
+    const preset: DefaultBasePresetEntry = { id: `base_preset_${crypto.randomUUID() }`, name: (basePresetSingleRoleTarget ? style.roleStyles[basePresetSingleRoleTarget].name : L.globalBase) || L.customBase, src: effective.capsuleImage, imageWidth: effective.capsuleImageWidth, imageHeight: effective.capsuleImageHeight, crop: normalizeRectPercent(effective.capsuleCrop, { x: 0, y: 0, w: 100, h: 100  }), stretch: effective.capsuleStretch ?? { left: 25, right: 75  }, user: true  };
+    onChange({ basePresets: [...style.basePresets, preset]  });
+  }
+
+  function saveCurrentAvatarPreset() {
+    if (!avatarPickerSlot) return;
+    const role = style.roleStyles[avatarPickerSlot];
+    if (!role.avatar) return;
+    const preset = { id: `avatar_preset_${crypto.randomUUID() }`, name: role.name || `${L.role} ${avatarPickerSlot }`, src: role.avatar, crop: normalizeRectPercent(role.avatarCrop, { x: 0, y: 0, w: 100, h: 100  }), user: true  };
+    onChange({ avatarPresets: [...style.avatarPresets, preset]  });
+  }
+
+  function openAvatarCrop() {
+    if (!avatarPickerSlot || !style.roleStyles[avatarPickerSlot].avatar) return;
+    setAvatarCropOpen(true);
+  }
+
   return (
     <div className="combo-appearance-editor rich-appearance-editor">
       <section className="appearance-section">
-        <div className="appearance-section-head"><strong>角色</strong><span>头像、名称与角色色</span></div>
+        <div className="appearance-section-head"><strong>{L.role}</strong><span>{L.roleHint}</span></div>
         <div className="role-list-editor compact-role-list">
           {CHARACTER_SLOTS.map((slot) => {
             const role = style.roleStyles[slot];
-            return (
-              <div key={slot} className="role-editor-card compact-role-card">
-                <div className="role-editor-head role-editor-head-v2">
-                  <div className="role-avatar-preview" style={avatarBackgroundStyle(role.avatar)}>{role.avatar ? null : slot}</div>
-                  <input className="role-name-inline" value={role.name} onChange={(event) => onRoleChange(slot, { name: event.target.value })} onBlur={(event) => { const preset = safeAvatarPresets.find((item) => item.name === event.target.value.trim()); if (preset && !role.avatar) applyAvatarPreset(slot, preset); }} />
-                  <button onClick={() => setAvatarPickerSlot(slot)}>设定</button>
-                  <button onClick={() => avatarInputRefs.current[slot]?.click()}>导入</button>
-                  <input type="color" value={role.color} onChange={(event) => onRoleChange(slot, { color: event.target.value })} />
-                  <input ref={(node) => { avatarInputRefs.current[slot] = node; }} className="file-input" type="file" accept="image/*" onChange={(event) => onPickAvatar(slot, event.target.files?.[0] ?? null)} />
-                </div>
-              </div>
-            );
-          })}
+            const displayRoleName = localizeDefaultCharacterName(role.name, slot, language);
+            return <div key={slot } className="role-editor-card compact-role-card"><div className="role-editor-head role-editor-head-v2"><div className="role-avatar-preview" style={avatarBackgroundStyle(role.avatar) }>{role.avatar ? null : slot }</div><div className="role-name-inline role-name-readonly" title={displayRoleName }>{displayRoleName}</div><button onClick={() => { setAvatarPresetDeleteMode(false); setAvatarPickerSlot(slot);  } }>{L.setting}</button><div className="role-mode-control">{style.blockMode === 'image' ? <button className="role-base-preset-trigger" onClick={() => openBasePresetFor(slot) }>{L.base}</button> : <label className="role-color-control" title={`${displayRoleName } ${L.capsule}`}><input type="color" value={role.color } onChange={(event) => onRoleChange(slot, { color: event.target.value  }) } /></label>}</div><input ref={(node) => { avatarInputRefs.current[slot] = node;  } } className="file-input" type="file" accept="image/*" onChange={(event) => onPickAvatar(slot, event.target.files?.[0] ?? null) } /></div></div>;
+          }) }
         </div>
       </section>
 
-      <section className="appearance-section block-style-section">
-        <div className="appearance-section-head block-style-head"><div><strong>块样式</strong><span>胶囊、底图、宽度与滚动锚点</span></div><button className={`appearance-settings-trigger ${styleSettingsOpen ? 'active' : ''}`} title="块样式设置" onClick={() => setStyleSettingsOpen((open) => !open)}><Settings size={18} /></button></div>
-        <div className="appearance-switch-row">
-          <div className="segmented appearance-mode-tabs">
-            <button className={style.blockMode === 'capsule' ? 'active' : ''} onClick={() => onChange({ blockMode: 'capsule' })}>胶囊</button>
-            <button className={style.blockMode === 'image' ? 'active' : ''} onClick={() => onChange({ blockMode: 'image' })}>底图</button>
-          </div>
-          {style.blockMode === 'capsule' && <div className="segmented appearance-mode-tabs">
-            <button className={style.capsuleShape === 'capsule' ? 'active' : ''} onClick={() => onChange({ capsuleShape: 'capsule' })}>胶囊型</button>
-            <button className={style.capsuleShape === 'rect' ? 'active' : ''} onClick={() => onChange({ capsuleShape: 'rect' })}>矩形</button>
-          </div>}
-          <div className="segmented appearance-mode-tabs">
-            <button className={style.capsuleWidthMode === 'auto' ? 'active' : ''} onClick={() => onChange({ capsuleWidthMode: 'auto' })}>跟随内容</button>
-            <button className={style.capsuleWidthMode === 'fixed' ? 'active' : ''} onClick={() => onChange({ capsuleWidthMode: 'fixed' })}>固定宽度</button>
-          </div>
-          {style.blockMode === 'image' && <button className="base-preset-trigger" onClick={() => setBasePresetOpen(true)}>底图预设</button>}
-          <div className="segmented appearance-mode-tabs">
-            <button className={style.scrollAnchor === 'start' ? 'active' : ''} onClick={() => onChange({ scrollAnchor: 'start' })}>顶端</button>
-            <button className={style.scrollAnchor === 'center' ? 'active' : ''} onClick={() => onChange({ scrollAnchor: 'center' })}>居中</button>
-          </div>
-          <label className="checkline"><input type="checkbox" checked={style.fadeEnabled} onChange={(event) => onChange({ fadeEnabled: event.target.checked })} />渐隐</label>
+      <section className={`appearance-section block-style-section ${blockSettingsReplacement ? 'waterfall-block-settings' : '' }`}>
+        <div className="appearance-section-head block-style-head"><div><strong>{blockSettingsReplacement ? '\u7011\u5e03\u53c2\u6570' : L.blockStyle}</strong><span>{blockSettingsReplacement ? '\u72ec\u7acb\u63a7\u5236\u7011\u5e03\u6a21\u5f0f\u7684\u7f6e\u9876\u8fde\u6bb5\u56fe\u4e0e\u89c6\u9891\u6a21\u5f0f\u3002' : L.blockHint}</span></div></div>
+        <div className="appearance-switch-row"><div className="segmented appearance-mode-tabs"><button className={style.blockMode === 'capsule' ? 'active' : '' } onClick={() => onChange({ blockMode: 'capsule'  }) }>{L.capsule}</button><button className={style.blockMode === 'image' ? 'active' : '' } onClick={() => onChange({ blockMode: 'image'  }) }>{L.base}</button></div>{style.blockMode === 'capsule' && <div className="segmented appearance-mode-tabs"><button className={style.capsuleShape === 'capsule' ? 'active' : '' } onClick={() => onChange({ capsuleShape: 'capsule'  }) }>{L.capsuleShape}</button><button className={style.capsuleShape === 'rect' ? 'active' : '' } onClick={() => onChange({ capsuleShape: 'rect'  }) }>{L.rect}</button></div> }<div className="segmented appearance-mode-tabs"><button className={style.capsuleWidthMode === 'auto' ? 'active' : '' } onClick={() => onChange({ capsuleWidthMode: 'auto'  }) }>{L.autoWidth}</button><button className={style.capsuleWidthMode === 'fixed' ? 'active' : '' } onClick={() => onChange({ capsuleWidthMode: 'fixed'  }) }>{L.fixedWidth}</button></div>{style.blockMode === 'image' && <button className="base-preset-trigger" onClick={() => openBasePresetFor('global') }>{L.globalBase}</button> }<div className="segmented appearance-mode-tabs"><button className={style.scrollAnchor === 'start' ? 'active' : '' } onClick={() => onChange({ scrollAnchor: 'start'  }) }>{L.start}</button><button className={style.scrollAnchor === 'center' ? 'active' : '' } onClick={() => onChange({ scrollAnchor: 'center'  }) }>{L.center}</button></div><label className="checkline"><input type="checkbox" checked={style.fadeEnabled } onChange={(event) => onChange({ fadeEnabled: event.target.checked  }) } />{L.fade}</label><label className="checkline"><input type="checkbox" checked={style.prePromptEnabled } onChange={(event) => onChange({ prePromptEnabled: event.target.checked  }) } />{L.prePrompt}</label><label className="checkline"><input type="checkbox" checked={style.convertIcons } onChange={(event) => onChange({ convertIcons: event.target.checked  }) } />{L.iconConversion}</label><label className="checkline"><input type="checkbox" checked={style.mergeSameRoleSteps } onChange={(event) => onChange({ mergeSameRoleSteps: event.target.checked  }) } />{L.mergeSameCharacter}</label></div>
+        <div className="block-style-parameters appearance-settings-inline">
+          {blockSettingsReplacement}
+          <div className="appearance-settings-group"><span>{L.sizeLayout}</span><div className="appearance-grid stable-number-grid">
+            <NumberDraftInput label={L.overallScale} value={Math.round(style.overallScale * 100) } min={25 } onCommit={(value) => onChange({ overallScale: value / 100  }) } />
+            <NumberDraftInput label={L.height} value={style.capsuleHeight } onCommit={(value) => onChange({ capsuleHeight: value  }) } />
+            <NumberDraftInput label={L.gap} value={style.capsuleGap } onCommit={(value) => onChange({ capsuleGap: value  }) } />
+            <div className={style.scrollAnchor === 'start' ? '' : 'parameter-disabled'}><NumberDraftInput label={L.startOffset} value={style.scrollStartOffsetPx } min={-5000 } onCommit={(value) => onChange({ scrollStartOffsetPx: value  }) } /></div>
+            <NumberDraftInput label={L.fontSize} value={style.fontSize } onCommit={(value) => onChange({ fontSize: value  }) } />
+            <label>{L.font}<input value={style.fontFamily } onChange={(event) => onChange({ fontFamily: event.target.value  }) } placeholder="Microsoft YaHei, SimHei" /></label>
+            <div className={style.blockMode === 'image' ? '' : 'parameter-disabled'}><NumberDraftInput label={L.baseScale} value={Math.round(style.capsuleImageScale * 100) } onCommit={(value) => onChange({ capsuleImageScale: value / 100  }) } /></div>
+            <div className={style.mergeSameRoleSteps ? '' : 'parameter-disabled'}><NumberDraftInput label={L.mergeLimit} value={style.mergeSameRoleLimit } min={1 } onCommit={(value) => onChange({ mergeSameRoleLimit: value  }) } /></div>
+          </div></div>
+          <div className="appearance-settings-group"><span>{L.avatarDisplay}</span><div className="appearance-grid stable-number-grid">
+            <NumberDraftInput label={L.avatarSize} value={style.avatarSize } min={16 } onCommit={(value) => onChange({ avatarSize: value  }) } />
+            <NumberDraftInput label={L.avatarX} value={style.avatarOffsetX } min={-300 } onCommit={(value) => onChange({ avatarOffsetX: value  }) } />
+            <NumberDraftInput label={L.avatarY} value={style.avatarOffsetY } min={-300 } onCommit={(value) => onChange({ avatarOffsetY: value  }) } />
+            <div className={style.fadeEnabled ? '' : 'parameter-disabled'}><NumberDraftInput label={L.fadeStrength} value={style.fadeRange } onCommit={(value) => onChange({ fadeRange: value  }) } /></div>
+            <label>{L.textColor}<input type="color" value={style.textColor } onChange={(event) => onChange({ textColor: event.target.value  }) } /></label>
+          </div></div>
         </div>
-        {styleSettingsOpen && <div className="appearance-settings-popover" onMouseDown={(event) => event.stopPropagation()}>
-          <div className="appearance-settings-head"><strong>块样式设置</strong><button title="关闭" onClick={() => setStyleSettingsOpen(false)}>&times;</button></div>
-          <div className="appearance-settings-group"><span>尺寸与排版</span><div className="appearance-grid stable-number-grid">
-            <NumberDraftInput label="高度 px" value={style.capsuleHeight} onCommit={(value) => onChange({ capsuleHeight: value })} />
-            <NumberDraftInput label="间距 px" value={style.capsuleGap} onCommit={(value) => onChange({ capsuleGap: value })} />
-            {style.scrollAnchor === 'start' && <NumberDraftInput label="起始位置 px" value={style.scrollStartOffsetPx} min={-5000} onCommit={(value) => onChange({ scrollStartOffsetPx: value })} />}
-            <NumberDraftInput label="字体 px" value={style.fontSize} onCommit={(value) => onChange({ fontSize: value })} />
-            <label>字体<input value={style.fontFamily} onChange={(event) => onChange({ fontFamily: event.target.value })} placeholder="Microsoft YaHei, SimHei" /></label>
-          </div></div>
-          <div className="appearance-settings-group"><span>头像与显示</span><div className="appearance-grid stable-number-grid">
-            <label className="checkline"><input type="checkbox" checked={style.prePromptEnabled} onChange={(event) => onChange({ prePromptEnabled: event.target.checked })} />预提示</label>
-            <NumberDraftInput label="头像大小" value={style.avatarSize} min={16} onCommit={(value) => onChange({ avatarSize: value })} />
-            <NumberDraftInput label="头像 X" value={style.avatarOffsetX} min={-300} onCommit={(value) => onChange({ avatarOffsetX: value })} />
-            <NumberDraftInput label="头像 Y" value={style.avatarOffsetY} min={-300} onCommit={(value) => onChange({ avatarOffsetY: value })} />
-            {style.fadeEnabled && <NumberDraftInput label="渐隐强度" value={style.fadeRange} onCommit={(value) => onChange({ fadeRange: value })} />}
-            <label>文字颜色<input type="color" value={style.textColor} onChange={(event) => onChange({ textColor: event.target.value })} /></label>
-          </div></div>
-          {style.blockMode === 'image' && <div className="appearance-settings-group"><span>底图</span><div className="appearance-grid stable-number-grid">
-            <NumberDraftInput label="底图缩放" value={Math.round(style.capsuleImageScale * 100)} onCommit={(value) => onChange({ capsuleImageScale: value / 100 })} />
-            <button onClick={() => capsuleInputRef.current?.click()}>导入底图</button>
-            <input ref={capsuleInputRef} className="file-input" type="file" accept="image/*" onChange={(event) => onPickCapsule(event.target.files?.[0] ?? null)} />
-            <button onClick={() => setCapsuleEditorOpen((open) => !open)}>{capsuleEditorOpen ? '收起底图编辑' : '可视化裁剪/拉伸'}</button>
-          </div></div>}
-          {style.blockMode === 'image' && capsuleEditorOpen && <CapsuleImageVisualEditor style={style} onChange={onChange} />}
-        </div>}
       </section>
 
-      {basePresetOpen && <div className="preset-picker-backdrop" onMouseDown={() => setBasePresetOpen(false)}><div className="preset-picker-panel base-preset-panel" onMouseDown={(event) => event.stopPropagation()}><div className="preset-picker-head"><div><h3>底图预设</h3><p>点击预设即可应用到底图块；导入本地底图后可用裁剪/拉伸继续微调。</p></div><button onClick={() => setBasePresetOpen(false)}>×</button></div><div className="preset-picker-grid base-preset-grid">{safeBasePresets.map((preset) => <button key={`${preset.id}-${preset.src}`} className="preset-tile base-preset-tile" onClick={() => applyBasePreset(preset)}><img src={preset.src} alt="" /><strong>{preset.name}</strong></button>)}</div></div></div>}
-      {avatarPickerSlot && <div className="preset-picker-backdrop" onMouseDown={() => setAvatarPickerSlot(null)}><div className="preset-picker-panel avatar-preset-panel" onMouseDown={(event) => event.stopPropagation()}><div className="preset-picker-head"><div><h3>头像设定</h3><p>点击预设即可填入角色名和头像，左上角加号用于导入本地头像。</p></div><button onClick={() => setAvatarPickerSlot(null)}>×</button></div><div className="preset-picker-grid avatar-preset-grid"><button className="preset-tile add-tile" onClick={() => avatarInputRefs.current[avatarPickerSlot]?.click()}><span>+</span><strong>{activeRole?.name || '导入头像'}</strong></button>{safeAvatarPresets.map((preset) => <button key={preset.src} className="preset-tile avatar-preset-tile" onClick={() => applyAvatarPreset(avatarPickerSlot, preset)}><img src={preset.src} alt="" /><strong>{preset.name}</strong></button>)}</div></div></div>}
+      {basePresetOpen && <div className="preset-picker-backdrop" onMouseDown={() => setBasePresetOpen(false) }><div className="preset-picker-panel base-preset-panel" onMouseDown={(event) => event.stopPropagation() }><div className="preset-picker-head"><div><h3>{L.base}</h3><p>{L.baseHelp}</p></div><div className="base-preset-head-actions"><button onClick={saveCurrentBasePreset} disabled={!currentBaseSource().capsuleImage}><Save size={18 } /><span>{L.savePreset}</span></button><button onClick={() => setCustomBaseDraft(normalizeComboImageStyle(basePresetSingleRoleTarget ? { ...style, ...style.roleStyles[basePresetSingleRoleTarget] } : style)) } disabled={!currentBaseSource().capsuleImage}><Scissors size={18 } /><span>{L.crop}</span></button><button className={basePresetDeleteMode ? 'active danger' : '' } title={L.deleteUserPreset} onClick={() => setBasePresetDeleteMode((value) => !value) }><X size={19 } /></button></div></div><div className="preset-picker-grid base-preset-grid"><button className="preset-tile add-tile base-preset-add-tile" onClick={openCustomBaseEditor }><span>+</span><strong>{L.addBase}</strong></button>{basePresetSingleRoleTarget && <button className="preset-tile base-preset-reuse-tile" onClick={() => clearRoleBaseOverride(basePresetSingleRoleTarget) }><BanIcon /><strong>{L.reuseGlobal}</strong></button>}{commonBasePreset && renderBasePresetTile(commonBasePreset) }{sortedBasePresets.map(renderBasePresetTile) }</div></div></div> }
+      {customBaseDraft && <div className="preset-picker-backdrop custom-base-editor-backdrop" onMouseDown={() => setCustomBaseDraft(null) }><div className="crop-dialog-panel custom-base-editor-panel" onMouseDown={(event) => event.stopPropagation() }><div className="preset-picker-head"><div><h3>{L.customBase}</h3><p>{L.customBaseHelp}</p></div><button onClick={() => setCustomBaseDraft(null) }>?</button></div><div className="custom-base-editor-toolbar"><label>{L.presetName}<input value={customBaseName } onChange={(event) => setCustomBaseName(event.target.value) } /></label><button onClick={() => customBaseInputRef.current?.click() }>{customBaseDraft.capsuleImage ? L.replaceImage : L.uploadImage}</button><input ref={customBaseInputRef } className="file-input" type="file" accept="image/*" onChange={(event) => { void pickCustomBase(event.target.files?.[0] ?? null); event.currentTarget.value = '';  } } /></div>{customBaseDraft.capsuleImage ? <CapsuleImageVisualEditor style={customBaseDraft } onChange={(patch) => setCustomBaseDraft((current) => current ? normalizeComboImageStyle({ ...current, ...patch  }) : current) } /> : <button className="custom-base-upload-stage" onClick={() => customBaseInputRef.current?.click() }><Plus size={32 } /><strong>{L.chooseBaseImage}</strong></button> }<div className="custom-base-editor-actions"><button onClick={() => setCustomBaseDraft(null) }>{L.cancel}</button><button disabled={!customBaseDraft.capsuleImage } onClick={() => applyCustomBase(false) }>{L.apply}</button><button className="primary" disabled={!customBaseDraft.capsuleImage } onClick={() => applyCustomBase(true) }>{L.savePreset}</button></div></div></div> }
+      {avatarPickerSlot && <div className="preset-picker-backdrop" onMouseDown={() => setAvatarPickerSlot(null) }><div className="preset-picker-panel avatar-preset-panel" onMouseDown={(event) => event.stopPropagation() }><div className="preset-picker-head"><div><h3>{L.avatarTitle}</h3><p>{L.avatarHelp}</p></div><div className="base-preset-head-actions"><button onClick={saveCurrentAvatarPreset} disabled={!activeAvatarRole?.avatar}><Save size={18 } /><span>{L.savePreset}</span></button><button onClick={openAvatarCrop} disabled={!activeAvatarRole?.avatar}><Scissors size={18 } /><span>{L.crop}</span></button><button className={avatarPresetDeleteMode ? 'active danger' : '' } title={L.deleteUserPreset} onClick={() => setAvatarPresetDeleteMode((value) => !value) }><X size={19 } /></button></div></div><div className="preset-picker-grid avatar-preset-grid"><button className="preset-tile add-tile" onClick={() => avatarInputRefs.current[avatarPickerSlot]?.click() }><span>+</span><strong>{L.importAvatar}</strong></button>{combinedAvatarPresets.map((preset) => { const userPreset = 'user' in preset && preset.user === true; return <button key={`${preset.name }-${preset.src }` } className={`preset-tile avatar-preset-tile ${avatarPresetDeleteMode ? userPreset ? 'delete-mode' : 'locked-preset' : '' }` } onClick={() => applyAvatarPreset(avatarPickerSlot, preset) }><img src={preset.src } alt="" /><strong>{preset.name }</strong>{avatarPresetDeleteMode && userPreset && <span className="preset-delete-x" aria-hidden="true">?</span>}</button>;  }) }</div></div></div> }
+      {avatarCropOpen && avatarPickerSlot && activeAvatarRole?.avatar && <div className="preset-picker-backdrop custom-base-editor-backdrop" onMouseDown={() => setAvatarCropOpen(false) }><div className="crop-dialog-panel square-crop-dialog" onMouseDown={(event) => event.stopPropagation() }><div className="preset-picker-head"><div><h3>{L.avatarCrop}</h3><p>{L.avatarCropHelp}</p></div><button onClick={() => setAvatarCropOpen(false) }>?</button></div><AvatarCropEditor src={activeAvatarRole.avatar } crop={normalizeRectPercent(activeAvatarRole.avatarCrop, { x: 0, y: 0, w: 100, h: 100  }) } onChange={(crop) => onRoleChange(avatarPickerSlot, { avatarCrop: crop  }) } /><div className="custom-base-editor-actions"><button className="primary" onClick={() => setAvatarCropOpen(false) }>{L.apply}</button></div></div></div> }
     </div>
   );
+ }
+function BanIcon() {
+  return <span className="ban-icon" aria-hidden="true"><i /></span>;
 }
 
-function CapsuleImageVisualEditor({ style, onChange }: { style: ComboImageStyle; onChange: (patch: Partial<ComboImageStyle>) => void }) {
+function BasePresetPreview({ preset  }: { preset: DefaultBasePresetEntry  }) {
+  const { text } = useI18n();
+  const crop = normalizeRectPercent(preset.crop, { x: 0, y: 0, w: 100, h: 100  });
+  const previewWidth = Math.max(0.001, crop.w / 2);
+  const previewHeight = Math.max(0.001, crop.h);
+  const naturalWidth = Math.max(1, preset.imageWidth ?? 1);
+  const naturalHeight = Math.max(1, preset.imageHeight ?? 1);
+  const backgroundPositionX = crop.x / Math.max(0.001, 100 - previewWidth) * 100;
+  const backgroundPositionY = crop.y / Math.max(0.001, 100 - previewHeight) * 100;
+  const previewAspect = naturalWidth * previewWidth / (naturalHeight * previewHeight);
+  const previewStyle = {
+    width: `${Math.min(170, 86 * previewAspect) }px`,
+    aspectRatio: `${naturalWidth * previewWidth } / ${naturalHeight * previewHeight }`,
+    backgroundImage: `url(${preset.src })`,
+    backgroundSize: `${10000 / previewWidth }% ${10000 / previewHeight }%`,
+    backgroundPosition: `${backgroundPositionX }% ${backgroundPositionY }%`
+   } as CSSProperties;
+  return <span className="base-preset-preview" role="img" aria-label={text(`${preset.name }底图预览`, `${preset.name } background preview`) } style={previewStyle } />;
+ }
+
+function AvatarCropEditor({ src, crop, onChange  }: { src: string; crop: ComboImageStyle['roleStyles'][CharacterSlot]['avatarCrop']; onChange: (crop: NonNullable<ComboImageStyle['roleStyles'][CharacterSlot]['avatarCrop']>) => void  }) {
+  const { text } = useI18n();
   const stageRef = useRef<HTMLDivElement | null>(null);
-  const crop = normalizeRectPercent(style.capsuleCrop, { x: 0, y: 0, w: 100, h: 100 });
-  const stretch = style.capsuleStretch ?? { left: 25, right: 75 };
-  const naturalWidth = Math.max(1, style.capsuleImageWidth || style.capsuleWidth || 200);
-  const naturalHeight = Math.max(1, style.capsuleImageHeight || style.capsuleHeight || 80);
-  const stageStyle = { aspectRatio: `${naturalWidth} / ${naturalHeight}` } as CSSProperties;
-  const imageStyle = style.capsuleImage ? { backgroundImage: `url(${style.capsuleImage})` } : {};
+  const safeCrop = normalizeRectPercent(crop, { x: 0, y: 0, w: 100, h: 100  });
   function stagePoint(event: PointerEvent | ReactPointerEvent<HTMLElement>) {
     const rect = stageRef.current?.getBoundingClientRect();
-    if (!rect) return { x: 0, y: 0 };
-    return { x: clamp(((event.clientX - rect.left) / Math.max(1, rect.width)) * 100, 0, 100), y: clamp(((event.clientY - rect.top) / Math.max(1, rect.height)) * 100, 0, 100) };
+    if (!rect) return { x: 0, y: 0  };
+    return { x: clamp(((event.clientX - rect.left) / Math.max(1, rect.width)) * 100, 0, 100), y: clamp(((event.clientY - rect.top) / Math.max(1, rect.height)) * 100, 0, 100)  };
   }
   function beginCropDrag(event: ReactPointerEvent<HTMLElement>, mode: 'move' | 'nw' | 'se') {
     event.preventDefault();
     event.stopPropagation();
     const start = stagePoint(event);
-    const original = { ...crop };
+    const original = { ...safeCrop  };
     const onMove = (moveEvent: PointerEvent) => {
       const point = stagePoint(moveEvent);
       const dx = point.x - start.x;
       const dy = point.y - start.y;
-      if (mode === 'move') onChange({ capsuleCrop: normalizeRectPercent({ ...original, x: original.x + dx, y: original.y + dy }, original) });
+      if (mode === 'move') onChange(normalizeRectPercent({ ...original, x: original.x + dx, y: original.y + dy  }, original));
       if (mode === 'nw') {
         const x = clamp(original.x + dx, 0, original.x + original.w - 5);
         const y = clamp(original.y + dy, 0, original.y + original.h - 5);
-        onChange({ capsuleCrop: normalizeRectPercent({ x, y, w: original.x + original.w - x, h: original.y + original.h - y }, original) });
+        onChange(normalizeRectPercent({ x, y, w: original.x + original.w - x, h: original.y + original.h - y  }, original));
       }
-      if (mode === 'se') onChange({ capsuleCrop: normalizeRectPercent({ ...original, w: original.w + dx, h: original.h + dy }, original) });
-    };
-    const onUp = () => {
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
-    };
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
-  }
-  function beginStretchDrag(event: ReactPointerEvent<HTMLElement>, side: 'left' | 'right') {
-    event.preventDefault();
-    event.stopPropagation();
-    const onMove = (moveEvent: PointerEvent) => {
-      const point = stagePoint(moveEvent);
-      if (side === 'left') onChange({ capsuleStretch: { left: clamp(point.x, crop.x, Math.min(stretch.right - 1, crop.x + crop.w - 1)), right: stretch.right } });
-      if (side === 'right') onChange({ capsuleStretch: { left: stretch.left, right: clamp(point.x, Math.max(stretch.left + 1, crop.x + 1), crop.x + crop.w) } });
+      if (mode === 'se') onChange(normalizeRectPercent({ ...original, w: original.w + dx, h: original.h + dy  }, original));
     };
     const onUp = () => {
       window.removeEventListener('pointermove', onMove);
@@ -2010,57 +3798,162 @@ function CapsuleImageVisualEditor({ style, onChange }: { style: ComboImageStyle;
     window.addEventListener('pointerup', onUp);
   }
   return (
-    <div className="capsule-visual-editor">
-      <p>拖动裁剪框选择底图范围；拖动两条蓝色竖线选择跟随内容时可拉伸的中段，两端保持固定。</p>
-      <div ref={stageRef} className="capsule-visual-stage" style={stageStyle}>
-        {style.capsuleImage && <div className="capsule-visual-image" style={imageStyle} />}
-        <div className="capsule-crop-box" style={{ left: `${crop.x}%`, top: `${crop.y}%`, width: `${crop.w}%`, height: `${crop.h}%` }} onPointerDown={(event) => beginCropDrag(event, 'move')}>
-          <span className="capsule-crop-handle nw" onPointerDown={(event) => beginCropDrag(event, 'nw')} />
-          <span className="capsule-crop-handle se" onPointerDown={(event) => beginCropDrag(event, 'se')} />
+    <div className="capsule-visual-editor avatar-crop-editor">
+      <div ref={stageRef } className="capsule-visual-stage avatar-crop-stage">
+        <div className="capsule-visual-image" style={{ backgroundImage: `url(${src })`  } } />
+        <div className="capsule-crop-box" style={{ left: `${safeCrop.x }%`, top: `${safeCrop.y }%`, width: `${safeCrop.w }%`, height: `${safeCrop.h }%`  } } onPointerDown={(event) => beginCropDrag(event, 'move') }>
+          <span className="capsule-crop-handle nw" onPointerDown={(event) => beginCropDrag(event, 'nw') } />
+          <span className="capsule-crop-handle se" onPointerDown={(event) => beginCropDrag(event, 'se') } />
         </div>
-        <span className="capsule-stretch-line left" style={{ left: `${stretch.left}%` }} onPointerDown={(event) => beginStretchDrag(event, 'left')} />
-        <span className="capsule-stretch-line right" style={{ left: `${stretch.right}%` }} onPointerDown={(event) => beginStretchDrag(event, 'right')} />
       </div>
       <div className="crop-dialog-actions">
-        <NumberDraftInput label="裁剪 X%" value={Math.round(crop.x)} onCommit={(value) => onChange({ capsuleCrop: { ...crop, x: value } })} />
-        <NumberDraftInput label="裁剪 Y%" value={Math.round(crop.y)} onCommit={(value) => onChange({ capsuleCrop: { ...crop, y: value } })} />
-        <NumberDraftInput label="裁剪 W%" value={Math.round(crop.w)} onCommit={(value) => onChange({ capsuleCrop: { ...crop, w: value } })} />
-        <NumberDraftInput label="裁剪 H%" value={Math.round(crop.h)} onCommit={(value) => onChange({ capsuleCrop: { ...crop, h: value } })} />
-        <NumberDraftInput label="左线%" value={Math.round(stretch.left)} onCommit={(value) => onChange({ capsuleStretch: { ...stretch, left: value } })} />
-        <NumberDraftInput label="右线%" value={Math.round(stretch.right)} onCommit={(value) => onChange({ capsuleStretch: { ...stretch, right: value } })} />
+        <NumberDraftInput label={text('裁剪 X%', 'Crop X%') } value={Math.round(safeCrop.x) } onCommit={(value) => onChange({ ...safeCrop, x: value  }) } />
+        <NumberDraftInput label={text('裁剪 Y%', 'Crop Y%') } value={Math.round(safeCrop.y) } onCommit={(value) => onChange({ ...safeCrop, y: value  }) } />
+        <NumberDraftInput label={text('裁剪 W%', 'Crop W%') } value={Math.round(safeCrop.w) } onCommit={(value) => onChange({ ...safeCrop, w: value  }) } />
+        <NumberDraftInput label={text('裁剪 H%', 'Crop H%') } value={Math.round(safeCrop.h) } onCommit={(value) => onChange({ ...safeCrop, h: value  }) } />
       </div>
     </div>
   );
 }
 
-function SettingsPanel({ moves, bindings, gamepadBindings, inputMode, exportDirectory, onInputModeChange, onExportDirectoryChange, onMoveChange, onBindingChange, onGamepadBindingChange }: { moves: MoveDefinition[]; bindings: KeyBinding[]; gamepadBindings: KeyBinding[]; inputMode: InputMode; exportDirectory: string; onInputModeChange: (value: InputMode) => void; onExportDirectoryChange: (value: string) => void; onMoveChange: (moveId: string, patch: Partial<MoveDefinition>) => void; onBindingChange: (moveId: string, value: string) => void; onGamepadBindingChange: (moveId: string, value: string) => void }) {
-  const [capturingMoveId, setCapturingMoveId] = useState<string | null>(null);
-  const [capturingGamepadMoveId, setCapturingGamepadMoveId] = useState<string | null>(null);
+function CapsuleImageVisualEditor({ style, onChange  }: { style: ComboImageStyle; onChange: (patch: Partial<ComboImageStyle>) => void  }) {
+  const { text } = useI18n();
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const crop = normalizeRectPercent(style.capsuleCrop, { x: 0, y: 0, w: 100, h: 100  });
+  const stretch = style.capsuleStretch ?? { left: 25, right: 75  };
+  const naturalWidth = Math.max(1, style.capsuleImageWidth || style.capsuleWidth || 200);
+  const naturalHeight = Math.max(1, style.capsuleImageHeight || style.capsuleHeight || 80);
+  const stageStyle = { aspectRatio: `${naturalWidth } / ${naturalHeight }`  } as CSSProperties;
+  const imageStyle = style.capsuleImage ? { backgroundImage: `url(${style.capsuleImage })`  } : { };
+  function stagePoint(event: PointerEvent | ReactPointerEvent<HTMLElement>) {
+    const rect = stageRef.current?.getBoundingClientRect();
+    if (!rect) return { x: 0, y: 0  };
+    return { x: clamp(((event.clientX - rect.left) / Math.max(1, rect.width)) * 100, 0, 100), y: clamp(((event.clientY - rect.top) / Math.max(1, rect.height)) * 100, 0, 100)  };
+   }
+  function beginCropDrag(event: ReactPointerEvent<HTMLElement>, mode: 'move' | 'nw' | 'se') {
+    event.preventDefault();
+    event.stopPropagation();
+    const start = stagePoint(event);
+    const original = { ...crop  };
+    const onMove = (moveEvent: PointerEvent) => {
+      const point = stagePoint(moveEvent);
+      const dx = point.x - start.x;
+      const dy = point.y - start.y;
+      if (mode === 'move') onChange({ capsuleCrop: normalizeRectPercent({ ...original, x: original.x + dx, y: original.y + dy  }, original)  });
+      if (mode === 'nw') {
+        const x = clamp(original.x + dx, 0, original.x + original.w - 5);
+        const y = clamp(original.y + dy, 0, original.y + original.h - 5);
+        onChange({ capsuleCrop: normalizeRectPercent({ x, y, w: original.x + original.w - x, h: original.y + original.h - y  }, original)  });
+       }
+      if (mode === 'se') onChange({ capsuleCrop: normalizeRectPercent({ ...original, w: original.w + dx, h: original.h + dy  }, original)  });
+     };
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+     };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+   }
+  function beginStretchDrag(event: ReactPointerEvent<HTMLElement>, side: 'left' | 'right') {
+    event.preventDefault();
+    event.stopPropagation();
+    const onMove = (moveEvent: PointerEvent) => {
+      const point = stagePoint(moveEvent);
+      if (side === 'left') onChange({ capsuleStretch: { left: clamp(point.x, crop.x, Math.min(stretch.right - 1, crop.x + crop.w - 1)), right: stretch.right  }  });
+      if (side === 'right') onChange({ capsuleStretch: { left: stretch.left, right: clamp(point.x, Math.max(stretch.left + 1, crop.x + 1), crop.x + crop.w)  }  });
+     };
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+     };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+   }
+  return (
+    <div className="capsule-visual-editor">
+      <p>{text('拖动裁剪框选择底图范围；拖动两条蓝色竖线选择跟随内容时可拉伸的中段，两端保持固定。', 'Drag the crop frame to select the background area. Drag the two blue lines to define the stretchable center while keeping both ends fixed.') }</p>
+      <div ref={stageRef } className="capsule-visual-stage" style={stageStyle }>
+        {style.capsuleImage && <div className="capsule-visual-image" style={imageStyle } /> }
+        <div className="capsule-crop-box" style={{ left: `${crop.x }%`, top: `${crop.y }%`, width: `${crop.w }%`, height: `${crop.h }%`  } } onPointerDown={(event) => beginCropDrag(event, 'move') }>
+          <span className="capsule-crop-handle nw" onPointerDown={(event) => beginCropDrag(event, 'nw') } />
+          <span className="capsule-crop-handle se" onPointerDown={(event) => beginCropDrag(event, 'se') } />
+        </div>
+        <span className="capsule-stretch-line left" style={{ left: `${stretch.left }%`  } } onPointerDown={(event) => beginStretchDrag(event, 'left') } />
+        <span className="capsule-stretch-line right" style={{ left: `${stretch.right }%`  } } onPointerDown={(event) => beginStretchDrag(event, 'right') } />
+      </div>
+      <div className="crop-dialog-actions">
+        <NumberDraftInput label={text('裁剪 X%', 'Crop X%') } value={Math.round(crop.x) } onCommit={(value) => onChange({ capsuleCrop: { ...crop, x: value  }  }) } />
+        <NumberDraftInput label={text('裁剪 Y%', 'Crop Y%') } value={Math.round(crop.y) } onCommit={(value) => onChange({ capsuleCrop: { ...crop, y: value  }  }) } />
+        <NumberDraftInput label={text('裁剪 W%', 'Crop W%') } value={Math.round(crop.w) } onCommit={(value) => onChange({ capsuleCrop: { ...crop, w: value  }  }) } />
+        <NumberDraftInput label={text('裁剪 H%', 'Crop H%') } value={Math.round(crop.h) } onCommit={(value) => onChange({ capsuleCrop: { ...crop, h: value  }  }) } />
+        <NumberDraftInput label={text('左线%', 'Left Guide %') } value={Math.round(stretch.left) } onCommit={(value) => onChange({ capsuleStretch: { ...stretch, left: value  }  }) } />
+        <NumberDraftInput label={text('右线%', 'Right Guide %') } value={Math.round(stretch.right) } onCommit={(value) => onChange({ capsuleStretch: { ...stretch, right: value  }  }) } />
+      </div>
+    </div>
+  );
+ }
+
+function SettingsPanel({ moves, bindings, gamepadBindings, inputMode, exportDirectory, onInputModeChange, onExportDirectoryChange, onMoveChange, onBindingChange, onGamepadBindingChange  }: { moves: MoveDefinition[]; bindings: KeyBinding[]; gamepadBindings: KeyBinding[]; inputMode: InputMode; exportDirectory: string; onInputModeChange: (value: InputMode) => void; onExportDirectoryChange: (value: string) => void; onMoveChange: (moveId: string, patch: Partial<MoveDefinition>) => void; onBindingChange: (moveId: string, value: string) => void; onGamepadBindingChange: (moveId: string, value: string) => void  }) {
+  const { language, setLanguage, text  } = useI18n();
+  const [capture, setCapture] = useState<{ mode: InputMode; moveId: string; slot: 0 | 1  } | null>(null);
+  const [bindingDrafts, setBindingDrafts] = useState<Record<string, string>>({ });
+  const activeBindings = inputMode === 'gamepad' ? gamepadBindings : bindings;
+
+  function draftKey(mode: InputMode, moveId: string, slot: 0 | 1) {
+    return `${mode }:${moveId }:${slot }`;
+   }
+
+  function setBindingSlot(mode: InputMode, moveId: string, slot: 0 | 1, value: string) {
+    const source = mode === 'gamepad' ? gamepadBindings : bindings;
+    const binding = source.find((item) => item.moveId === moveId);
+    const codes = [binding?.inputs[0]?.code ?? '', binding?.inputs[1]?.code ?? ''];
+    codes[slot] = value;
+    const seen = new Set<string>();
+    const normalized = codes.map(normalizeInputCode).filter((code) => {
+      if (!code || seen.has(code)) return false;
+      seen.add(code);
+      return true;
+     });
+    (mode === 'gamepad' ? onGamepadBindingChange : onBindingChange)(moveId, normalized.join(', '));
+   }
 
   useEffect(() => {
-    if (!capturingMoveId) return;
+    const next: Record<string, string> = { };
+    for (const move of moves) {
+      for (const mode of ['keyboard', 'gamepad'] as const) {
+        const source = mode === 'gamepad' ? gamepadBindings : bindings;
+        const binding = source.find((item) => item.moveId === move.id);
+        next[draftKey(mode, move.id, 0)] = binding?.inputs[0]?.code ?? '';
+        next[draftKey(mode, move.id, 1)] = binding?.inputs[1]?.code ?? '';
+       }
+     }
+    setBindingDrafts(next);
+   }, [bindings, gamepadBindings, moves]);
+
+  useEffect(() => {
+    if (!capture || capture.mode !== 'keyboard') return;
     const finishCapture = (code: string) => {
-      onBindingChange(capturingMoveId, code);
-      setCapturingMoveId(null);
-    };
+      setBindingSlot('keyboard', capture.moveId, capture.slot, code);
+      setCapture(null);
+     };
     const handleKeyDown = (event: KeyboardEvent) => {
       event.preventDefault();
       event.stopPropagation();
-      if (event.code === 'Backspace') {
-        setCapturingMoveId(null);
+      if (event.code === 'Backspace' || event.code === 'Escape') {
+        setCapture(null);
         return;
-      }
+       }
       finishCapture(event.code);
-    };
+     };
     const handleMouseDown = (event: MouseEvent) => {
       event.preventDefault();
       event.stopPropagation();
       finishCapture(normalizeDomMouseEvent(event, 'mousedown').code);
-    };
+     };
     const preventContextMenu = (event: MouseEvent) => {
       event.preventDefault();
       event.stopPropagation();
-    };
+     };
     window.addEventListener('keydown', handleKeyDown, true);
     window.addEventListener('mousedown', handleMouseDown, true);
     window.addEventListener('contextmenu', preventContextMenu, true);
@@ -2068,169 +3961,255 @@ function SettingsPanel({ moves, bindings, gamepadBindings, inputMode, exportDire
       window.removeEventListener('keydown', handleKeyDown, true);
       window.removeEventListener('mousedown', handleMouseDown, true);
       window.removeEventListener('contextmenu', preventContextMenu, true);
-    };
-  }, [capturingMoveId, onBindingChange]);
+     };
+   }, [capture]);
 
   useEffect(() => {
-    if (!capturingGamepadMoveId) return;
+    if (!capture || capture.mode !== 'gamepad') return;
     let frame = 0;
-    const initiallyPressed = readPressedGamepadCodes();
+    let previous = readPressedGamepadCodes();
+    let modifierPressedAt: number | null = null;
+    const finishCapture = (code: string) => {
+      setBindingSlot('gamepad', capture.moveId, capture.slot, code);
+      setCapture(null);
+     };
     const tick = () => {
       const current = readPressedGamepadCodes();
-      const newlyPressed = [...current].filter((code) => !initiallyPressed.has(code));
-      const primary = newlyPressed.find((code) => code !== GAMEPAD_COMBO_MODIFIER);
+      const newlyPressed = [...current].filter((code) => !previous.has(code));
+      const modifierJustPressed = newlyPressed.includes(GAMEPAD_COMBO_MODIFIER);
+      const primary = newlyPressed.find((code) => code !== GAMEPAD_COMBO_MODIFIER)
+        ?? (modifierJustPressed ? [...current].find((code) => code !== GAMEPAD_COMBO_MODIFIER) : undefined);
       if (primary) {
-        const captured = current.has(GAMEPAD_COMBO_MODIFIER) ? `${GAMEPAD_COMBO_MODIFIER}+${primary}` : primary;
-        onGamepadBindingChange(capturingGamepadMoveId, captured);
-        setCapturingGamepadMoveId(null);
+        const captured = current.has(GAMEPAD_COMBO_MODIFIER) ? `${GAMEPAD_COMBO_MODIFIER }+${primary }` : primary;
+        finishCapture(captured);
         return;
-      }
-      if (newlyPressed.includes(GAMEPAD_COMBO_MODIFIER) && current.size === 1) {
-        onGamepadBindingChange(capturingGamepadMoveId, GAMEPAD_COMBO_MODIFIER);
-        setCapturingGamepadMoveId(null);
+       }
+      if (modifierJustPressed) modifierPressedAt = performance.now();
+      if (!current.has(GAMEPAD_COMBO_MODIFIER)) modifierPressedAt = null;
+      if (modifierPressedAt !== null && current.size === 1 && performance.now() - modifierPressedAt >= 280) {
+        finishCapture(GAMEPAD_COMBO_MODIFIER);
         return;
-      }
+       }
+      previous = current;
       frame = requestAnimationFrame(tick);
-    };
+     };
     frame = requestAnimationFrame(tick);
     const cancel = (event: KeyboardEvent) => {
       if (event.code !== 'Backspace' && event.code !== 'Escape') return;
       event.preventDefault();
-      setCapturingGamepadMoveId(null);
-    };
+      setCapture(null);
+     };
     window.addEventListener('keydown', cancel, true);
     return () => {
       cancelAnimationFrame(frame);
       window.removeEventListener('keydown', cancel, true);
-    };
-  }, [capturingGamepadMoveId, onGamepadBindingChange]);
+     };
+   }, [capture]);
 
   return (
     <section className="panel settings-panel">
-      <div className="panel-title"><div><h2>{'\u952e\u4f4d\u4e0e\u62db\u5f0f\u8bbe\u7f6e'}</h2><p>{'\u8fde\u6bb5\u8c31\u4fdd\u5b58\u62db\u5f0f\u800c\u4e0d\u662f\u56fa\u5b9a\u952e\u4f4d\uff1b\u952e\u9f20\u548c\u624b\u67c4\u53ef\u4ee5\u5206\u522b\u8bbe\u7f6e\u3002'}</p></div><Keyboard size={22} /></div>
+      <div className="panel-title"><div><h2>{text('设置', 'Settings') }</h2><p>{text('管理语言、导出位置以及键鼠和手柄的招式绑定。', 'Manage language, export location, and keyboard, mouse, or gamepad bindings.') }</p></div><Settings size={22 } /></div>
+      <div className="settings-preference-row settings-language">
+        <span>{text('语言', 'Language') }</span>
+        <div className="segmented" role="group" aria-label={text('语言', 'Language') }>
+          <button className={language === 'zh-CN' ? 'active' : '' } type="button" onClick={() => setLanguage('zh-CN') }>中文</button>
+          <button className={language === 'en-US' ? 'active' : '' } type="button" onClick={() => setLanguage('en-US') }>English</button>
+          <button className={language === 'ja-JP' ? 'active' : '' } type="button" onClick={() => setLanguage('ja-JP') }>日本語</button>
+          <button className={language === 'ko-KR' ? 'active' : '' } type="button" onClick={() => setLanguage('ko-KR') }>한국어</button>
+        </div>
+      </div>
       <div className="settings-export-path">
         <label>
-          <span>{'\u89c6\u9891\u5bfc\u51fa\u8def\u5f84'}</span>
-          <input value={exportDirectory} placeholder={'\u7559\u7a7a\u5219\u4f7f\u7528\u7cfb\u7edf\u9ed8\u8ba4\u4e0b\u8f7d\u4f4d\u7f6e\uff0c\u4f8b\u5982 C:\\Users\\\u4f60\u7684\u7528\u6237\u540d\\Videos'} onChange={(event) => onExportDirectoryChange(event.target.value)} />
+          <span>{text('视频导出路径', 'Video Export Folder') }</span>
+          <input value={exportDirectory } placeholder={text('留空则使用系统默认下载位置，例如 C:\\Users\\你的用户名\\Videos', 'Leave blank to use the system default, for example C:\\Users\\YourName\\Videos') } onChange={(event) => onExportDirectoryChange(event.target.value) } />
         </label>
-        <button type="button" onClick={() => onExportDirectoryChange('')}>{'\u9ed8\u8ba4'}</button>
+        <button type="button" onClick={() => onExportDirectoryChange('') }>{text('默认', 'Default') }</button>
       </div>
       <div className="settings-input-mode">
-        <span>{'\u8f93\u5165\u6a21\u5f0f'}</span>
-        <div className="segmented"><button className={inputMode === 'keyboard' ? 'active' : ''} type="button" onClick={() => onInputModeChange('keyboard')}><Keyboard size={16} />{'\u952e\u9f20'}</button><button className={inputMode === 'gamepad' ? 'active' : ''} type="button" onClick={() => onInputModeChange('gamepad')}><Gamepad2 size={16} />{'\u624b\u67c4'}</button></div>
+        <span>{text('输入模式', 'Input Mode') }</span>
+        <div className="segmented"><button className={inputMode === 'keyboard' ? 'active' : '' } type="button" onClick={() => { setCapture(null); onInputModeChange('keyboard');  } }><Keyboard size={16 } />{text('键鼠', 'Keyboard & Mouse') }</button><button className={inputMode === 'gamepad' ? 'active' : '' } type="button" onClick={() => { setCapture(null); onInputModeChange('gamepad');  } }><Gamepad2 size={16 } />{text('手柄', 'Gamepad') }</button></div>
       </div>
       <div className="settings-table">
-        <div className="settings-head"><span>{'\u62db\u5f0f'}</span><span>{'\u952e\u9f20\u8f93\u5165'}</span><span>{'\u6355\u83b7'}</span><span>{'\u624b\u67c4\u8f93\u5165'}</span><span>{'\u6355\u83b7'}</span><span>{'\u72ec\u7acb'}</span><span>{'\u63a8\u8fdb'}</span></div>
-        {moves.map((move) => {
-          const binding = bindings.find((item) => item.moveId === move.id);
-          const gamepadBinding = gamepadBindings.find((item) => item.moveId === move.id);
-          const isCapturing = capturingMoveId === move.id;
-          const isGamepadCapturing = capturingGamepadMoveId === move.id;
+        <div className="settings-head"><span>{text('招式', 'Action') }</span><span>{text('按键 1', 'Binding 1') }</span><span>{text('按键 2', 'Binding 2') }</span><span>{text('独立', 'Free') }</span><span>{text('推进', 'Advance') }</span></div>
+        {moves.filter((move) => !move.displayOnly).map((move) => {
+          const binding = activeBindings.find((item) => item.moveId === move.id);
+          const rowCapturing = capture?.mode === inputMode && capture.moveId === move.id;
+          const englishMoveLabel = ENGLISH_MOVE_LABELS[move.id] ?? move.label;
+          const moveLabel = localizedDefaultMoveLabel(move.id, move.label, language, false);
           return (
-            <div className={`settings-row ${isCapturing || isGamepadCapturing ? 'capturing' : ''}`} key={move.id}>
-              <strong style={{ color: move.color }}>{move.label}</strong>
-              <input value={isCapturing ? '\u8bf7\u6309\u4e0b\u8981\u8bbe\u7f6e\u7684\u952e\u4f4d\u6216\u9f20\u6807\u952e\uff0c\u9000\u683c\u53d6\u6d88' : binding?.inputs.map((input) => input.code).join(', ') ?? ''} readOnly={isCapturing} onChange={(event) => onBindingChange(move.id, event.target.value)} />
-              <button className={`binding-capture-button ${isCapturing ? 'active' : ''}`} type="button" onClick={() => setCapturingMoveId(isCapturing ? null : move.id)}><Settings size={16} /><span>{isCapturing ? '\u7b49\u5f85' : '\u6355\u83b7'}</span></button>
-              <input value={isGamepadCapturing ? '\u6309\u4e0b\u624b\u67c4\u6309\u94ae\uff0cLB+\u5176\u4ed6\u952e\u53ef\u6355\u83b7\u7ec4\u5408' : gamepadBinding?.inputs.map((input) => input.code).join(', ') ?? ''} readOnly={isGamepadCapturing} onChange={(event) => onGamepadBindingChange(move.id, event.target.value)} />
-              <button className={`binding-capture-button ${isGamepadCapturing ? 'active' : ''}`} type="button" onClick={() => setCapturingGamepadMoveId(isGamepadCapturing ? null : move.id)}><Gamepad2 size={16} /><span>{isGamepadCapturing ? '\u7b49\u5f85' : '\u6355\u83b7'}</span></button>
-              <label><input type="checkbox" checked={move.independent} onChange={(event) => onMoveChange(move.id, { independent: event.target.checked })} />{'\u72ec\u7acb'}</label>
-              <label><input type="checkbox" checked={move.advancesStep} onChange={(event) => onMoveChange(move.id, { advancesStep: event.target.checked })} />{'\u63a8\u8fdb'}</label>
+            <div className={`settings-row ${rowCapturing ? 'capturing' : '' }` } key={move.id }>
+              <strong style={{ color: move.color  } }>{moveLabel}</strong>
+              {([0, 1] as const).map((slot) => {
+                const isCapturing = capture?.mode === inputMode && capture.moveId === move.id && capture.slot === slot;
+                const key = draftKey(inputMode, move.id, slot);
+                const inputLabel = text(`${move.label } 按键 ${slot + 1 }`, `${moveLabel } Binding ${slot + 1 }`);
+                const captureLabel = isCapturing
+                  ? text(`取消捕获${move.label }按键 ${slot + 1 }`, `Cancel ${moveLabel } Binding ${slot + 1 } Capture`)
+                  : text(`捕获${move.label }按键 ${slot + 1 }`, `Capture ${moveLabel } Binding ${slot + 1 }`);
+                const capturePrompt = inputMode === 'gamepad'
+                  ? text('按下手柄按钮', 'Press a gamepad button')
+                  : text('按下键盘或鼠标键', 'Press a key or mouse button');
+                return <div className="settings-binding-slot" key={slot }><input aria-label={inputLabel } value={isCapturing ? capturePrompt : bindingDrafts[key] ?? binding?.inputs[slot]?.code ?? '' } readOnly={isCapturing } placeholder={text('未绑定', 'Unbound') } onChange={(event) => setBindingDrafts((current) => ({ ...current, [key]: event.target.value  })) } onBlur={() => { if (!isCapturing) setBindingSlot(inputMode, move.id, slot, bindingDrafts[key] ?? '');  } } onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { setBindingDrafts((current) => ({ ...current, [key]: binding?.inputs[slot]?.code ?? ''  })); event.currentTarget.blur();  }  } } /><button className={`binding-capture-button icon-button ${isCapturing ? 'active' : '' }` } type="button" title={captureLabel } aria-label={captureLabel } onClick={() => setCapture(isCapturing ? null : { mode: inputMode, moveId: move.id, slot  }) }>{inputMode === 'gamepad' ? <Gamepad2 size={16 } /> : <Target size={16 } />}</button></div>;
+               }) }
+              <label><input type="checkbox" checked={move.independent } disabled={move.id === 'basic_attack' } onChange={(event) => onMoveChange(move.id, { independent: event.target.checked  }) } />{text('独立', 'Free') }</label>
+              <label><input type="checkbox" checked={move.advancesStep } onChange={(event) => onMoveChange(move.id, { advancesStep: event.target.checked  }) } />{text('推进', 'Advance') }</label>
             </div>
           );
-        })}
+         }) }
       </div>
     </section>
   );
-}
+ }
 
 
-function PracticeErrorSummary({ chart, practice }: { chart: ComboChart; practice: PracticeSnapshot }) {
+function PracticeErrorSummary({ chart, practice  }: { chart: ComboChart; practice: PracticeSnapshot  }) {
+  const { text  } = useI18n();
   const errorIds = new Set(practice.errorStepIds);
   if (!chart.steps.length || !practice.errorStepIds.length) return null;
   return (
     <div className="practice-error-summary">
-      <strong>错位记录</strong>
-      <div>{chart.steps.map((step, index) => <span key={step.id} className={errorIds.has(step.id) ? 'error' : ''} style={{ '--move-color': step.color } as CSSProperties}><b>{index + 1}</b>{step.label}<em>{(step.startMin / 1000).toFixed(2)}s</em></span>)}</div>
+      <strong>{text('错位记录', 'Timing Errors') }</strong>
+      <div>{chart.steps.map((step, index) => <span key={step.id } className={errorIds.has(step.id) ? 'error' : ''  } style={{ '--move-color': step.color  } as CSSProperties }><b>{index + 1 }</b>{step.label }<em>{(step.startMin / 1000).toFixed(2) }s</em></span>) }</div>
     </div>
   );
-}
-function LibraryPanel({ chart, library, onSelect, onEdit, onDelete, onExportCurrent, onExportLibrary, onImport }: { chart: ComboChart | null; library: ComboChart[]; onSelect: (id: string) => void; onEdit: (id: string) => void; onDelete: (id: string) => void; onExportCurrent: () => void; onExportLibrary: () => void; onImport: () => void }) {
+ }
+function LibraryPanel({ chart, library, style, avatarPresets, onSelect, onEdit, onDelete, onShare, onImport  }: { chart: ComboChart | null; library: ComboChart[]; style: ComboImageStyle; avatarPresets: DefaultAvatarEntry[]; onSelect: (id: string) => void; onEdit: (id: string) => void; onDelete: (id: string) => void; onShare: () => void; onImport: () => void  }) {
+  const { language, text  } = useI18n();
+  const [pendingDelete, setPendingDelete] = useState<ComboChart | null>(null);
+  const presetAvatarByName = useMemo(() => new Map(avatarPresets.map((preset) => [preset.name.trim(), preset.src])), [avatarPresets]);
+
+  function chartRoleAvatars(item: ComboChart) {
+    const slots = Array.from(new Set(item.steps.map((step) => (step.characterSlot ?? 1) as CharacterSlot))).sort((left, right) => left - right);
+    return slots.flatMap((slot) => {
+      const role = style.roleStyles[slot];
+      const src = presetAvatarByName.get(normalizeCharacterName(role.name));
+      return src ? [{ slot, name: role.name, src  }] : [];
+    });
+  }
+
   return (
     <div className="panel library-panel">
-      <div className="panel-title"><div><h2>历史连段谱</h2><p>保存、导入和编辑后的连段谱会出现在这里。</p></div></div>
-      <div className="library-actions"><button className="danger" onClick={() => chart && onEdit(chart.id)} disabled={!chart}>编辑</button><button onClick={onExportCurrent} disabled={!chart}><Download size={16} />导出当前</button><button onClick={onExportLibrary} disabled={!library.length}><Download size={16} />导出全部</button><button onClick={onImport}><Upload size={16} />导入 JSON</button><button className="danger" onClick={() => chart && onDelete(chart.id)} disabled={!chart || !library.some((item) => item.id === chart.id)}><Trash2 size={16} />删除</button></div>
-      <div className="library-list">{library.length ? library.map((item) => <button key={item.id} className={`library-item ${chart?.id === item.id ? 'active' : ''}`} onClick={() => onSelect(item.id)}><strong>{item.title}</strong><span>{item.steps.length} 指令 · {new Date(item.updatedAt).toLocaleString()}</span></button>) : <EmptyState text="还没有历史连段谱。" />}</div>
+      <div className="panel-title library-panel-title"><div><h2>{text('连段列表', 'Combo Library') }</h2><p>{text('保存、导入和编辑后的连段谱会出现在这里。', 'Saved, imported, and edited combo charts appear here.') }</p></div><div className="library-title-actions"><button onClick={onImport}><Upload size={16 } />{text('导入', 'Import') }</button><button className="library-share-button" onClick={onShare } disabled={!chart }><Share2 size={16 } />{text('分享', 'Share') }</button></div></div>
+      <div className="library-list">{library.length ? library.map((item) => {
+        const roleAvatars = chartRoleAvatars(item);
+        return <div key={item.id } className={`library-item ${chart?.id === item.id ? 'active' : '' }`}><button className="library-item-main" onClick={() => onSelect(item.id) }><span className="library-item-title-row"><span className="library-role-avatars">{roleAvatars.map((role) => <span key={role.slot } className="library-role-avatar" title={role.name } style={avatarBackgroundStyle(role.src) } />)}</span><strong>{item.title }</strong></span><span>{item.steps.length } {text('指令', 'actions') } · {new Date(item.updatedAt).toLocaleString(language) }</span></button><div className="library-item-actions"><button className="icon-button" title={text('编辑连段', 'Edit combo') } aria-label={text(`编辑 ${item.title }`, `Edit ${item.title }`) } onClick={() => onEdit(item.id) }><Pencil size={16 } /></button><button className="icon-button danger" title={text('删除连段', 'Delete combo') } aria-label={text(`删除 ${item.title }`, `Delete ${item.title }`) } onClick={() => setPendingDelete(item) }><Trash2 size={16 } /></button></div></div>;
+       }) : <EmptyState text={text('还没有连段谱。', 'No combo charts yet.') } /> }</div>
+      {pendingDelete && <div className="library-confirm-backdrop" role="presentation" onMouseDown={() => setPendingDelete(null) }><div className="library-confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="library-delete-title" onMouseDown={(event) => event.stopPropagation() }><Trash2 size={24 } /><h3 id="library-delete-title">{text('确认删除连段？', 'Delete this combo?') }</h3><p>{text(`“${pendingDelete.title }”删除后无法恢复。`, `“${pendingDelete.title }” cannot be recovered after deletion.`) }</p><div><button onClick={() => setPendingDelete(null) }>{text('取消', 'Cancel') }</button><button className="danger" onClick={() => { onDelete(pendingDelete.id); setPendingDelete(null);  } }>{text('确认删除', 'Delete') }</button></div></div></div> }
     </div>
   );
-}
+ }
 
 
-function QuickInputDialog({ chart, style, initialValues, startStepId, onApply, onClose }: { chart: ComboChart; style: ComboImageStyle; initialValues: string[]; startStepId: string | null; onApply: (values: string[]) => void; onClose: () => void }) {
+function CommunityShareDialog({ draft, onChange, onExport, onClose  }: { draft: CommunityShareDraft; onChange: (draft: CommunityShareDraft) => void; onExport: () => void; onClose: () => void  }) {
+  const { text  } = useI18n();
+  const tagLabel = (tag: CommunityTag) => ({
+    '\u8f6e\u6905': text('轮椅', 'Easy Loop'),
+    '\u57fa\u7840': text('基础', 'Basic'),
+    '\u6807\u51c6': text('标准', 'Standard'),
+    '\u8fdb\u9636': text('进阶', 'Advanced'),
+    '\u5192\u70df': text('冒烟', 'Extreme'),
+    '\u5168\u5c40': text('全局', 'Global')
+  })[tag];
+  function patch(value: Partial<CommunityShareDraft>) {
+    onChange({ ...draft, ...value  });
+   }
+
+  function toggleTag(tag: CommunityTag) {
+    if (tag === '\u8f6e\u6905' && !draft.wheelchairEligible) return;
+    patch({ tags: draft.tags.includes(tag) ? draft.tags.filter((item) => item !== tag) : [...draft.tags, tag]  });
+   }
+
+  return (
+    <div className="community-share-backdrop" role="presentation" onMouseDown={onClose }>
+      <div className="community-share-dialog" role="dialog" aria-modal="true" aria-labelledby="community-share-title" onMouseDown={(event) => event.stopPropagation() }>
+        <div className="community-share-head"><div><h2 id="community-share-title">{text('分享连段', 'Share Combo') }</h2><p>{text('编辑社区检索信息并导出 JSON。', 'Add community metadata and export a JSON file.') }</p></div><button className="icon-button" type="button" title={text('关闭', 'Close') } onClick={onClose }><X size={18 } /></button></div>
+        <div className="community-share-form">
+          <label className="community-share-wide"><span>{text('名称', 'Name') }</span><input value={draft.name } maxLength={80 } onChange={(event) => patch({ name: event.target.value  }) } /></label>
+          <div className="community-share-wide"><span className="community-share-label">{text('标签', 'Tags') }</span><div className="community-tag-list">{COMMUNITY_TAGS.map((tag) => {
+            const disabled = tag === '\u8f6e\u6905' && !draft.wheelchairEligible;
+            return <button key={tag } type="button" className={draft.tags.includes(tag) ? 'active' : '' } disabled={disabled } title={disabled ? text('需要存在循环轴，且所有循环轴内的切人操作总数不超过 3', 'Requires a loop axis with no more than three character switches') : tagLabel(tag) } onClick={() => toggleTag(tag) }>{tagLabel(tag) }</button>;
+           }) }</div>{!draft.wheelchairEligible && <small>{text('“轮椅”需要存在循环轴，且循环轴内切人总数不超过 3。', '“Easy Loop” requires a loop axis with no more than three character switches.') }</small>}</div>
+          <label className="community-share-wide"><span>{text('简介', 'Description') }</span><textarea value={draft.description } maxLength={800 } rows={4 } onChange={(event) => patch({ description: event.target.value  }) } /></label>
+          <label className="community-share-wide"><span>{text('链接', 'Link') }</span><input type="url" value={draft.link } maxLength={500 } placeholder="https://" onChange={(event) => patch({ link: event.target.value  }) } /></label>
+        </div>
+        <div className="community-share-readonly">
+          <div><span>{text('角色', 'Characters') }</span><strong>{draft.characters.join(' / ') || text('未设置', 'Not set') }</strong></div>
+          <div><span>{text('轮数', 'Rounds') }</span><strong>{draft.rounds}</strong></div>
+          <div className="community-share-id"><span>ID</span><strong>{draft.id}</strong></div>
+        </div>
+        <div className="community-share-actions"><button type="button" onClick={onClose }>{text('取消', 'Cancel') }</button><button className="library-share-button" type="button" disabled={!draft.name.trim() } onClick={onExport }><Share2 size={16 } />{text('导出分享 JSON', 'Export Share JSON') }</button></div>
+      </div>
+    </div>
+  );
+ }
+
+function QuickInputDialog({ chart, style, initialValues, startStepId, onApply, onClose  }: { chart: ComboChart; style: ComboImageStyle; initialValues: string[]; startStepId: string | null; onApply: (values: string[]) => void; onClose: () => void  }) {
+  const { text  } = useI18n();
   const items = chartToComboImageItems(chart, style);
   const startIndex = Math.max(0, items.findIndex((item) => item.step.id === startStepId));
   const initial = items.map((item, index) => initialValues[index] ?? style.contentLabels[item.step.id] ?? item.displayText);
   const [values, setValues] = useState(initial);
   const [bulkText, setBulkText] = useState(initialValues.length ? initialValues.join(' ') : '');
-  const [position, setPosition] = useState({ x: 360, y: 160 });
-  const dragRef = useRef<{ startX: number; startY: number; x: number; y: number } | null>(null);
+  const [position, setPosition] = useState({ x: 360, y: 160  });
+  const dragRef = useRef<{ startX: number; startY: number; x: number; y: number  } | null>(null);
   function focusInput(index: number) {
     const inputs = Array.from(document.querySelectorAll<HTMLInputElement>('.quick-input-grid input'));
     inputs[Math.max(0, Math.min(index, inputs.length - 1))]?.focus();
-  }
+   }
   function fillFromBulk() {
     const parsed = parseQuickInputText(bulkText).map((part) => maybeConvertTextToIconLabel(part, style.convertIcons));
     setValues((current) => current.map((value, index) => index >= startIndex && parsed[index - startIndex] !== undefined ? parsed[index - startIndex] : value));
-  }
+   }
   function applyAndClose() {
     onApply(values.map((value) => maybeConvertTextToIconLabel(value, style.convertIcons)));
     onClose();
-  }
+   }
   function beginDrag(event: ReactPointerEvent<HTMLElement>) {
     event.preventDefault();
-    dragRef.current = { startX: event.clientX, startY: event.clientY, x: position.x, y: position.y };
+    dragRef.current = { startX: event.clientX, startY: event.clientY, x: position.x, y: position.y  };
     const onMove = (moveEvent: PointerEvent) => {
       const drag = dragRef.current;
       if (!drag) return;
-      setPosition({ x: Math.max(8, drag.x + moveEvent.clientX - drag.startX), y: Math.max(8, drag.y + moveEvent.clientY - drag.startY) });
-    };
+      setPosition({ x: Math.max(8, drag.x + moveEvent.clientX - drag.startX), y: Math.max(8, drag.y + moveEvent.clientY - drag.startY)  });
+     };
     const onUp = () => {
       dragRef.current = null;
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
-    };
+     };
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
-  }
+   }
   return (
     <div className="quick-input-layer">
-      <div className="quick-input-panel floating" style={{ left: position.x, top: position.y }}>
-        <div className="quick-input-head" onPointerDown={beginDrag}><strong>快捷输入 · 从第 {startIndex + 1} 块开始</strong><div><button onPointerDown={(event) => event.stopPropagation()} onClick={fillFromBulk}>填入</button><button onPointerDown={(event) => event.stopPropagation()} onClick={onClose}>取消</button><button onPointerDown={(event) => event.stopPropagation()} className="primary" onClick={applyAndClose}>应用</button><button onPointerDown={(event) => event.stopPropagation()} onClick={onClose}>×</button></div></div>
-        <textarea value={bulkText} onChange={(event) => setBulkText(event.target.value)} placeholder={style.convertIcons ? '可粘贴大量内容，空格或换行分隔。开启图标转换时，e/E/q/Q/r/R/a/A/j/J 等会转成对应图标。' : '可粘贴大量内容，空格或换行分隔。'} />
+      <div className="quick-input-panel floating" style={{ left: position.x, top: position.y  } }>
+        <div className="quick-input-head" onPointerDown={beginDrag }><strong>{text(`快捷输入 · 从第 ${startIndex + 1 } 块开始`, `Quick Input · Start at block ${startIndex + 1 }`) }</strong><div><button onPointerDown={(event) => event.stopPropagation() } onClick={fillFromBulk }>{text('填入', 'Fill') }</button><button onPointerDown={(event) => event.stopPropagation() } onClick={onClose }>{text('取消', 'Cancel') }</button><button onPointerDown={(event) => event.stopPropagation() } className="primary" onClick={applyAndClose }>{text('应用', 'Apply') }</button><button onPointerDown={(event) => event.stopPropagation() } onClick={onClose }>×</button></div></div>
+        <textarea value={bulkText } onChange={(event) => setBulkText(event.target.value) } placeholder={style.convertIcons ? text('可粘贴大量内容，空格或换行分隔。开启图标转换时，e/E/q/Q/r/R/a/A/j/J 等会转成对应图标。', 'Paste multiple entries separated by spaces or line breaks. With icon conversion enabled, e/E/q/Q/r/R/a/A/j/J are converted to icons.') : text('可粘贴大量内容，空格或换行分隔。', 'Paste multiple entries separated by spaces or line breaks.') } />
         <div className="quick-input-grid">
-          {items.map((item, index) => <label key={item.step.id} className={item.isSwitch ? 'is-switch' : ''}><span>{index + 1}</span><input value={values[index] ?? ''} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === 'ArrowRight') { event.preventDefault(); focusInput(index + 1); } if (event.key === 'ArrowLeft') { event.preventDefault(); focusInput(index - 1); } }} onChange={(event) => setValues((current) => current.map((value, i) => i === index ? event.target.value : value))} /></label>)}
+          {items.map((item, index) => <label key={item.step.id } className={item.isSwitch ? 'is-switch' : '' }><span>{index + 1 }</span><input value={values[index] ?? '' } onKeyDown={(event) => { if (event.key === 'Enter' || event.key === 'ArrowRight') { event.preventDefault(); focusInput(index + 1);  } if (event.key === 'ArrowLeft') { event.preventDefault(); focusInput(index - 1);  }  } } onChange={(event) => setValues((current) => current.map((value, i) => i === index ? event.target.value : value)) } /></label>) }
         </div>
       </div>
     </div>
   );
-}
-function NumberDraftInput({ label, value, onCommit, min = 0 }: { label: string; value: number; onCommit: (value: number) => void; min?: number }) {
+ }
+function NumberDraftInput({ label, value, onCommit, min = 0  }: { label: string; value: number; onCommit: (value: number) => void; min?: number  }) {
   const [draft, setDraft] = useState(String(value));
   useEffect(() => setDraft(String(value)), [value]);
   function commit() {
     const next = Number(draft);
     if (Number.isFinite(next)) onCommit(Math.max(min, Math.round(next)));
     else setDraft(String(value));
-  }
-  return <label>{label}<input inputMode="numeric" value={draft} onChange={(event) => setDraft(event.target.value)} onBlur={commit} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); }} /></label>;
-}
+   }
+  return <label>{label }<input inputMode="numeric" value={draft } onChange={(event) => setDraft(event.target.value) } onBlur={commit } onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur();  } } /></label>;
+ }
 
-function EmptyState({ text }: { text: string }) {
-  return <div className="empty-state">{text}</div>;
-}
+function EmptyState({ text  }: { text: string  }) {
+  return <div className="empty-state">{text }</div>;
+ }
 
-function Metric({ label, value }: { label: string; value: string }) {
-  return <div className="metric"><span>{label}</span><strong>{value}</strong></div>;
-}
+function Metric({ label, value  }: { label: string; value: string  }) {
+  return <div className="metric"><span>{label }</span><strong>{value }</strong></div>;
+ }
 
 function mergeDebugRunIntoChart(chart: ComboChart, snapshot: RecordingSnapshot) {
   const usedUnitIds = new Set<string>();
@@ -2240,14 +4219,14 @@ function mergeDebugRunIntoChart(chart: ComboChart, snapshot: RecordingSnapshot) 
   let rejected = 0;
   const orderedSteps = [...chart.steps].sort((a, b) => a.startMin - b.startMin || a.id.localeCompare(b.id));
   const updatedById = new Map<string, ComboStep>();
-  const recordingId = `debug_${Date.now()}`;
+  const recordingId = `debug_${Date.now() }`;
   orderedSteps.forEach((step, index) => {
     const match = findDebugMatch(step, snapshot.units, usedUnitIds, orderedSteps[index - 1], orderedSteps[index + 1]);
     if (!match) {
       rejected += 1;
       updatedById.set(step.id, step);
       return;
-    }
+     }
     usedUnitIds.add(match.id);
     matched += 1;
     const nextPreheat = Math.max(step.preheatMs ?? 0, Math.max(0, step.startMin - match.startTime + 40));
@@ -2257,11 +4236,11 @@ function mergeDebugRunIntoChart(chart: ComboChart, snapshot: RecordingSnapshot) 
     const nextRecovery = Math.max(step.recoveryMs ?? 0, Math.max(0, observedEnd - expectedEnd + 40));
     if (nextPreheat > (step.preheatMs ?? 0)) preheated += 1;
     if (nextRecovery > (step.recoveryMs ?? 0) || nextDurationMax > step.durationMax) recovered += 1;
-    updatedById.set(step.id, normalizeStep({ ...step, durationMax: nextDurationMax + nextRecovery, preheatMs: nextPreheat, recoveryMs: nextRecovery, samples: [...(step.samples ?? []), { recordingId, startTime: match.startTime, duration: match.duration }] }));
-  });
+    updatedById.set(step.id, normalizeStep({ ...step, durationMax: nextDurationMax + nextRecovery, preheatMs: nextPreheat, recoveryMs: nextRecovery, samples: [...(step.samples ?? []), { recordingId, startTime: match.startTime, duration: match.duration  }]  }));
+   });
   const updated = chart.steps.map((step) => updatedById.get(step.id) ?? step);
-  return { chart: normalizeChart({ ...chart, steps: updated }), matched, total: chart.steps.length, preheated, recovered, rejected };
-}
+  return { chart: normalizeChart({ ...chart, steps: updated  }), matched, total: chart.steps.length, preheated, recovered, rejected  };
+ }
 
 function findDebugMatch(step: ComboStep, units: RecordedUnit[], usedUnitIds: Set<string>, previousStep?: ComboStep, nextStep?: ComboStep): RecordedUnit | null {
   const expected = (step.startMin + step.startMax) / 2;
@@ -2276,82 +4255,89 @@ function findDebugMatch(step: ComboStep, units: RecordedUnit[], usedUnitIds: Set
     if ((unit.characterSlot ?? 1) !== (step.characterSlot ?? 1) || unit.lane !== step.lane) return false;
     if (unit.startTime < windowStart || unit.startTime > windowEnd) return false;
     return unit.startTime + unit.duration <= step.startMin + step.durationMax + (step.recoveryMs ?? 0) + maxDrift;
-  });
+   });
   if (!candidates.length) return null;
   return candidates.reduce((best, unit) => Math.abs(unit.startTime - expected) < Math.abs(best.startTime - expected) ? unit : best);
-}
+ }
 
 function debugMatchMaxDrift(step: ComboStep): number {
   const currentWindow = step.durationMax + (step.preheatMs ?? 0) + (step.recoveryMs ?? 0);
   return clamp(Math.max(900, currentWindow * 2 + 500), 900, 3500);
-}
+ }
 
-type ImportedComboPackage = { charts: ComboChart[]; contentLabels: Record<string, string>; moves: MoveDefinition[]; bindings: KeyBinding[] };
+type ImportedComboPackage = { charts: ComboChart[]; contentLabels: Record<string, string>; moves: MoveDefinition[]; bindings: KeyBinding[]  };
 
 function createChartExportPackage(chart: ComboChart, contentLabels: Record<string, string>, moves: MoveDefinition[], bindings: KeyBinding[]) {
   const usedMoveIds = new Set(chart.steps.map((step) => step.moveId));
   return {
     type: 'wwcombo-chart',
-    version: 2,
+    version: 3,
     chart,
     contentLabels: filterContentLabelsForChart(chart, contentLabels),
     moves: moves.filter((move) => usedMoveIds.has(move.id) || move.id === chart.startTriggerMoveId || move.id === (chart.stopTriggerMoveId ?? 'stop_recording')),
     bindings: bindings.filter((binding) => usedMoveIds.has(binding.moveId) || binding.moveId === chart.startTriggerMoveId || binding.moveId === (chart.stopTriggerMoveId ?? 'stop_recording'))
-  };
-}
+   };
+ }
 
 function filterContentLabelsForCharts(charts: ComboChart[], contentLabels: Record<string, string>): Record<string, string> {
-  return charts.reduce((next, chart) => ({ ...next, ...filterContentLabelsForChart(chart, contentLabels) }), {} as Record<string, string>);
-}
+  return charts.reduce((next, chart) => ({ ...next, ...filterContentLabelsForChart(chart, contentLabels)  }), { } as Record<string, string>);
+ }
 
 function filterContentLabelsForChart(chart: ComboChart, contentLabels: Record<string, string>): Record<string, string> {
   const stepIds = new Set(chart.steps.map((step) => step.id));
   return Object.fromEntries(Object.entries(contentLabels).filter(([stepId, label]) => stepIds.has(stepId) && typeof label === 'string' && label.trim()));
-}
+ }
 
 function parseImportedComboPackage(value: unknown): ImportedComboPackage {
-  const record = value as { chart?: ComboChart; charts?: ComboChart[]; contentLabels?: Record<string, string>; moves?: MoveDefinition[]; bindings?: KeyBinding[] };
+  const record = value as { chart?: ComboChart; charts?: ComboChart[]; contentLabels?: Record<string, string>; moves?: MoveDefinition[]; bindings?: KeyBinding[]  };
   const candidates = Array.isArray(value) ? value : Array.isArray(record.charts) ? record.charts : record.chart ? [record.chart] : [value as ComboChart];
-  const charts = candidates.filter(isReasonableChart).map((item) => normalizeChart({ ...item, id: item.id || crypto.randomUUID(), updatedAt: Date.now() }));
+  const charts = candidates.filter(isReasonableChart).map((item) => normalizeChart({ ...item, id: item.id || crypto.randomUUID(), updatedAt: Date.now()  }));
   const stepIds = new Set(charts.flatMap((chart) => chart.steps.map((step) => step.id)));
-  const contentLabels = Object.fromEntries(Object.entries(record.contentLabels ?? {}).filter(([stepId, label]) => stepIds.has(stepId) && typeof label === 'string' && label.trim()));
+  const contentLabels = Object.fromEntries(Object.entries(record.contentLabels ?? { }).filter(([stepId, label]) => stepIds.has(stepId) && typeof label === 'string' && label.trim()));
   return {
     charts,
     contentLabels,
     moves: Array.isArray(record.moves) ? record.moves.filter(isReasonableMove) : [],
     bindings: Array.isArray(record.bindings) ? record.bindings.filter(isReasonableBinding) : []
-  };
-}
+   };
+ }
 
 function isReasonableMove(move: MoveDefinition): move is MoveDefinition {
   return Boolean(move && typeof move.id === 'string' && typeof move.label === 'string' && typeof move.color === 'string');
-}
+ }
 
 function isReasonableBinding(binding: KeyBinding): binding is KeyBinding {
   return Boolean(binding && typeof binding.moveId === 'string' && Array.isArray(binding.inputs));
-}
+ }
 
 function mergeMoves(current: MoveDefinition[], imported: MoveDefinition[]): MoveDefinition[] {
   const map = new Map(current.map((move) => [move.id, move]));
-  imported.forEach((move) => map.set(move.id, { ...map.get(move.id), ...move }));
+  imported.forEach((move) => map.set(move.id, { ...map.get(move.id), ...move  }));
   return [...map.values()];
-}
+ }
 
 function mergeBindings(current: KeyBinding[], imported: KeyBinding[]): KeyBinding[] {
   const map = new Map(current.map((binding) => [binding.moveId, binding]));
   imported.forEach((binding) => map.set(binding.moveId, binding));
   return [...map.values()];
-}
+ }
 
-function downloadJson(value: unknown, filename: string) {
-  const blob = new Blob([JSON.stringify(value, null, 2)], { type: 'application/json;charset=utf-8' });
+function downloadBytes(bytes: Uint8Array, filename: string, type: string) {
+  const blobBytes = Uint8Array.from(bytes);
+  const blob = new Blob([blobBytes.buffer], { type  });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
   link.download = filename;
   link.click();
   URL.revokeObjectURL(url);
-}
+ }
+
+
+
+function stringifyPortableJson(value: unknown): string {
+  return JSON.stringify(value, null, 2).replace(/[\u007F-\uFFFF]/g, (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`);
+ }
 
 function readFileAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -2359,25 +4345,62 @@ function readFileAsDataUrl(file: File): Promise<string> {
     reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('图片读取失败'));
     reader.onerror = () => reject(reader.error ?? new Error('图片读取失败'));
     reader.readAsDataURL(file);
-  });
-}
+   });
+ }
 
-function readImageSize(src: string): Promise<{ width: number; height: number }> {
+function readImageSize(src: string): Promise<{ width: number; height: number  }> {
   return new Promise((resolve, reject) => {
     const image = new Image();
-    image.onload = () => resolve({ width: image.naturalWidth || 1, height: image.naturalHeight || 1 });
+    image.onload = () => resolve({ width: image.naturalWidth || 1, height: image.naturalHeight || 1  });
     image.onerror = () => reject(new Error('图片读取失败'));
     image.src = src;
-  });
-}
+   });
+ }
+
+function optimizePresetImage(src: string): Promise<{ src: string; width: number; height: number  }> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => {
+      const scale = Math.min(1, 1600 / Math.max(1, image.naturalWidth), 800 / Math.max(1, image.naturalHeight));
+      let width = Math.max(1, Math.round(image.naturalWidth * scale));
+      let height = Math.max(1, Math.round(image.naturalHeight * scale));
+      const canvas = document.createElement('canvas');
+      const context = canvas.getContext('2d');
+      if (!context) {
+        reject(new Error('\u56fe\u7247\u5904\u7406\u5931\u8d25'));
+        return;
+       }
+      for (;;) {
+        canvas.width = width;
+        canvas.height = height;
+        context.clearRect(0, 0, width, height);
+        context.drawImage(image, 0, 0, width, height);
+        const webp = canvas.toDataURL('image/webp', 0.82);
+        if (webp.length <= 1_350_000) {
+          resolve({ src: webp, width, height  });
+          return;
+         }
+        const jpeg = canvas.toDataURL('image/jpeg', 0.76);
+        if (jpeg.length <= 1_350_000) {
+          resolve({ src: jpeg, width, height  });
+          return;
+         }
+        width = Math.max(160, Math.round(width * 0.82));
+        height = Math.max(80, Math.round(height * 0.82));
+       }
+     };
+    image.onerror = () => reject(new Error('\u56fe\u7247\u8bfb\u53d6\u5931\u8d25'));
+    image.src = src;
+   });
+ }
 
 function safeFileName(value: string): string {
   return value.trim().replace(/[\\/:*?"<>|]+/g, '_').slice(0, 48) || 'wwcombo';
-}
+ }
 
-function pointerTimeInTrack(event: { clientX: number; currentTarget: HTMLElement }, total: number): number {
+function pointerTimeInTrack(event: { clientX: number; currentTarget: HTMLElement  }, total: number): number {
   const track = event.currentTarget.closest('.timeline-editor-track') as HTMLElement | null;
   if (!track) return 0;
   const rect = track.getBoundingClientRect();
   return clamp((event.clientX - rect.left) / Math.max(1, rect.width), 0, 1) * total;
-}
+ }

@@ -1,0 +1,308 @@
+{
+  "layers": [
+    {
+      "id": "c6ad0918-b822-4c70-ae83-1b05834ad49e",
+      "name": "音频律动层",
+      "kind": "audio",
+      "transform": {
+        "x": 0,
+        "y": 0,
+        "width": 110,
+        "height": 110,
+        "opacity": 1,
+        "rotate": 0
+      },
+      "audioAmplitude": 3,
+      "feedbackSlot": 1,
+      "feedbackMode": "show",
+      "feedbackDurationMs": 420,
+      "src": "/axis-rhythm-preset/c6ad0918-b822-4c70-ae83-1b05834ad49e.png"
+    },
+    {
+      "id": "f71951d9-eee2-4cfe-8d61-993a648b19e2",
+      "name": "音频律动层",
+      "kind": "audio",
+      "transform": {
+        "x": 0,
+        "y": 0,
+        "width": 100,
+        "height": 100,
+        "opacity": 1,
+        "rotate": 0
+      },
+      "audioAmplitude": 2,
+      "feedbackSlot": 1,
+      "feedbackMode": "show",
+      "feedbackDurationMs": 420,
+      "src": "/axis-rhythm-preset/f71951d9-eee2-4cfe-8d61-993a648b19e2.png"
+    },
+    {
+      "id": "8406a255-dc0c-4005-96f1-b0104998b25b",
+      "name": "图片图层",
+      "kind": "image",
+      "transform": {
+        "x": 0,
+        "y": 0,
+        "width": 100,
+        "height": 100,
+        "opacity": 1,
+        "rotate": 0
+      },
+      "audioAmplitude": 12,
+      "feedbackSlot": 1,
+      "feedbackMode": "show",
+      "feedbackDurationMs": 420,
+      "src": "/axis-rhythm-preset/8406a255-dc0c-4005-96f1-b0104998b25b.png"
+    },
+    {
+      "id": "8fadb050-d92f-47a5-8b79-cdb019e0ab28",
+      "name": "角色反馈层",
+      "kind": "feedback",
+      "transform": {
+        "x": 0,
+        "y": 0,
+        "width": 100,
+        "height": 100,
+        "opacity": 1,
+        "rotate": 0
+      },
+      "audioAmplitude": 12,
+      "feedbackSlot": 3,
+      "feedbackMode": "show",
+      "feedbackDurationMs": 420,
+      "src": "/axis-rhythm-preset/8fadb050-d92f-47a5-8b79-cdb019e0ab28.png"
+    },
+    {
+      "id": "785e9728-c3c1-483e-8267-35cf387a27b6",
+      "name": "角色反馈层",
+      "kind": "feedback",
+      "transform": {
+        "x": 0,
+        "y": 0,
+        "width": 100,
+        "height": 100,
+        "opacity": 1,
+        "rotate": 0
+      },
+      "audioAmplitude": 12,
+      "feedbackSlot": 2,
+      "feedbackMode": "show",
+      "feedbackDurationMs": 420,
+      "src": "/axis-rhythm-preset/785e9728-c3c1-483e-8267-35cf387a27b6.png"
+    },
+    {
+      "id": "66203cfb-9e2c-40f4-858c-26dff8ebecfd",
+      "name": "角色反馈层",
+      "kind": "feedback",
+      "transform": {
+        "x": 0,
+        "y": 0,
+        "width": 100,
+        "height": 100,
+        "opacity": 1,
+        "rotate": 0
+      },
+      "audioAmplitude": 12,
+      "feedbackSlot": 1,
+      "feedbackMode": "show",
+      "feedbackDurationMs": 420,
+      "src": "/axis-rhythm-preset/66203cfb-9e2c-40f4-858c-26dff8ebecfd.png"
+    },
+    {
+      "id": "7016f2e8-02df-4e26-9718-de3dcc3fd053",
+      "name": "音频律动层",
+      "kind": "audio",
+      "transform": {
+        "x": 0.27144157039133837,
+        "y": 0,
+        "width": 100,
+        "height": 100,
+        "opacity": 1,
+        "rotate": 0
+      },
+      "audioAmplitude": 6,
+      "feedbackSlot": 1,
+      "feedbackMode": "show",
+      "feedbackDurationMs": 420,
+      "src": "/axis-rhythm-preset/7016f2e8-02df-4e26-9718-de3dcc3fd053.png"
+    },
+    {
+      "id": "de32e5c5-8004-4764-b770-2ca602489bcf",
+      "name": "音频律动层",
+      "kind": "audio",
+      "transform": {
+        "x": 0,
+        "y": 0,
+        "width": 100,
+        "height": 100,
+        "opacity": 1,
+        "rotate": 0
+      },
+      "audioAmplitude": 7,
+      "feedbackSlot": 1,
+      "feedbackMode": "show",
+      "feedbackDurationMs": 420,
+      "src": "/axis-rhythm-preset/de32e5c5-8004-4764-b770-2ca602489bcf.png"
+    },
+    {
+      "id": "3d997ebd-a143-4983-8b39-4a2ad6eb4ae4",
+      "name": "R",
+      "kind": "image",
+      "transform": {
+        "x": 0,
+        "y": 0,
+        "width": 100,
+        "height": 100,
+        "opacity": 1,
+        "rotate": 0
+      },
+      "audioAmplitude": 12,
+      "feedbackSlot": 1,
+      "feedbackMode": "show",
+      "feedbackDurationMs": 420,
+      "src": "/axis-rhythm-preset/3d997ebd-a143-4983-8b39-4a2ad6eb4ae4.png"
+    },
+    {
+      "id": "2bd7022c-62a3-4b19-8299-85468ed1e052",
+      "name": "音频律动层",
+      "kind": "audio",
+      "transform": {
+        "x": 0,
+        "y": 0,
+        "width": 100,
+        "height": 100,
+        "opacity": 1,
+        "rotate": 0
+      },
+      "audioAmplitude": 6,
+      "feedbackSlot": 1,
+      "feedbackMode": "show",
+      "feedbackDurationMs": 420,
+      "src": "/axis-rhythm-preset/2bd7022c-62a3-4b19-8299-85468ed1e052.png"
+    },
+    {
+      "id": "5dc0b00c-dc90-4c28-a43d-96a056f4d4a5",
+      "name": "音频律动层",
+      "kind": "audio",
+      "transform": {
+        "x": 0,
+        "y": 0,
+        "width": 100,
+        "height": 100,
+        "opacity": 1,
+        "rotate": 0
+      },
+      "audioAmplitude": 6,
+      "feedbackSlot": 1,
+      "feedbackMode": "show",
+      "feedbackDurationMs": 420,
+      "src": "/axis-rhythm-preset/5dc0b00c-dc90-4c28-a43d-96a056f4d4a5.png"
+    },
+    {
+      "id": "bd03bb43-57b4-41fe-a763-04e8a23dff47",
+      "name": "L",
+      "kind": "image",
+      "transform": {
+        "x": 0,
+        "y": 0,
+        "width": 100,
+        "height": 100,
+        "opacity": 1,
+        "rotate": 0
+      },
+      "audioAmplitude": 12,
+      "feedbackSlot": 1,
+      "feedbackMode": "show",
+      "feedbackDurationMs": 420,
+      "src": "/axis-rhythm-preset/bd03bb43-57b4-41fe-a763-04e8a23dff47.png"
+    },
+    {
+      "id": "cbabeccd-ce4b-4bc1-a27c-1c89bcb6b1f7",
+      "name": "音频律动层",
+      "kind": "audio",
+      "transform": {
+        "x": 0,
+        "y": 0,
+        "width": 100,
+        "height": 100,
+        "opacity": 1,
+        "rotate": 0
+      },
+      "audioAmplitude": 1,
+      "feedbackSlot": 1,
+      "feedbackMode": "show",
+      "feedbackDurationMs": 420,
+      "src": "/axis-rhythm-preset/cbabeccd-ce4b-4bc1-a27c-1c89bcb6b1f7.png"
+    },
+    {
+      "id": "46bd8a21-eb2f-4211-b340-4ff11bf6a105",
+      "name": "2",
+      "kind": "image",
+      "transform": {
+        "x": 0,
+        "y": 0,
+        "width": 100,
+        "height": 100,
+        "opacity": 1,
+        "rotate": 0
+      },
+      "audioAmplitude": 12,
+      "feedbackSlot": 1,
+      "feedbackMode": "show",
+      "feedbackDurationMs": 420,
+      "src": "/axis-rhythm-preset/46bd8a21-eb2f-4211-b340-4ff11bf6a105.png"
+    }
+  ],
+  "layerOrder": [
+    "axis-system-falling-notes",
+    "8fadb050-d92f-47a5-8b79-cdb019e0ab28",
+    "785e9728-c3c1-483e-8267-35cf387a27b6",
+    "66203cfb-9e2c-40f4-858c-26dff8ebecfd",
+    "7016f2e8-02df-4e26-9718-de3dcc3fd053",
+    "3d997ebd-a143-4983-8b39-4a2ad6eb4ae4",
+    "de32e5c5-8004-4764-b770-2ca602489bcf",
+    "2bd7022c-62a3-4b19-8299-85468ed1e052",
+    "bd03bb43-57b4-41fe-a763-04e8a23dff47",
+    "5dc0b00c-dc90-4c28-a43d-96a056f4d4a5",
+    "axis-system-character-avatars",
+    "cbabeccd-ce4b-4bc1-a27c-1c89bcb6b1f7",
+    "46bd8a21-eb2f-4211-b340-4ff11bf6a105",
+    "f71951d9-eee2-4cfe-8d61-993a648b19e2",
+    "c6ad0918-b822-4c70-ae83-1b05834ad49e",
+    "8406a255-dc0c-4005-96f1-b0104998b25b"
+  ],
+  "lanes": {
+    "1": {
+      "startX": 45,
+      "startY": 20,
+      "endX": 35,
+      "endY": 80
+    },
+    "2": {
+      "startX": 50,
+      "startY": 10,
+      "endX": 50,
+      "endY": 80
+    },
+    "3": {
+      "startX": 55,
+      "startY": 10,
+      "endX": 70,
+      "endY": 80
+    }
+  },
+  "judgeZone": {
+    "x": 0,
+    "y": 80,
+    "width": 90,
+    "height": 10
+  },
+  "avatars": {
+    "x": 20,
+    "y": 84,
+    "width": 60,
+    "height": 16,
+    "gap": 2
+  },
+  "selectedLayerId": "c6ad0918-b822-4c70-ae83-1b05834ad49e"
+}

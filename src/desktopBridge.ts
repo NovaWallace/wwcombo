@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
+import { convertFileSrc, invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import type { DesktopInputEvent } from './vite-env';
@@ -58,7 +58,7 @@ export function createDesktopBridge(): DesktopBridge | null {
   if (window.trainerDesktop) return window.trainerDesktop;
   if (!isTauriRuntime()) return null;
 
-  return {
+  const bridge: DesktopBridge = {
     isDesktop: true,
     setOverlayVisible: (visible: boolean) => invoke('set_overlay_visible', { visible }),
     setOverlayClickThrough: (enabled: boolean) => invoke('set_overlay_click_through', { enabled }),
@@ -81,7 +81,15 @@ export function createDesktopBridge(): DesktopBridge | null {
     onKeyMappingBoundsChanged: (callback: (bounds: OverlayBounds) => void) => listenUntilDisposed<OverlayBounds>('key-mapping:bounds-changed', callback),
     startGlobalInput: () => invoke<{ ok: boolean; reason?: string }>('start_global_input'),
     getGlobalInputStatus: () => invoke<{ started: boolean; status: string; eventCount: number }>('global_input_status'),
+    fetchRemoteCharacterAvatars: () => invoke<unknown>('fetch_remote_character_avatars'),
     stopGlobalInput: async () => undefined,
+    pickVideoFile: async () => {
+      const picked = await invoke<{ path: string; name: string } | null>('pick_video_file');
+      return picked ? { ...picked, url: convertFileSrc(picked.path) } : null;
+    },
+    exportVideoWithOverlay: (directory: string, filename: string, sourcePath: string, overlayX: number, overlayY: number, durationMs: number, overlayBytes: Uint8Array) => invoke<{ path: string }>('export_video_with_overlay', { directory, filename, sourcePath, overlayX, overlayY, durationMs: Math.max(0, Math.round(durationMs)), overlayBytes: Array.from(overlayBytes) }),
+    cancelVideoExport: () => invoke<void>('cancel_video_export'),
+    onVideoExportProgress: (callback: (progress: { progress: number; processedMs: number; durationMs: number }) => void) => listenUntilDisposed('video-export-progress', callback),
     saveExportFile: (directory: string, filename: string, bytes: Uint8Array) => invoke<{ path: string }>('save_export_file', { directory, filename, bytes: Array.from(bytes) }),
     saveExportMp4: (directory: string, filename: string, bytes: Uint8Array) => invoke<{ path: string }>('save_export_mp4', { directory, filename, bytes: Array.from(bytes) }),
     onGlobalInput: (callback: (event: DesktopInputEvent) => void) => listenUntilDisposed<TauriGlobalInputPayload>('global-input', (payload) => {
@@ -93,6 +101,8 @@ export function createDesktopBridge(): DesktopBridge | null {
       });
     })
   };
+  window.trainerDesktop = bridge;
+  return bridge;
 }
 
 export function createOverlayBridge() {
@@ -104,6 +114,11 @@ export function createOverlayBridge() {
     setOverlayPosition: (position: OverlayPosition) => invoke('set_overlay_position', { position }),
     requestOverlayMoveMode: (enabled: boolean) => invoke('request_overlay_move_mode', { enabled }),
     notifyOverlayBoundsChanged: (bounds: OverlayBounds) => invoke('notify_overlay_bounds_changed', { bounds }),
+    startResize: (edge: string) => {
+      const direction = RESIZE_DIRECTIONS[edge];
+      if (!direction) return Promise.reject(new Error(`invalid resize edge: ${edge}`));
+      return getCurrentWindow().startResizeDragging(direction);
+    },
     onWindowBlur: (callback: () => void) => listenUntilDisposed('tauri://blur', callback),
     onUpdate: (callback: (payload: unknown) => void) => listenUntilDisposed<unknown>('overlay:update', callback)
   };

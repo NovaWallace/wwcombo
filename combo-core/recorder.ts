@@ -94,6 +94,8 @@ export class ComboRecorder {
 
     if (activation.move.independent) {
       this.upsertIndependent(activation.move, unitTimeEvent);
+    } else if (activation.move.id === 'basic_attack') {
+      this.switchMain(activation.move, unitTimeEvent, 'independent');
     } else {
       this.switchMain(activation.move, unitTimeEvent);
     }
@@ -187,7 +189,7 @@ export class ComboRecorder {
     };
   }
 
-  private switchMain(move: MoveDefinition, event: TrainerInputEvent): void {
+  private switchMain(move: MoveDefinition, event: TrainerInputEvent, lane: RecordedUnit['lane'] = 'main'): void {
     if (this.activeMain?.moveId === move.id) {
       this.extendUnit(this.activeMain, event);
       return;
@@ -198,7 +200,7 @@ export class ComboRecorder {
       this.activeMain = null;
     }
 
-    this.activeMain = this.createUnit(move, event, 'main');
+    this.activeMain = this.createUnit(move, event, lane);
   }
 
   private upsertIndependent(move: MoveDefinition, event: TrainerInputEvent): void {

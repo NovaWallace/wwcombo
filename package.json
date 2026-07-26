@@ -2,6 +2,7 @@
   "name": "wuthering-combo-trainer",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "description": "Desktop combo trainer for Wuthering Waves.",
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 5173",
@@ -9,20 +10,32 @@
     "build": "tsc -b && vite build",
     "tauri:build": "cargo tauri build",
     "preview": "vite preview --host 127.0.0.1 --port 4173",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "community:init": "node scripts/community/community-combos.mjs init",
+    "community:auto": "node scripts/community/community-combos.mjs auto",
+    "community:mail": "node scripts/community/community-combos.mjs mail",
+    "community:ingest": "node scripts/community/community-combos.mjs ingest",
+    "community:publish": "node scripts/community/community-combos.mjs publish",
+    "community:index": "node scripts/community/community-combos.mjs index",
+    "community:deploy": "node scripts/community/community-combos.mjs deploy",
+    "community:web": "node scripts/community/server.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "latest",
     "@vitejs/plugin-react": "latest",
-    "vite": "latest",
-    "typescript": "latest",
+    "lucide-react": "latest",
+    "pixi-spine": "^4.0.6",
+    "pixi.js": "^7.4.3",
     "react": "latest",
     "react-dom": "latest",
-    "lucide-react": "latest"
+    "typescript": "latest",
+    "vite": "latest"
   },
   "devDependencies": {
     "@types/node": "latest",
     "@types/react": "latest",
-    "@types/react-dom": "latest"
+    "@types/react-dom": "latest",
+    "imapflow": "^1.5.0",
+    "mailparser": "^3.9.14"
   }
 }

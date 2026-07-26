@@ -125,7 +125,7 @@ function normalizeBlock(value: Partial<CoopBlock>, fallbackMove?: MoveDefinition
     label: value.label || fallbackMove?.label || 'Event move',
     characterSlot: slot,
     lane,
-    independent: lane === 'independent' || Boolean(value.independent ?? fallbackMove?.independent),
+    independent: Boolean(value.independent ?? fallbackMove?.independent),
     startMin,
     startMax,
     durationMin,
@@ -162,7 +162,7 @@ function createDraftBlock(move: MoveDefinition, startMs: number, slot: Character
     color: move.color,
     characterSlot: slot,
     lane,
-    independent: lane === 'independent' || move.independent,
+    independent: move.independent,
     advancesStep: move.advancesStep,
     startMin,
     startMax: startMin + 300,
@@ -554,7 +554,7 @@ export function CoopRuntimeStatusLabel({ active }: { active: boolean }) {
 
 export function CoopEventLab({ sourceChart, library, moves, bindings, comboImageStyle, inputSignal }: Props) {
   const saved = useMemo(loadSavedState, []);
-  const actionMoves = useMemo(() => moves.filter((move) => move.id !== 'start_challenge' && move.id !== 'stop_recording'), [moves]);
+  const actionMoves = useMemo(() => moves.filter((move) => move.id !== 'start_challenge' && move.id !== 'stop_recording' && !move.displayOnly), [moves]);
   const fallbackMove = actionMoves[0] ?? moves[0];
   const [draft, setDraft] = useState<CoopDraft | null>(saved.draft);
   const [events, setEvents] = useState<CoopMediaEvent[]>(saved.events);
@@ -927,9 +927,9 @@ export function CoopEventLab({ sourceChart, library, moves, bindings, comboImage
         </div>
 
         {selectedBlock && <div className="coop-inspector">
-          <label>Move <select value={selectedBlock.moveId} onChange={(event) => { const move = moveById.get(event.target.value); if (move) updateBlock(selectedBlock.id, { moveId: move.id, label: move.label, color: move.color, advancesStep: move.advancesStep, independent: selectedBlock.lane === 'independent' || move.independent, eventOnly: true }); }}>{actionMoves.map((move) => <option key={move.id} value={move.id}>{move.label}</option>)}</select></label>
+          <label>Move <select value={selectedBlock.moveId} onChange={(event) => { const move = moveById.get(event.target.value); if (move) updateBlock(selectedBlock.id, { moveId: move.id, label: move.label, color: move.color, advancesStep: move.advancesStep, independent: move.independent, eventOnly: true }); }}>{actionMoves.map((move) => <option key={move.id} value={move.id}>{move.label}</option>)}</select></label>
           <label>Role <select value={selectedBlock.characterSlot ?? 1} onChange={(event) => updateBlock(selectedBlock.id, { characterSlot: Number(event.target.value) as CharacterSlot })}>{CHARACTER_SLOTS.map((slot) => <option key={slot} value={slot}>{slot}</option>)}</select></label>
-          <label>Lane <select value={selectedBlock.lane} onChange={(event) => updateBlock(selectedBlock.id, { lane: event.target.value as LaneKind, independent: event.target.value === 'independent' })}><option value="main">main</option><option value="independent">extra</option></select></label>
+          <label>Lane <select value={selectedBlock.lane} onChange={(event) => updateBlock(selectedBlock.id, { lane: event.target.value as LaneKind })}><option value="main">main</option><option value="independent">extra</option></select></label>
           <label>Start <input type="number" value={Math.round(selectedBlock.startMin)} onChange={(event) => updateBlock(selectedBlock.id, { startMin: Number(event.target.value), startMax: Number(event.target.value) + Math.max(MIN_DURATION, selectedBlock.startMax - selectedBlock.startMin) })} /></label>
           <label>Duration <input type="number" value={Math.round(selectedBlock.durationMax)} onChange={(event) => updateBlock(selectedBlock.id, { durationMax: Number(event.target.value) })} /></label>
           <label><input type="checkbox" checked={selectedBlock.eventOnly} onChange={(event) => updateBlock(selectedBlock.id, { eventOnly: event.target.checked })} />Event block</label>

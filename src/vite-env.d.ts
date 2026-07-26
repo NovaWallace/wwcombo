@@ -24,7 +24,12 @@ declare global {
       onKeyMappingBoundsChanged?(callback: (bounds: { x: number; y: number; width: number; height: number }) => void): () => void;
       startGlobalInput(): Promise<{ ok: boolean; reason?: string }>;
       getGlobalInputStatus(): Promise<{ started: boolean; status: string; eventCount: number }>;
+      fetchRemoteCharacterAvatars?(): Promise<unknown>;
       stopGlobalInput(): Promise<void>;
+      pickVideoFile?(): Promise<{ path: string; name: string; url: string } | null>;
+      exportVideoWithOverlay?(directory: string, filename: string, sourcePath: string, overlayX: number, overlayY: number, durationMs: number, overlayBytes: Uint8Array): Promise<{ path: string }>;
+      cancelVideoExport?(): Promise<void>;
+      onVideoExportProgress?(callback: (progress: { progress: number; processedMs: number; durationMs: number }) => void): () => void;
       saveExportFile?(directory: string, filename: string, bytes: Uint8Array): Promise<{ path: string }>;
       saveExportMp4?(directory: string, filename: string, bytes: Uint8Array): Promise<{ path: string }>;
       onGlobalInput(callback: (event: DesktopInputEvent) => void): () => void;
@@ -34,6 +39,7 @@ declare global {
       setOverlayPosition?(position: { x: number; y: number }): Promise<void>;
       requestOverlayMoveMode(enabled: boolean): Promise<void>;
       notifyOverlayBoundsChanged(bounds: { x: number; y: number; width: number; height: number }): Promise<void>;
+      startResize(edge: string): Promise<void>;
       onWindowBlur?(callback: () => void): () => void;
       onUpdate(callback: (payload: unknown) => void): () => void;
     };

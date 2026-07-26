@@ -65,7 +65,7 @@ export function resolveActivation(
   const moveId = buildBindingMap(bindings).get(normalizeInputCode(event.code));
   if (!moveId) return null;
   const move = buildMoveMap(moves).get(moveId);
-  return move ? { move, input: event } : null;
+  return move && !move.displayOnly ? { move, input: event } : null;
 }
 
 export function normalizeDomKeyboardEvent(event: KeyboardEvent, type: 'keydown' | 'keyup'): TrainerInputEvent {
