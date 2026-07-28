@@ -5,6 +5,7 @@ import type { KeyBinding } from '../combo-core/types';
 import { normalizeInputCode } from '../combo-core/input';
 import { createDesktopBridge } from './desktopBridge';
 import { useI18n } from './i18n';
+import { NumericDraftInput } from './NumericDraftInput';
 import {
   DEFAULT_KEY_MAPPING_TRANSFORM,
   KEY_MAPPING_STORAGE_KEY,
@@ -764,14 +765,5 @@ function TransformEditor({ transform, onChange }: { transform: KeyMappingTransfo
 }
 
 function NumberField({ label, value, min, max, onCommit }: { label: string; value: number; min?: number; max?: number; onCommit: (value: number) => void }) {
-  const [draft, setDraft] = useState(String(value));
-  useEffect(() => setDraft(String(value)), [value]);
-  const commit = () => {
-    let next = Number(draft);
-    if (!Number.isFinite(next)) next = value;
-    if (min !== undefined) next = Math.max(min, next);
-    if (max !== undefined) next = Math.min(max, next);
-    onCommit(next);
-  };
-  return <label>{label}<input inputMode="numeric" value={draft} onChange={(event) => setDraft(event.target.value)} onBlur={commit} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); }} /></label>;
+  return <label>{label}<NumericDraftInput value={value} min={min} max={max} onCommit={onCommit} /></label>;
 }

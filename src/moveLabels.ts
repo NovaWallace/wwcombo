@@ -1,4 +1,6 @@
 import type { AppLanguage } from './i18n';
+import { annotateJapaneseTerminology } from './japaneseTerminology';
+import { annotateKoreanTerminology } from './koreanTerminology';
 
 export type MoveLabelLanguage = AppLanguage;
 
@@ -102,13 +104,18 @@ const CONTENT_PROMPT_LABELS: Record<string, Record<MoveLabelLanguage, string>> =
 export function localizedDefaultMoveLabel(moveId: string, fallback: string, language: MoveLabelLanguage, compactSwitch = true): string {
   if (language === 'zh-CN') return fallback;
   if (compactSwitch && /^switch_[123]$/.test(moveId)) return fallback;
-  return MOVE_LABELS[language]?.[moveId] ?? fallback;
+  const label = MOVE_LABELS[language]?.[moveId] ?? fallback;
+  if (language === 'ja-JP') return annotateJapaneseTerminology(label);
+  return language === 'ko-KR' ? annotateKoreanTerminology(label) : label;
 }
 
 export function localizedMovePrompt(moveId: string, fallback: string, contentText: string | undefined, language: MoveLabelLanguage): string {
   if (moveId === 'empty_action') {
     const prompt = CONTENT_PROMPT_LABELS[String(contentText ?? '').trim()];
-    if (prompt) return prompt[language];
+    if (prompt) {
+      if (language === 'ja-JP') return annotateJapaneseTerminology(prompt[language]);
+      return language === 'ko-KR' ? annotateKoreanTerminology(prompt[language]) : prompt[language];
+    }
   }
   return localizedDefaultMoveLabel(moveId, fallback, language);
 }

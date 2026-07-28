@@ -1,0 +1,15 @@
+html:lang(ko-KR) ruby,
+html:lang(ja-JP) ruby {
+  ruby-align: center;
+  ruby-position: over;
+  white-space: nowrap;
+}
+
+html:lang(ko-KR) rt,
+html:lang(ja-JP) rt {
+  color: currentColor;
+  font-size: 0.48em;
+  font-weight: 600;
+  line-height: 1;
+  opacity: 0.72;
+}

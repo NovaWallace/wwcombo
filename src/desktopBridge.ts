@@ -75,6 +75,7 @@ export function createDesktopBridge(): DesktopBridge | null {
     updateKeyMapping: (payload: unknown) => invoke('update_key_mapping', { payload }),
     setKeyMappingBounds: (bounds: OverlayBounds) => invoke('set_key_mapping_bounds', { bounds }),
     getKeyMappingBounds: () => invoke<OverlayBounds>('get_key_mapping_bounds'),
+    updateRecordingIndicator: (payload: unknown) => invoke('update_recording_indicator', { payload }),
     onOverlayBoundsChanged: (callback: (bounds: OverlayBounds) => void) => listenUntilDisposed<OverlayBounds>('overlay:bounds-changed', callback),
     onOverlayMoveModeRequested: (callback: (enabled: boolean) => void) => listenUntilDisposed<{ enabled: boolean }>('overlay:move-mode', (payload) => callback(payload.enabled)),
     onRhythmFeedbackBoundsChanged: (callback: (bounds: OverlayBounds) => void) => listenUntilDisposed<OverlayBounds>('rhythm-feedback:bounds-changed', callback),
@@ -83,11 +84,12 @@ export function createDesktopBridge(): DesktopBridge | null {
     getGlobalInputStatus: () => invoke<{ started: boolean; status: string; eventCount: number }>('global_input_status'),
     fetchRemoteCharacterAvatars: () => invoke<unknown>('fetch_remote_character_avatars'),
     stopGlobalInput: async () => undefined,
+    pickExportDirectory: (currentDirectory = '', title = 'Select Export Folder') => invoke<string | null>('pick_export_directory', { currentDirectory, title }),
     pickVideoFile: async () => {
       const picked = await invoke<{ path: string; name: string } | null>('pick_video_file');
       return picked ? { ...picked, url: convertFileSrc(picked.path) } : null;
     },
-    exportVideoWithOverlay: (directory: string, filename: string, sourcePath: string, overlayX: number, overlayY: number, durationMs: number, overlayBytes: Uint8Array) => invoke<{ path: string }>('export_video_with_overlay', { directory, filename, sourcePath, overlayX, overlayY, durationMs: Math.max(0, Math.round(durationMs)), overlayBytes: Array.from(overlayBytes) }),
+    exportVideoWithOverlay: (directory: string, filename: string, sourcePath: string, overlayX: number, overlayY: number, startMs: number, durationMs: number, overlayBytes: Uint8Array) => invoke<{ path: string }>('export_video_with_overlay', { directory, filename, sourcePath, overlayX, overlayY, startMs: Math.max(0, Math.round(startMs)), durationMs: Math.max(0, Math.round(durationMs)), overlayBytes: Array.from(overlayBytes) }),
     cancelVideoExport: () => invoke<void>('cancel_video_export'),
     onVideoExportProgress: (callback: (progress: { progress: number; processedMs: number; durationMs: number }) => void) => listenUntilDisposed('video-export-progress', callback),
     saveExportFile: (directory: string, filename: string, bytes: Uint8Array) => invoke<{ path: string }>('save_export_file', { directory, filename, bytes: Array.from(bytes) }),
@@ -161,5 +163,15 @@ export function createKeyMappingBridge() {
     },
     notifyBoundsChanged: (bounds: OverlayBounds) => invoke('notify_key_mapping_bounds_changed', { bounds }),
     onUpdate: (callback: (payload: unknown) => void) => listenUntilDisposed<unknown>('key-mapping:update', callback)
+  };
+}
+
+export function createRecordingIndicatorBridge() {
+  if (window.recordingIndicatorOverlay) return window.recordingIndicatorOverlay;
+  if (!isTauriRuntime()) return null;
+
+  return {
+    getState: () => invoke<unknown>('get_recording_indicator_state'),
+    onUpdate: (callback: (payload: unknown) => void) => listenUntilDisposed<unknown>('recording-indicator:update', callback)
   };
 }

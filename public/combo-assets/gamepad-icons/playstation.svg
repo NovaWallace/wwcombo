@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 400">
+  <rect width="960" height="400" fill="#202428"/>
+  <style>
+    .title{fill:#fff;font:900 28px Arial,sans-serif}.label{fill:#cbd2d7;font:700 15px Arial,sans-serif}.key{fill:#252a2e;stroke:#fff;stroke-width:6}.txt{fill:#fff;font:900 25px Arial,sans-serif;text-anchor:middle}.symbol{fill:none;stroke-width:7;stroke-linecap:round;stroke-linejoin:round}
+  </style>
+  <text class="title" x="32" y="44">PLAYSTATION CONTROLLER ICONS</text>
+  <g transform="translate(35 72)">
+    <g><circle class="key" cx="44" cy="44" r="38"/><path class="symbol" stroke="#5ba9e6" d="M28 28L60 60M60 28L28 60"/></g>
+    <g transform="translate(100 0)"><circle class="key" cx="44" cy="44" r="38"/><circle class="symbol" stroke="#e35d6a" cx="44" cy="44" r="19"/></g>
+    <g transform="translate(200 0)"><circle class="key" cx="44" cy="44" r="38"/><rect class="symbol" stroke="#dd75c4" x="26" y="26" width="36" height="36" rx="2"/></g>
+    <g transform="translate(300 0)"><circle class="key" cx="44" cy="44" r="38"/><path class="symbol" stroke="#62c99b" d="M44 23L65 61H23Z"/></g>
+    <g transform="translate(420 7)"><rect class="key" x="0" y="0" width="92" height="72" rx="17"/><text class="txt" x="46" y="46">L1</text></g>
+    <g transform="translate(530 7)"><rect class="key" x="0" y="0" width="92" height="72" rx="17"/><text class="txt" x="46" y="46">R1</text></g>
+    <g transform="translate(640 7)"><path class="key" d="M4 72L10 14Q12 2 26 2H66Q80 2 82 14L88 72Z"/><text class="txt" x="46" y="47">L2</text></g>
+    <g transform="translate(750 7)"><path class="key" d="M4 72L10 14Q12 2 26 2H66Q80 2 82 14L88 72Z"/><text class="txt" x="46" y="47">R2</text></g>
+  </g>
+  <g transform="translate(35 205)">
+    <g><path class="key" d="M31 0H57V28H85V58H57V86H31V58H3V28H31Z"/><path d="M33 29L44 13L55 29Z" fill="#5ba9e6"/></g>
+    <g transform="translate(105 0) rotate(90 44 43)"><path class="key" d="M31 0H57V28H85V58H57V86H31V58H3V28H31Z"/><path d="M33 29L44 13L55 29Z" fill="#5ba9e6"/></g>
+    <g transform="translate(210 0) rotate(180 44 43)"><path class="key" d="M31 0H57V28H85V58H57V86H31V58H3V28H31Z"/><path d="M33 29L44 13L55 29Z" fill="#5ba9e6"/></g>
+    <g transform="translate(315 0) rotate(270 44 43)"><path class="key" d="M31 0H57V28H85V58H57V86H31V58H3V28H31Z"/><path d="M33 29L44 13L55 29Z" fill="#5ba9e6"/></g>
+    <g transform="translate(430 0)"><circle class="key" cx="43" cy="43" r="39"/><text class="txt" x="43" y="52">L3</text></g>
+    <g transform="translate(535 0)"><circle class="key" cx="43" cy="43" r="39"/><text class="txt" x="43" y="52">R3</text></g>
+    <g transform="translate(640 7)"><rect class="key" width="96" height="72" rx="16"/><text class="txt" x="48" y="45" font-size="19">CREATE</text></g>
+    <g transform="translate(750 7)"><rect class="key" width="96" height="72" rx="16"/><text class="txt" x="48" y="45" font-size="19">OPT</text></g>
+  </g>
+  <g transform="translate(35 325)">
+    <text class="label" x="44" y="0" text-anchor="middle">D-PAD UP</text><text class="label" x="149" y="0" text-anchor="middle">RIGHT</text><text class="label" x="254" y="0" text-anchor="middle">DOWN</text><text class="label" x="359" y="0" text-anchor="middle">LEFT</text><text class="label" x="473" y="0" text-anchor="middle">L3</text><text class="label" x="578" y="0" text-anchor="middle">R3</text><text class="label" x="688" y="0" text-anchor="middle">CREATE</text><text class="label" x="798" y="0" text-anchor="middle">OPTIONS</text>
+  </g>
+</svg>

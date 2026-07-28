@@ -4,6 +4,7 @@ import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 import { Eye, EyeOff, Image as ImageIcon, Music2, Plus, Trash2, Upload } from 'lucide-react';
 import type { CharacterSlot, ComboChart, ComboImageStyle, ComboStep, KeyBinding, MoveDefinition } from '../combo-core';
 import { normalizeInputCode } from '../combo-core/input';
+import { NumericDraftInput } from './NumericDraftInput';
 
 export type CoopInputSignal = {
   id: string;
@@ -930,8 +931,8 @@ export function CoopEventLab({ sourceChart, library, moves, bindings, comboImage
           <label>Move <select value={selectedBlock.moveId} onChange={(event) => { const move = moveById.get(event.target.value); if (move) updateBlock(selectedBlock.id, { moveId: move.id, label: move.label, color: move.color, advancesStep: move.advancesStep, independent: move.independent, eventOnly: true }); }}>{actionMoves.map((move) => <option key={move.id} value={move.id}>{move.label}</option>)}</select></label>
           <label>Role <select value={selectedBlock.characterSlot ?? 1} onChange={(event) => updateBlock(selectedBlock.id, { characterSlot: Number(event.target.value) as CharacterSlot })}>{CHARACTER_SLOTS.map((slot) => <option key={slot} value={slot}>{slot}</option>)}</select></label>
           <label>Lane <select value={selectedBlock.lane} onChange={(event) => updateBlock(selectedBlock.id, { lane: event.target.value as LaneKind })}><option value="main">main</option><option value="independent">extra</option></select></label>
-          <label>Start <input type="number" value={Math.round(selectedBlock.startMin)} onChange={(event) => updateBlock(selectedBlock.id, { startMin: Number(event.target.value), startMax: Number(event.target.value) + Math.max(MIN_DURATION, selectedBlock.startMax - selectedBlock.startMin) })} /></label>
-          <label>Duration <input type="number" value={Math.round(selectedBlock.durationMax)} onChange={(event) => updateBlock(selectedBlock.id, { durationMax: Number(event.target.value) })} /></label>
+          <label>Start <NumericDraftInput value={Math.round(selectedBlock.startMin)} integer onCommit={(startMin) => updateBlock(selectedBlock.id, { startMin, startMax: startMin + Math.max(MIN_DURATION, selectedBlock.startMax - selectedBlock.startMin) })} /></label>
+          <label>Duration <NumericDraftInput value={Math.round(selectedBlock.durationMax)} integer onCommit={(durationMax) => updateBlock(selectedBlock.id, { durationMax })} /></label>
           <label><input type="checkbox" checked={selectedBlock.eventOnly} onChange={(event) => updateBlock(selectedBlock.id, { eventOnly: event.target.checked })} />Event block</label>
           <button className="danger" onClick={() => deleteBlock(selectedBlock.id)}><Trash2 size={16} /> Delete</button>
         </div>}
@@ -940,7 +941,7 @@ export function CoopEventLab({ sourceChart, library, moves, bindings, comboImage
           {selectedBlock.bindings.length ? selectedBlock.bindings.map((binding) => <div key={binding.id} className="coop-binding-row">
             <select value={binding.eventId} onChange={(event) => updateBinding(selectedBlock.id, binding.id, { eventId: event.target.value })}>{events.map((event, index) => <option key={event.id} value={event.id}>{index + 1}. {event.name}</option>)}</select>
             <select value={binding.action} onChange={(event) => updateBinding(selectedBlock.id, binding.id, { action: event.target.value as CoopAction })}><option value="play">play</option><option value="stop">stop</option><option value="show">show</option><option value="hide">hide</option></select>
-            <label>Delay <input type="number" value={binding.delayMs} onChange={(event) => updateBinding(selectedBlock.id, binding.id, { delayMs: Number(event.target.value) })} /></label>
+            <label>Delay <NumericDraftInput value={binding.delayMs} integer onCommit={(delayMs) => updateBinding(selectedBlock.id, binding.id, { delayMs })} /></label>
             <button className="icon-button" onClick={() => removeBinding(selectedBlock.id, binding.id)}><Trash2 size={16} /></button>
           </div>) : <EmptyState text="No bindings for selected block." />}
         </div>}
@@ -964,7 +965,7 @@ export function CoopEventLab({ sourceChart, library, moves, bindings, comboImage
         <div className="panel-title"><div><h2>Event Settings</h2><p>{selectedEvent.kind === 'audio' ? 'Play or stop audio.' : 'Show, hide, or move image.'}</p></div><button className="icon-button danger" onClick={() => deleteEvent(selectedEvent.id)}><Trash2 size={16} /></button></div>
         <div className="coop-event-form">
           <label>Name<input value={selectedEvent.name} onChange={(event) => updateEvent(selectedEvent.id, { name: event.target.value })} /></label>
-          <label>Duration(ms)<input type="number" value={selectedEvent.durationMs} onChange={(event) => updateEvent(selectedEvent.id, { durationMs: Number(event.target.value) })} /></label>
+          <label>Duration(ms)<NumericDraftInput value={selectedEvent.durationMs} integer onCommit={(durationMs) => updateEvent(selectedEvent.id, { durationMs })} /></label>
           {selectedEvent.kind === 'audio' && <label>Volume<input type="range" min="0" max="1" step="0.01" value={selectedEvent.volume} onChange={(event) => updateEvent(selectedEvent.id, { volume: Number(event.target.value) })} /></label>}
           <label className="coop-file-picker"><Upload size={16} />Upload<input type="file" accept={selectedEvent.kind === 'audio' ? 'audio/*' : 'image/*'} onChange={(event) => void pickEventFile(selectedEvent.id, event.target.files?.[0] ?? null)} /></label>
         </div>
@@ -972,7 +973,7 @@ export function CoopEventLab({ sourceChart, library, moves, bindings, comboImage
         {selectedEvent.kind === 'image' && <>
           <div className="coop-move-toolbar"><button className={moveMode ? 'active' : ''} onClick={() => setMoveMode((current) => !current)}>{moveMode ? <EyeOff size={16} /> : <Eye size={16} />}Move</button><div className="segmented"><button className={editPoint === 'start' ? 'active' : ''} onClick={() => setEditPoint('start')}>Start</button><button className={editPoint === 'end' ? 'active' : ''} onClick={() => setEditPoint('end')}>End</button></div><button onClick={() => triggerBinding({ id: 'preview', eventId: selectedEvent.id, action: 'show', delayMs: 0 })}>Preview</button></div>
           <div className="coop-transform-grid">
-            {Object.entries(editPoint === 'start' ? selectedEvent.start : selectedEvent.end).map(([key, value]) => <label key={key}>{key}<input type="number" step={key === 'opacity' ? '0.05' : '1'} value={Math.round(Number(value) * (key === 'opacity' ? 100 : 1)) / (key === 'opacity' ? 100 : 1)} onChange={(event) => updateImageTransform(selectedEvent.id, editPoint, { [key]: Number(event.target.value) } as Partial<CoopImageTransform>)} /></label>)}
+            {Object.entries(editPoint === 'start' ? selectedEvent.start : selectedEvent.end).map(([key, value]) => <label key={key}>{key}<NumericDraftInput value={Math.round(Number(value) * (key === 'opacity' ? 100 : 1)) / (key === 'opacity' ? 100 : 1)} onCommit={(nextValue) => updateImageTransform(selectedEvent.id, editPoint, { [key]: nextValue } as Partial<CoopImageTransform>)} /></label>)}
           </div>
         </>}
       </section>}

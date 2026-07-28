@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 import ReactDOM from 'react-dom/client';
-import type { ComboChart, ComboImageStyle, PracticeSnapshot, RectPercent } from '../combo-core';
+import type { CharacterSlot, ComboChart, ComboImageStyle, PracticeSnapshot, RectPercent } from '../combo-core';
 import {
   chartToComboImageItems,
   comboImageBackgroundSource,
@@ -22,9 +22,10 @@ import {
   visibleComboImageItems
 } from './combo-image/comboImage';
 import { createOverlayBridge } from './desktopBridge';
-import { I18nProvider, localizeEnglish, useI18n } from './i18n';
+import { I18nProvider, isAppLanguage, localizeEnglish, useI18n } from './i18n';
 import type { AppLanguage } from './i18n';
-import { localizedDefaultMoveLabel, localizedMovePrompt } from './moveLabels';
+import { localizedMovePrompt } from './moveLabels';
+import { buildRhythmCrowdedGroups, rhythmNoteHeight, rhythmNoteOpacity, rhythmNoteTop, visibleRhythmCrowdedGroups } from './rhythmCrowding';
 import './overlay.css';
 
 const STORAGE_KEY = 'ww-combo-trainer-state-v2';
@@ -39,6 +40,7 @@ type OverlayStep = ComboChart['steps'][number];
 
 type OverlayPayload = {
   mode?: 'combo' | 'rhythm';
+  language?: AppLanguage;
   chart: ComboChart | null;
   practice: PracticeSnapshot & { elapsedMs?: number | null };
   practicePreset?: 'strict' | 'lenient' | 'simple';
@@ -66,9 +68,8 @@ function rhythmActiveCharacterSlot(steps: OverlayStep[], elapsedMs: number): 1 |
     .map((step) => (step.moveId === 'switch_1' ? 1 : step.moveId === 'switch_2' ? 2 : 3) as 1 | 2 | 3)[0] ?? firstSlot;
 }
 
-function rhythmDisplayText(step: OverlayStep, style: ComboImageStyle, language: AppLanguage): string {
-  const slot = switchSlotForMoveId(step.moveId);
-  return slot ? ['i', 'ii', 'iii'][slot - 1] : style.contentLabels[step.id]?.trim() || localizedMoveLabel(step, language);
+function rhythmDisplayText(step: OverlayStep, style: ComboImageStyle): string {
+  return style.contentLabels[step.id]?.trim() || defaultComboContentLabelForMoveId(step.moveId) || displayMoveLabel(step);
 }
 
 function switchSlotForMoveId(moveId: string): 1 | 2 | 3 | null {
@@ -160,6 +161,7 @@ function OverlayApp() {
 
   const chart = payload?.chart ?? null;
   const practice = payload?.practice ?? null;
+  const displayLanguage = isAppLanguage(payload?.language) ? payload.language : language;
   const moveMode = payload?.moveMode ?? false;
   const layout = payload?.settings?.layout === 'vertical' ? 'vertical' : payload?.settings?.layout === 'waterfall' ? 'waterfall' : 'horizontal';
   const activeIndex = chart?.steps.length ? Math.max(0, Math.min(practice?.currentStepIndex ?? 0, chart.steps.length - 1)) : 0;
@@ -188,7 +190,7 @@ function OverlayApp() {
   const trackOffset = comboTrackOffset(allItems, activeDisplayIndex, linearLayout, effectiveBounds, comboStyle);
   const activeMetric = metrics[Math.max(0, Math.min(activeDisplayIndex, Math.max(0, metrics.length - 1)))];
   const backgroundSource = comboImageBackgroundSource(comboStyle);
-  const periodLabel = currentPeriodLabel(chart, activeStepIndex, language);
+  const periodLabel = currentPeriodLabel(chart, activeStepIndex, displayLanguage);
   const screenWidth = window.screen?.availWidth || window.innerWidth;
   const screenHeight = window.screen?.availHeight || window.innerHeight;
   const windowLeft = window.screenX ?? bounds.x;
@@ -200,7 +202,7 @@ function OverlayApp() {
     : (overlayCenterY > screenHeight / 2 ? 'above' : 'below');
   const promptSide = layout === 'horizontal' ? nextIndicatorSide : (overlayCenterX < screenWidth / 2 ? 'left' : 'right');
   const promptStep = comboStyle.prePromptEnabled && shouldShowPromptForStep(displayActiveStep) ? displayActiveStep : null;
-  const promptText = promptTextForStep(promptStep, language, comboStyle);
+  const promptText = promptTextForStep(promptStep, displayLanguage, comboStyle);
   const visualGap = comboRenderGap(linearLayout, comboStyle);
   const verticalImageOverlap = comboVerticalImageOverlap(comboStyle);
 
@@ -265,7 +267,7 @@ function OverlayApp() {
   return (
     <div className={`overlay-shell ${layout} next-indicator-${nextIndicatorSide} ${payload?.mode === 'rhythm' ? 'rhythm-mode' : ''} ${moveMode ? 'move-mode' : ''}`} onPointerMove={onPointerMove} onPointerUp={endDrag}>
       <div ref={surfaceRef} className="overlay-drag-surface" onPointerDown={beginDrag}>
-        {payload?.mode === 'rhythm' ? <RhythmOverlay chart={chart} practice={practice} style={comboStyle} bounds={effectiveBounds} settings={rhythmUiSettings} /> : <>
+        {payload?.mode === 'rhythm' ? <RhythmOverlay chart={chart} practice={practice} style={comboStyle} bounds={effectiveBounds} settings={rhythmUiSettings} language={displayLanguage} /> : <>
         {backgroundSource && <div className="overlay-background" style={imageCropBackground(backgroundSource, normalizeRectPercent(comboStyle.backgroundCrop, { x: 0, y: 0, w: 100, h: 100 }))} />}
         {periodLabel && <div className="overlay-period-label">{periodLabel}</div>}
         <div className="combo-row" style={{ gap: visualGap, '--combo-vertical-image-overlap': `${verticalImageOverlap}px`, transform: layout === 'vertical' ? `translateY(${trackOffset}px)` : `translateX(${trackOffset}px)` } as CSSProperties}>
@@ -323,8 +325,7 @@ function OverlayApp() {
   );
 }
 
-function RhythmOverlay({ chart, practice, style, bounds, settings }: { chart: ComboChart | null; practice: (PracticeSnapshot & { elapsedMs?: number | null }) | null; style: ComboImageStyle; bounds: OverlayBounds; settings: RhythmUiSettings }) {
-  const { language } = useI18n();
+function RhythmOverlay({ chart, practice, style, bounds, settings, language }: { chart: ComboChart | null; practice: (PracticeSnapshot & { elapsedMs?: number | null }) | null; style: ComboImageStyle; bounds: OverlayBounds; settings: RhythmUiSettings; language: AppLanguage }) {
   const [clockNow, setClockNow] = useState(() => performance.now());
   const localClockRef = useRef({ key: '', receivedAt: performance.now(), elapsedMs: 0 });
   useEffect(() => {
@@ -349,6 +350,18 @@ function RhythmOverlay({ chart, practice, style, bounds, settings }: { chart: Co
   const speedPxPerMs = settings.fallSpeed || DEFAULT_RHYTHM_UI.fallSpeed;
   const lookAheadMs = Math.ceil((judgeY + 120) / speedPxPerMs);
   const visibleSteps = orderedSteps.filter((step) => step.startMin + Math.max(120, step.durationMax) >= elapsedMs && step.startMin <= elapsedMs + lookAheadMs);
+  const notePartsByStepId = useMemo(() => new Map(orderedSteps.map((step) => {
+    const slot = (step.characterSlot ?? 1) as CharacterSlot;
+    const contentText = rhythmDisplayText(step, style);
+    const iconText = maybeConvertTextToIconLabel(contentText, style.convertIcons);
+    const parts = comboTextParts(iconText, style.convertIcons || switchSlotForMoveId(step.moveId) !== null, effectiveIconMappings(style, slot)).filter((part) => part.kind === 'icon');
+    return [step.id, parts] as const;
+  })), [language, orderedSteps, style]);
+  const crowdedGroups = useMemo(() => buildRhythmCrowdedGroups(orderedSteps.flatMap((step) => {
+    const parts = notePartsByStepId.get(step.id) ?? [];
+    return parts.length ? [{ step, height: rhythmNoteHeight(parts.length) }] : [];
+  }), speedPxPerMs), [notePartsByStepId, orderedSteps, speedPxPerMs]);
+  const visibleCrowdedGroups = visibleRhythmCrowdedGroups(crowdedGroups, elapsedMs, judgeY, stageHeight, speedPxPerMs);
   const activeCharacterSlot = rhythmActiveCharacterSlot(orderedSteps, elapsedMs);
   const switchRingSteps = rhythmSwitchRingSteps(orderedSteps, elapsedMs, settings.ringDurationMs);
   const matchedStepIds = new Set(practice?.matchedStepIds ?? []);
@@ -366,20 +379,15 @@ function RhythmOverlay({ chart, practice, style, bounds, settings }: { chart: Co
             <div key={slot} className="rhythm-overlay-lane">
               {activeCharacterSlot === slot && <div className="rhythm-overlay-active-role-gradient" />}
               {visibleSteps.filter((step) => (step.characterSlot ?? 1) === slot).map((step) => {
-                const fallingTop = judgeY - (step.startMin - elapsedMs) * speedPxPerMs;
-                const contentText = rhythmDisplayText(step, style, language);
-                const iconText = maybeConvertTextToIconLabel(contentText, style.convertIcons);
-                const parts = comboTextParts(iconText, style.convertIcons || switchSlotForMoveId(step.moveId) !== null, effectiveIconMappings(style, slot as 1 | 2 | 3)).filter((part) => part.kind === 'icon');
-                const height = Math.max(34, parts.length > 1 ? parts.length * 36 + 6 : 34);
+                const parts = notePartsByStepId.get(step.id) ?? [];
+                const height = rhythmNoteHeight(parts.length);
                 const active = elapsedMs >= step.startMin && elapsedMs <= step.startMin + step.durationMax;
                 const matched = matchedStepIds.has(step.id);
                 const error = errorStepIds.has(step.id);
                 const judgement = judgements[step.id];
-                const fallingNoteTop = fallingTop - height;
-                const stoppedTop = judgeY + 4;
-                const top = active ? Math.min(fallingNoteTop, stoppedTop) : fallingNoteTop;
+                const top = rhythmNoteTop(step, height, elapsedMs, judgeY, speedPxPerMs);
                 return (
-                  <div key={step.id} className={`rhythm-overlay-note ${isRhythmHoldStep(step) ? 'hold' : 'normal'} ${parts.length > 1 ? 'stacked' : ''} ${active ? 'active' : ''} ${matched ? 'matched' : ''} ${error ? 'error' : ''} ${judgement ? `judge-${judgement}` : ''}`} style={{ top, height } as CSSProperties}>
+                  <div key={step.id} className={`rhythm-overlay-note ${isRhythmHoldStep(step) ? 'hold' : 'normal'} ${parts.length > 1 ? 'stacked' : ''} ${active ? 'active' : ''} ${matched ? 'matched' : ''} ${error ? 'error' : ''} ${judgement ? `judge-${judgement}` : ''}`} style={{ top, height, opacity: rhythmNoteOpacity(step, elapsedMs) } as CSSProperties}>
                     <ComboInlineContent parts={parts} className="rhythm-overlay-note-content" hideIconAlt />
                   </div>
                 );
@@ -393,8 +401,15 @@ function RhythmOverlay({ chart, practice, style, bounds, settings }: { chart: Co
         {[1, 2, 3].map((slot) => {
           const role = style.roleStyles[slot as 1 | 2 | 3];
           const lanePromptStep = orderedSteps.find((step) => (step.characterSlot ?? 1) === slot && elapsedMs <= step.startMin + step.durationMax) ?? null;
+          const crowdedPrompts = visibleCrowdedGroups
+            .filter((group) => group.characterSlot === slot)
+            .map((group) => ({
+              group,
+              parts: [...group.entries].reverse().flatMap((entry) => notePartsByStepId.get(entry.step.id) ?? [])
+            }))
+            .filter((prompt) => prompt.parts.length > 1);
 
-          return <div key={slot} className="rhythm-overlay-avatar-cell"><span className="rhythm-overlay-lane-prompt">{promptTextForStep(lanePromptStep, language, style)}</span>{switchRingSteps.filter((step) => switchSlotForMoveId(step.moveId) === slot).map((step) => {
+          return <div key={slot} className={`rhythm-overlay-avatar-cell ${activeCharacterSlot === slot ? 'active' : ''}`}><span className="rhythm-overlay-lane-prompt">{promptTextForStep(lanePromptStep, language, style)}</span>{crowdedPrompts.length > 0 && <span className="rhythm-overlay-crowded-prompts">{crowdedPrompts.map(({ group, parts }) => <span key={group.id} className="rhythm-overlay-crowded-prompt" style={{ '--rhythm-crowded-color': role.color } as CSSProperties}><ComboInlineContent parts={parts} className="rhythm-overlay-crowded-prompt-content" hideIconAlt /></span>)}</span>}{switchRingSteps.filter((step) => switchSlotForMoveId(step.moveId) === slot).map((step) => {
             const visual = rhythmRingVisual(step, elapsedMs, settings);
             return <span key={step.id} className="rhythm-overlay-switch-ring" style={{ '--switch-ring-scale': visual.scale, '--switch-ring-opacity': visual.opacity, '--switch-ring-x': `${settings.ringOffsetX}px`, '--switch-ring-y': `${settings.ringOffsetY}px` } as CSSProperties} aria-hidden="true" />;
           })}<span className="rhythm-overlay-avatar" style={imageCropBackground(role.avatar, normalizeSquareRectPercent(role.avatarCrop))}>{role.avatar ? null : slot}</span></div>;
@@ -443,10 +458,6 @@ function displayMoveLabel(step: OverlayStep): string {
   if (step.moveId === 'switch_2') return '2';
   if (step.moveId === 'switch_3') return '3';
   return step.label.replace(/^切人(?=\d)/, '');
-}
-
-function localizedMoveLabel(step: OverlayStep, language: AppLanguage): string {
-  return localizedDefaultMoveLabel(step.moveId, displayMoveLabel(step), language);
 }
 
 function shouldShowPromptForStep(step: OverlayStep | null | undefined): step is OverlayStep {

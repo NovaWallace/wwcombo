@@ -123,7 +123,7 @@ export class PracticeSession {
     return this.snapshot();
   }
 
-  stop(): PracticeSnapshot {
+  stop(resetProgress = false): PracticeSnapshot {
     if (this.status === 'running' && this.settings.mode !== 'free') {
       if (this.settings.mode === 'strict') this.finalizeMissedSteps(Number.POSITIVE_INFINITY);
       this.feedback.unshift(
@@ -138,6 +138,7 @@ export class PracticeSession {
     this.elapsedMs = 0;
     this.startedFromElapsed = 0;
     this.waitingAxisStart = null;
+    if (resetProgress) this.currentStepIndex = 0;
     return this.snapshot();
   }
 

@@ -1,6 +1,9 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { translationCatalogs } from './translations';
+import { annotateJapaneseTerminology } from './japaneseTerminology';
+import { annotateKoreanTerminology } from './koreanTerminology';
+import './koreanRuby.css';
 
 export type AppLanguage = 'zh-CN' | 'en-US' | 'ja-JP' | 'ko-KR';
 
@@ -59,7 +62,9 @@ export function localizeEnglish(english: string, language: AppLanguage): string 
     if (!match) continue;
     const values = new Map<number, string>();
     template.indexes.forEach((index, captureIndex) => values.set(index, match[captureIndex + 1] ?? ''));
-    return template.translation.replace(/\{(\d+)\}/g, (placeholder, rawIndex: string) => values.get(Number(rawIndex)) ?? placeholder);
+    const translated = template.translation.replace(/\{(\d+)\}/g, (placeholder, rawIndex: string) => values.get(Number(rawIndex)) ?? placeholder);
+    if (language === 'ja-JP') return annotateJapaneseTerminology(translated);
+    return language === 'ko-KR' ? annotateKoreanTerminology(translated) : translated;
   }
   return english;
 }
@@ -82,6 +87,14 @@ function loadLanguage(): AppLanguage {
 
 export function I18nProvider({ children }: { children: ReactNode }) {
   const [language, setLanguage] = useState<AppLanguage>(loadLanguage);
+
+  useEffect(() => {
+    const syncLanguage = (event: StorageEvent) => {
+      if (event.key === LANGUAGE_STORAGE_KEY && isAppLanguage(event.newValue)) setLanguage(event.newValue);
+    };
+    window.addEventListener('storage', syncLanguage);
+    return () => window.removeEventListener('storage', syncLanguage);
+  }, []);
 
   useEffect(() => {
     document.documentElement.lang = language;

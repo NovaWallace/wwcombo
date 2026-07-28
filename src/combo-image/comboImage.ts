@@ -139,18 +139,22 @@ export function scaleComboImageStyle(style: ComboImageStyle, scaleInput: number)
     capsuleWidth: style.capsuleWidth * scale,
     autoWidthPadding: style.autoWidthPadding * scale,
     capsuleHeight: style.capsuleHeight * scale,
+    imageBlockWidth: style.imageBlockWidth * scale,
+    imageBlockHeight: style.imageBlockHeight * scale,
     capsuleImageScale: style.capsuleImageScale,
     overallScale: style.overallScale,
     capsuleGap: style.capsuleGap * scale,
     edgePadding: style.edgePadding * scale,
     scrollStartOffsetPx: style.scrollStartOffsetPx * scale
   };
-}export function createDefaultComboImageStyle(): ComboImageStyle {
+}
+
+export function createDefaultComboImageStyle(): ComboImageStyle {
   return {
     roleStyles: {
-      1: { name: '角色1', color: DEFAULT_ROLE_COLORS[1], avatarCrop: defaultRectPercent(), avatarSize: 54, avatarOffsetX: -18, avatarOffsetY: 0 },
-      2: { name: '角色2', color: DEFAULT_ROLE_COLORS[2], avatarCrop: defaultRectPercent(), avatarSize: 54, avatarOffsetX: -18, avatarOffsetY: 0 },
-      3: { name: '角色3', color: DEFAULT_ROLE_COLORS[3], avatarCrop: defaultRectPercent(), avatarSize: 54, avatarOffsetX: -18, avatarOffsetY: 0 }
+      1: { name: '角色1', color: DEFAULT_ROLE_COLORS[1], avatarCrop: defaultRectPercent(), avatarSize: 70, avatarOffsetX: -20, avatarOffsetY: 0 },
+      2: { name: '角色2', color: DEFAULT_ROLE_COLORS[2], avatarCrop: defaultRectPercent(), avatarSize: 70, avatarOffsetX: -20, avatarOffsetY: 0 },
+      3: { name: '角色3', color: DEFAULT_ROLE_COLORS[3], avatarCrop: defaultRectPercent(), avatarSize: 70, avatarOffsetX: -20, avatarOffsetY: 0 }
     },
     blockMode: 'image',
     capsuleShape: 'capsule',
@@ -160,30 +164,32 @@ export function scaleComboImageStyle(style: ComboImageStyle, scaleInput: number)
     capsuleImage: DEFAULT_BASE_PRESET_IMAGE,
     capsuleImageWidth: 426,
     capsuleImageHeight: 426,
+    imageBlockWidth: 100,
+    imageBlockHeight: 55,
     capsuleImageScale: 1,
     overallScale: 1,
-    capsuleCrop: { x: 3, y: 44, w: 94, h: 13 },
-    capsuleStretch: { left: 12, right: 87 },
+    capsuleCrop: { x: 4, y: 43, w: 93, h: 14 },
+    capsuleStretch: { left: 34, right: 86 },
     textColor: '#eef3f7',
     fontSize: 22,
     fontFamily: 'Microsoft YaHei, Inter, system-ui, sans-serif',
-    avatarSize: 54,
-    avatarOffsetX: -18,
+    avatarSize: 70,
+    avatarOffsetX: -20,
     avatarOffsetY: 0,
     capsuleWidth: 200,
     capsuleWidthMode: 'fixed',
     autoWidthPadding: 72,
     capsuleHeight: 80,
-    capsuleGap: 12,
+    capsuleGap: 20,
     edgePadding: 1,
-    scrollAnchor: 'start',
+    scrollAnchor: 'center',
     scrollStartOffsetPx: 0,
     fadeEnabled: false,
-    fadeRange: 2,
+    fadeRange: 30,
     prePromptEnabled: true,
-    convertIcons: false,
-    mergeSameRoleSteps: false,
-    mergeSameRoleLimit: 6,
+    convertIcons: true,
+    mergeSameRoleSteps: true,
+    mergeSameRoleLimit: 10,
     iconMappings: DEFAULT_ICON_MAPPINGS,
     basePresets: [],
     avatarPresets: [],
@@ -191,10 +197,25 @@ export function scaleComboImageStyle(style: ComboImageStyle, scaleInput: number)
   };
 }
 
+function normalizeContentLabels(value: unknown): Record<string, string> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return Object.fromEntries(Object.entries(value).flatMap(([stepId, label]) => {
+    if (typeof label !== 'string') return [];
+    return stepId.trim() && label.trim() ? [[stepId, label]] : [];
+  }));
+}
+
 export function normalizeComboImageStyle(value: Partial<ComboImageStyle> | null | undefined): ComboImageStyle {
   const fallback = createDefaultComboImageStyle();
   const capsuleImage = sanitizeCapsuleImage(value?.capsuleImage, fallback.capsuleImage);
   const backgroundImage = sanitizeComboBackground(value?.backgroundImage, capsuleImage);
+  const capsuleImageWidth = clampOptionalNumber(value?.capsuleImageWidth, 1, 5000) ?? fallback.capsuleImageWidth;
+  const capsuleImageHeight = clampOptionalNumber(value?.capsuleImageHeight, 1, 5000) ?? fallback.capsuleImageHeight;
+  const capsuleCrop = normalizeRectPercent(value?.capsuleCrop, fallback.capsuleCrop ?? fullRectPercent());
+  const legacyImageScale = clampNumber(value?.capsuleImageScale, 0.05, 8, fallback.capsuleImageScale);
+  const hasIndependentImageSize = Number.isFinite(value?.imageBlockWidth) && Number.isFinite(value?.imageBlockHeight);
+  const legacyImageBlockWidth = Math.max(1, Math.round((capsuleImageWidth ?? fallback.imageBlockWidth) * capsuleCrop.w / 100 * legacyImageScale));
+  const legacyImageBlockHeight = Math.max(1, Math.round((capsuleImageHeight ?? fallback.imageBlockHeight) * capsuleCrop.h / 100 * legacyImageScale));
   return {
     ...fallback,
     ...value,
@@ -207,9 +228,11 @@ export function normalizeComboImageStyle(value: Partial<ComboImageStyle> | null 
     },
     blockMode: value?.blockMode === 'image' || (value?.blockMode === undefined && fallback.blockMode === 'image') ? 'image' : 'capsule',
     capsuleShape: value?.capsuleShape === 'rect' ? 'rect' : 'capsule',
-    capsuleImageWidth: clampOptionalNumber(value?.capsuleImageWidth, 1, 5000) ?? fallback.capsuleImageWidth,
-    capsuleImageHeight: clampOptionalNumber(value?.capsuleImageHeight, 1, 5000) ?? fallback.capsuleImageHeight,
-    capsuleImageScale: clampNumber(value?.capsuleImageScale, 0.05, 8, fallback.capsuleImageScale),
+    capsuleImageWidth,
+    capsuleImageHeight,
+    imageBlockWidth: clampNumber(value?.imageBlockWidth, 24, 1800, hasIndependentImageSize ? fallback.imageBlockWidth : legacyImageBlockWidth),
+    imageBlockHeight: clampNumber(value?.imageBlockHeight, 16, 500, hasIndependentImageSize ? fallback.imageBlockHeight : legacyImageBlockHeight),
+    capsuleImageScale: 1,
     overallScale: clampNumber(value?.overallScale, 0.25, 4, fallback.overallScale),
     fontSize: clampNumber(value?.fontSize, 12, 72, fallback.fontSize),
     fontFamily: typeof value?.fontFamily === 'string' && value.fontFamily.trim() ? value.fontFamily.trim() : fallback.fontFamily,
@@ -228,16 +251,16 @@ export function normalizeComboImageStyle(value: Partial<ComboImageStyle> | null 
     fadeEnabled: Boolean(value?.fadeEnabled),
     fadeRange: clampNumber(value?.fadeRange, 0, 100, fallback.fadeRange),
     prePromptEnabled: value?.prePromptEnabled !== false,
-    convertIcons: Boolean(value?.convertIcons),
-    mergeSameRoleSteps: Boolean(value?.mergeSameRoleSteps),
+    convertIcons: value?.convertIcons !== false,
+    mergeSameRoleSteps: value?.mergeSameRoleSteps !== false,
     mergeSameRoleLimit: clampNumber(value?.mergeSameRoleLimit, 1, 30, fallback.mergeSameRoleLimit),
     iconMappings: normalizeIconMappings(value?.iconMappings),
     basePresets: normalizeStoredBasePresets(value?.basePresets),
     avatarPresets: normalizeStoredAvatarPresets(value?.avatarPresets),
     backgroundCrop: normalizeRectPercent(value?.backgroundCrop, fullRectPercent()),
-    capsuleCrop: normalizeRectPercent(value?.capsuleCrop, fallback.capsuleCrop ?? fullRectPercent()),
+    capsuleCrop,
     capsuleStretch: normalizeStretchPercent(value?.capsuleStretch ?? fallback.capsuleStretch),
-    contentLabels: { ...(value?.contentLabels ?? {}) }
+    contentLabels: normalizeContentLabels(value?.contentLabels)
   };
 }
 
@@ -296,7 +319,7 @@ export function chartToComboImageItems(chart: ComboChart | null, style: ComboIma
   const items = steps.map((step, index) => {
     const switchSlot = switchSlotForMove(step.moveId);
     const characterSlot = step.characterSlot ?? switchSlot ?? 1;
-    const displayText = style.contentLabels[step.id] ?? defaultComboContentLabelForMoveId(step.moveId) ?? step.label;
+    const displayText = style.contentLabels[step.id]?.trim() || defaultComboContentLabelForMoveId(step.moveId) || step.label;
     const mappings = effectiveIconMappings(style, characterSlot);
     return {
       step,
@@ -362,8 +385,9 @@ function mergeSameRoleComboItems(items: ComboImageItem[], style: ComboImageStyle
   const roleStyleFor = (item: ComboImageItem) => style.roleStyles[item.characterSlot];
   for (const item of items) {
     const { startMs, endMs } = comboItemVisualMergeRange(item);
-    const verticalLimitReached = current && layout === 'vertical' && bounds ? !canAppendVerticalMergedItem(current, item, style, roleStyleFor(item), bounds.width) : false;
-    if (!current || item.isSwitch || current.items.length >= configuredLimit || verticalLimitReached) {
+    const widthLimit = mergedItemWidthLimit(style, layout, roleStyleFor(item), bounds?.width);
+    const widthLimitReached = current && widthLimit !== null ? !canAppendMergedItem(current, item, style, roleStyleFor(item), widthLimit) : false;
+    if (!current || item.isSwitch || current.items.length >= configuredLimit || widthLimitReached) {
       current = { items: [item], startMs, endMs, characterSlot: item.characterSlot };
       groups.push(current);
       continue;
@@ -375,11 +399,19 @@ function mergeSameRoleComboItems(items: ComboImageItem[], style: ComboImageStyle
   return groups.map((group, index) => ({ ...mergeGroupToItem(group, style), index, showAvatar: true }));
 }
 
-function canAppendVerticalMergedItem(group: ComboImageMergeGroup, item: ComboImageItem, style: ComboImageStyle, roleStyle: RoleStyle | undefined, viewportWidth: number): boolean {
+function mergedItemWidthLimit(style: ComboImageStyle, layout: 'horizontal' | 'vertical', roleStyle: RoleStyle | undefined, viewportWidth?: number): number | null {
+  const visibleWidth = viewportWidth === undefined ? null : Math.max(1, viewportWidth - style.edgePadding * 2);
+  if (style.capsuleWidthMode === 'fixed') {
+    const fixedWidth = comboImageItemSize(style, roleStyle).width;
+    return visibleWidth === null || layout === 'horizontal' ? fixedWidth : Math.min(fixedWidth, visibleWidth);
+  }
+  return layout === 'vertical' ? visibleWidth : null;
+}
+
+function canAppendMergedItem(group: ComboImageMergeGroup, item: ComboImageItem, style: ComboImageStyle, roleStyle: RoleStyle | undefined, allowedWidth: number): boolean {
   const testGroup = { ...group, items: [...group.items, item] };
-  const testItem = mergeGroupToItem(testGroup, style);
+  const testItem = { ...mergeGroupToItem(testGroup, style), showAvatar: true  };
   const size = comboImageItemSizeForDisplayItem(style, testItem, roleStyle);
-  const allowedWidth = Math.max(1, viewportWidth - style.edgePadding * 2);
   return Math.max(size.width, estimatedMergedContentWidth(testItem, style, roleStyle)) <= allowedWidth;
 }
 
@@ -483,15 +515,12 @@ export function effectiveCapsuleImageFields(style: ComboImageStyle, roleStyle?: 
 
 export function comboImageItemSize(style: ComboImageStyle, roleStyle?: RoleStyle): { width: number; height: number } {
   const capsule = effectiveCapsuleImageFields(style, roleStyle);
-  if (style.blockMode === 'image' && capsule.image && capsule.width && capsule.height) {
-    const naturalWidth = clampNumber(capsule.width, 1, 5000, style.capsuleWidth);
-    const naturalHeight = clampNumber(capsule.height, 1, 5000, style.capsuleHeight);
-    const crop = normalizeRectPercent(capsule.crop, fullRectPercent());
-    const croppedWidth = Math.max(1, naturalWidth * (crop.w / 100));
-    const croppedHeight = Math.max(1, naturalHeight * (crop.h / 100));
+  if (style.blockMode === 'image' && capsule.image) {
+    const width = Math.max(1, Math.round(style.imageBlockWidth));
+    const height = Math.max(1, Math.round(style.imageBlockHeight));
     return {
-      width: Math.max(1, Math.round(croppedWidth * style.capsuleImageScale)),
-      height: Math.max(1, Math.round(croppedHeight * style.capsuleImageScale))
+      width: style.capsuleWidthMode === 'fixed' ? Math.max(width, comboImageStretchMinWidth(style, height, roleStyle)) : width,
+      height
     };
   }
   return { width: style.capsuleWidth, height: style.capsuleHeight };
@@ -749,23 +778,23 @@ export function normalizeStretchPercent(value: Partial<StretchPercent> | undefin
   return { left, right: clampNumber(value?.right, left, 100, fallback.right) };
 }
 
-
 function comboImageStretchMinWidth(style: ComboImageStyle, height: number, roleStyle?: RoleStyle): number {
   const capsule = effectiveCapsuleImageFields(style, roleStyle);
-  const naturalWidth = clampNumber(capsule.width, 1, 5000, style.capsuleWidth);
-  const naturalHeight = clampNumber(capsule.height, 1, 5000, style.capsuleHeight);
+  const naturalWidth = clampNumber(capsule.width, 1, 5000, style.imageBlockWidth);
+  const naturalHeight = clampNumber(capsule.height, 1, 5000, style.imageBlockHeight);
   const crop = normalizeRectPercent(capsule.crop, fullRectPercent());
-  const cropWidth = Math.max(1, naturalWidth * (crop.w / 100));
-  const cropHeight = Math.max(1, naturalHeight * (crop.h / 100));
+  const cropWidth = Math.max(1, naturalWidth * crop.w / 100);
+  const cropHeight = Math.max(1, naturalHeight * crop.h / 100);
+  const cropX = naturalWidth * crop.x / 100;
   const stretch = normalizeStretchPercent(capsule.stretch);
-  const cropX = naturalWidth * (crop.x / 100);
-  const leftLine = clampNumber((stretch.left / 100) * naturalWidth - cropX, 1, Math.max(1, cropWidth - 2), 1);
-  const rightLine = clampNumber((stretch.right / 100) * naturalWidth - cropX, leftLine + 1, Math.max(leftLine + 1, cropWidth - 1), cropWidth - 1);
-  const leftSourceWidth = leftLine;
-  const rightSourceWidth = Math.max(0, cropWidth - rightLine);
-  const fixedWidth = (leftSourceWidth + rightSourceWidth) * (height / cropHeight);
-  return Math.ceil(fixedWidth + Math.max(8, height * 0.16));
+  const leftLine = clampNumber(naturalWidth * stretch.left / 100 - cropX, 1, Math.max(1, cropWidth - 2), 1);
+  const rightLine = clampNumber(naturalWidth * stretch.right / 100 - cropX, leftLine + 1, Math.max(leftLine + 1, cropWidth - 1), cropWidth - 1);
+  const fixedEdgesWidth = (leftLine + Math.max(0, cropWidth - rightLine)) * (height / cropHeight);
+  const minimumStretchWidth = fixedEdgesWidth + Math.max(24, height * 0.42);
+  return Math.min(1800, Math.max(24, Math.ceil(minimumStretchWidth)));
 }
+
+
 export function effectiveComboImageStyle(style: ComboImageStyle): ComboImageStyle {
   return scaleComboImageStyle(style, style.overallScale);
 }

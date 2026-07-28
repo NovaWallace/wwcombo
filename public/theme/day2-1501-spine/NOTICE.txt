@@ -1,0 +1,10 @@
+Wuthering Waves fan-project asset notice
+
+Character artwork and related game assets are copyright Kuro Games.
+This Spine 4.1 animation is used by this non-commercial fan project.
+
+Source reference:
+https://ww.nanoka.cc/character/1501/
+https://static.nanoka.cc/assets/ww/portraits/Portraits_Male1/PortraitsMale_Skin1
+
+The selected Rover artwork is the "Perpetual Spark" (星火永明) outfit.

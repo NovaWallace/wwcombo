@@ -18,6 +18,7 @@ declare global {
       updateKeyMapping?(payload: unknown): Promise<void>;
       setKeyMappingBounds?(bounds: { x: number; y: number; width: number; height: number }): Promise<void>;
       getKeyMappingBounds?(): Promise<{ x: number; y: number; width: number; height: number }>;
+      updateRecordingIndicator?(payload: unknown): Promise<void>;
       onOverlayBoundsChanged?(callback: (bounds: { x: number; y: number; width: number; height: number }) => void): () => void;
       onOverlayMoveModeRequested?(callback: (enabled: boolean) => void): () => void;
       onRhythmFeedbackBoundsChanged?(callback: (bounds: { x: number; y: number; width: number; height: number }) => void): () => void;
@@ -26,8 +27,9 @@ declare global {
       getGlobalInputStatus(): Promise<{ started: boolean; status: string; eventCount: number }>;
       fetchRemoteCharacterAvatars?(): Promise<unknown>;
       stopGlobalInput(): Promise<void>;
+      pickExportDirectory?(currentDirectory?: string, title?: string): Promise<string | null>;
       pickVideoFile?(): Promise<{ path: string; name: string; url: string } | null>;
-      exportVideoWithOverlay?(directory: string, filename: string, sourcePath: string, overlayX: number, overlayY: number, durationMs: number, overlayBytes: Uint8Array): Promise<{ path: string }>;
+      exportVideoWithOverlay?(directory: string, filename: string, sourcePath: string, overlayX: number, overlayY: number, startMs: number, durationMs: number, overlayBytes: Uint8Array): Promise<{ path: string }>;
       cancelVideoExport?(): Promise<void>;
       onVideoExportProgress?(callback: (progress: { progress: number; processedMs: number; durationMs: number }) => void): () => void;
       saveExportFile?(directory: string, filename: string, bytes: Uint8Array): Promise<{ path: string }>;
@@ -61,6 +63,10 @@ declare global {
       startDrag(): Promise<void>;
       startResize(edge: string): Promise<void>;
       notifyBoundsChanged(bounds: { x: number; y: number; width: number; height: number }): Promise<void>;
+      onUpdate(callback: (payload: unknown) => void): () => void;
+    };
+    recordingIndicatorOverlay?: {
+      getState(): Promise<unknown>;
       onUpdate(callback: (payload: unknown) => void): () => void;
     };
   }

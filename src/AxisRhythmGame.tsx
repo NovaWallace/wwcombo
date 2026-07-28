@@ -6,6 +6,7 @@ import { normalizeInputCode, resolveActivation } from '../combo-core/input';
 import { comboTextParts, defaultComboContentLabelForMoveId, effectiveIconMappings, maybeConvertTextToIconLabel, normalizeComboIconMappings } from './combo-image/comboImage';
 import { assetUrl } from './keyMappingTypes';
 import { localizeDefaultCharacterName, useI18n } from './i18n';
+import { NumericDraftInput } from './NumericDraftInput';
 import defaultAxisRhythmLayout from '../public/axis-rhythm-preset/layout.json';
 
 export type AxisRhythmInputSignal = TrainerInputEvent & { id: string };
@@ -450,6 +451,10 @@ export function AxisRhythmGame({ chart, library, style, moves, bindings, inputSi
   const { language, text } = useI18n();
   const [view, setView] = useState<'menu' | 'challenge' | 'settings'>('menu');
   const [iconMappings, setIconMappings] = useState<ComboIconMapping[]>(() => loadAxisMappings(iconStorageKey, style));
+  const renderedIconMappings = useMemo(() => {
+    const replacements = new Map(style.iconMappings.filter((mapping) => mapping.src.startsWith('data:image/svg+xml')).map((mapping) => [mapping.id, mapping.src]));
+    return replacements.size ? iconMappings.map((mapping) => replacements.has(mapping.id) ? { ...mapping, src: replacements.get(mapping.id)! } : mapping) : iconMappings;
+  }, [iconMappings, style.iconMappings]);
   const [layout, setLayout] = useState<AxisRhythmLayout>(loadAxisLayout);
   const [status, setStatus] = useState<AxisRhythmStatus>('idle');
   const [countdownStartedAt, setCountdownStartedAt] = useState<number | null>(null);
@@ -885,7 +890,7 @@ export function AxisRhythmGame({ chart, library, style, moves, bindings, inputSi
                 const slot = (step.characterSlot ?? 1) as CharacterSlot;
                 const progress = clamp((step.startMin - elapsedMs) / 2300, 0, 1);
                 const state = matchedSet.has(step.id) ? 'matched' : missedSet.has(step.id) ? 'missed' : Math.abs(elapsedMs - step.startMin) <= settings.goodMs ? 'hot' : '';
-                return <div key={step.id} className={`axis-note ${state}`} style={notePerspectiveVars(slot, progress, layout.lanes[slot])}><AxisInlineContent step={step} style={style} mappings={iconMappings} /></div>;
+                return <div key={step.id} className={`axis-note ${state}`} style={notePerspectiveVars(slot, progress, layout.lanes[slot])}><AxisInlineContent step={step} style={style} mappings={renderedIconMappings} /></div>;
               })}
             </div>
           </div>
@@ -937,7 +942,7 @@ export function AxisRhythmGame({ chart, library, style, moves, bindings, inputSi
           {selectedLayer.kind === 'audio' && <div className="axis-layer-audio-note"><Mic2 size={15} /><span>{text('捕捉到系统音频后，该图层按音量沿 Y 轴向上律动。', 'When system audio is captured, this layer moves upward on the Y axis with the volume.') }</span></div>}
           {selectedLayer.kind === 'feedback' && <div className="axis-feedback-settings">
             <label>{text('响应角色', 'Target Character') }<select value={selectedLayer.feedbackSlot ?? 1} onChange={(event) => updateLayer(selectedLayer.id, { feedbackSlot: Number(event.target.value) as CharacterSlot })}>{CHARACTER_SLOTS.map((slot) => <option key={slot} value={slot}>{text(`角色 ${slot}`, `Character ${slot}`)}</option>)}</select></label>
-            <label>{text('响应方式', 'Response') }<select value={selectedLayer.feedbackMode ?? 'show'} onChange={(event) => updateLayer(selectedLayer.id, { feedbackMode: event.target.value as AxisFeedbackMode })}><option value="show">{text('输入时出现', 'Show on Input') }</option><option value="hide">{text('输入时消失', 'Hide on Input') }</option></select></label>
+            <label>{text('响应方式', 'Response Mode') }<select value={selectedLayer.feedbackMode ?? 'show'} onChange={(event) => updateLayer(selectedLayer.id, { feedbackMode: event.target.value as AxisFeedbackMode })}><option value="show">{text('输入时出现', 'Show on Input') }</option><option value="hide">{text('输入时消失', 'Hide on Input') }</option></select></label>
             <NumberField label={text('响应时长 ms', 'Response Duration ms') } value={selectedLayer.feedbackDurationMs ?? 420} min={80} max={5000} onCommit={(value) => updateLayer(selectedLayer.id, { feedbackDurationMs: value })} />
             <div className="axis-layer-audio-note">{selectedLayer.feedbackMode === 'hide' ? <EyeOff size={15} /> : <Eye size={15} />}<span>{text('切换到对应角色后，任意非切人输入会触发该图片。', 'After switching to the selected character, any non-switch input triggers this image.') }</span></div>
           </div>}
@@ -985,19 +990,5 @@ function EditFrame({ onBeginTransformDrag }: { onBeginTransformDrag: (event: Rea
 }
 
 function NumberField({ label, value, min, max, onCommit }: { label: string; value: number; min?: number; max?: number; onCommit: (value: number) => void }) {
-  const [draft, setDraftState] = useState(String(value));
-  useEffect(() => setDraftState(String(value)), [value]);
-  const normalizedValue = (raw: string) => {
-    let next = Number(raw);
-    if (!Number.isFinite(next)) next = value;
-    if (min !== undefined) next = Math.max(min, next);
-    if (max !== undefined) next = Math.min(max, next);
-    return next;
-  };
-  const commit = () => onCommit(normalizedValue(draft));
-  const setDraft = (nextDraft: string) => {
-    setDraftState(nextDraft);
-    if (nextDraft.trim() && Number.isFinite(Number(nextDraft))) onCommit(normalizedValue(nextDraft));
-  };
-  return <label>{label}<input inputMode="numeric" value={draft} onChange={(event) => setDraft(event.target.value)} onBlur={commit} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); }} /></label>;
+  return <label>{label}<NumericDraftInput value={value} min={min} max={max} onCommit={onCommit} /></label>;
 }

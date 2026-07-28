@@ -14,6 +14,7 @@ import {
 } from './combo-image/comboImage';
 import { localizeDefaultCharacterName, localizeEnglish, useI18n } from './i18n';
 import type { AppLanguage } from './i18n';
+import { NumericDraftInput } from './NumericDraftInput';
 import './fullChartExport.css';
 
 type ExportBlock = {
@@ -474,22 +475,12 @@ async function prepareUploadedImage(file: File, maxDimension: number, maxDataLen
   throw new Error('Image processing failed');
 }
 
-function NumberControl({ label, value, min, max, onChange }: { label: string; value: number; min: number; max: number; onChange: (value: number) => void }) {
-  return <label><span>{label}</span><input type="number" min={min} max={max} value={value} onChange={(event) => onChange(clamp(Number(event.target.value) || min, min, max))} /></label>;
+function NumberControl({ label, value, min, max, disabled, onChange }: { label: string; value: number; min: number; max: number; disabled?: boolean; onChange: (value: number) => void }) {
+  return <label className={disabled ? 'parameter-disabled' : undefined}><span>{label}</span><NumericDraftInput value={value} min={min} max={max} disabled={disabled} onCommit={onChange} /></label>;
 }
 
 function CanvasDimensionInput({ label, value, onCommit }: { label: string; value: number; onCommit: (value: number) => void }) {
-  const [draft, setDraft] = useState(String(value));
-
-  useEffect(() => setDraft(String(value)), [value]);
-
-  function commit() {
-    const parsed = Math.round(Number(draft));
-    if (Number.isFinite(parsed) && parsed > 0) onCommit(Math.min(8192, parsed));
-    else setDraft(String(value));
-  }
-
-  return <label><span>{label}</span><input type="number" max="8192" value={draft} onChange={(event) => setDraft(event.target.value)} onBlur={commit} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); }} /></label>;
+  return <label><span>{label}</span><NumericDraftInput value={value} min={1} max={8192} integer onCommit={onCommit} /></label>;
 }
 
 function parseMappingTriggers(value: string): string[] {
@@ -828,7 +819,6 @@ export function FullChartExportLab({ chart, library, style, basePresets, onSelec
     setAssetError('');
     try {
       const uploaded = await prepareUploadedImage(file, 2400, 7_500_000);
-      const scale = clamp(draftStyle.capsuleHeight / uploaded.height, 0.05, 8);
       const patch = {
         capsuleImage: uploaded.src,
         capsuleImageWidth: uploaded.width,
@@ -837,10 +827,10 @@ export function FullChartExportLab({ chart, library, style, basePresets, onSelec
         capsuleStretch: { left: 25, right: 75 }
       };
       if (target === 'global') {
-        setDraftStyle((current) => normalizeComboImageStyle({ ...current, blockMode: 'image', capsuleImageScale: scale, ...patch }));
+        setDraftStyle((current) => normalizeComboImageStyle({ ...current, blockMode: 'image', ...patch }));
       } else {
         patchRole(target, patch);
-        patchStyle({ blockMode: 'image', capsuleImageScale: scale });
+        patchStyle({ blockMode: 'image' });
       }
       setCustomBaseNames((current) => ({ ...current, [target]: file.name }));
     } catch (error) {
@@ -859,7 +849,7 @@ export function FullChartExportLab({ chart, library, style, basePresets, onSelec
     if (!baseSourceImage) return;
     const preset: ComboBasePreset = {
       id: `export-base-${crypto.randomUUID()}`,
-      name: customBaseNames[baseTarget] || (baseTarget === 'global' ? text('导出底图', 'Export Base') : localizeDefaultCharacterName(draftStyle.roleStyles[baseTarget].name, baseTarget, language)),
+      name: customBaseNames[baseTarget] || (baseTarget === 'global' ? text('导出底图', 'Export Block Background') : localizeDefaultCharacterName(draftStyle.roleStyles[baseTarget].name, baseTarget, language)),
       src: baseSourceImage,
       imageWidth: baseSource.capsuleImageWidth,
       imageHeight: baseSource.capsuleImageHeight,
@@ -923,14 +913,14 @@ export function FullChartExportLab({ chart, library, style, basePresets, onSelec
           <div className="full-chart-library-title"><strong>{text('连段选择', 'Combo Selection')}</strong><span>{charts.length}</span></div>
           <div className="full-chart-library-list">{charts.length ? charts.map((item) => <button key={item.id} className={selectedChart?.id === item.id ? 'active' : ''} onClick={() => chooseChart(item.id)}><strong>{item.title}</strong><span>{item.steps.length} {text('个招式', 'actions')}</span></button>) : <div className="full-chart-library-empty">{text('连段库为空', 'Combo library is empty')}</div>}</div>
           <button className="full-chart-quick-button" onClick={() => setQuickOpen(true)}><Sparkles size={17} />{text('快捷输入', 'Quick Input')}</button>
-          <button onClick={resetBlocks} disabled={!selectedChart}><RotateCcw size={16} />{text('从连段恢复', 'Reset from Combo')}</button>
+          <button onClick={resetBlocks} disabled={!selectedChart}><RotateCcw size={16} />{text('从连段恢复', 'Restore from Combo')}</button>
         </aside>
       </div>
 
       <section className="full-chart-controls">
         <div className="full-chart-tabs">
           <button className={editorTab === 'appearance' ? 'active' : ''} onClick={() => setEditorTab('appearance')}><SlidersHorizontal size={16} />{text('外观', 'Appearance')}</button>
-          <button className={editorTab === 'base' ? 'active' : ''} onClick={() => setEditorTab('base')}><Images size={16} />{text('底图', 'Base Images')}</button>
+          <button className={editorTab === 'base' ? 'active' : ''} onClick={() => setEditorTab('base')}><Images size={16} />{text('底图', 'Block Background')}</button>
           <button className={editorTab === 'icons' ? 'active' : ''} onClick={() => setEditorTab('icons')}><ImageIcon size={16} />{text('图标', 'Icons')}</button>
           <button className={editorTab === 'content' ? 'active' : ''} onClick={() => setEditorTab('content')}><ListChecks size={16} />{text('内容', 'Content')}</button>
         </div>
@@ -945,10 +935,10 @@ export function FullChartExportLab({ chart, library, style, basePresets, onSelec
               <label><span>{text('背景色', 'Background Color')}</span><input type="color" disabled={settings.transparent} value={settings.backgroundColor} onChange={(event) => patchSettings({ backgroundColor: event.target.value })} /></label>
             </div></fieldset>
             <fieldset><legend>{text('招式块', 'Blocks')}</legend><div className="full-chart-control-grid">
-              <label><span>{text('底图模式', 'Block Mode')}</span><select value={draftStyle.blockMode} onChange={(event) => patchStyle({ blockMode: event.target.value as ComboImageStyle['blockMode'] })}><option value="image">{text('底图', 'Image')}</option><option value="capsule">{text('色块', 'Color')}</option></select></label>
+              <label><span>{text('底图模式', 'Block Mode')}</span><select value={draftStyle.blockMode} onChange={(event) => patchStyle({ blockMode: event.target.value as ComboImageStyle['blockMode'] })}><option value="image">{text('底图', 'Block Background')}</option><option value="capsule">{text('色块', 'Color')}</option></select></label>
               <label><span>{text('宽度模式', 'Width Mode')}</span><select value={draftStyle.capsuleWidthMode} onChange={(event) => patchStyle({ capsuleWidthMode: event.target.value as ComboImageStyle['capsuleWidthMode'] })}><option value="fixed">{text('固定', 'Fixed')}</option><option value="auto">{text('适应内容', 'Fit Content')}</option></select></label>
-              <NumberControl label={text('块宽度', 'Block Width')} value={Math.round(draftStyle.capsuleWidth)} min={32} max={1600} onChange={(value) => patchStyle({ capsuleWidth: value })} />
-              <NumberControl label={text('块高度', 'Block Height')} value={Math.round(draftStyle.capsuleHeight)} min={24} max={500} onChange={(value) => patchStyle({ capsuleHeight: value })} />
+              <NumberControl label={text('块宽度', 'Block Width')} value={Math.round(draftStyle.blockMode === 'image' ? draftStyle.imageBlockWidth : draftStyle.capsuleWidth)} min={32} max={1600} disabled={draftStyle.capsuleWidthMode === 'auto'} onChange={(value) => patchStyle(draftStyle.blockMode === 'image' ? { imageBlockWidth: value } : { capsuleWidth: value })} />
+              <NumberControl label={text('块高度', 'Block Height')} value={Math.round(draftStyle.blockMode === 'image' ? draftStyle.imageBlockHeight : draftStyle.capsuleHeight)} min={24} max={500} onChange={(value) => patchStyle(draftStyle.blockMode === 'image' ? { imageBlockHeight: value } : { capsuleHeight: value })} />
               <NumberControl label={text('文字大小', 'Font Size')} value={Math.round(draftStyle.fontSize)} min={12} max={120} onChange={(value) => patchStyle({ fontSize: value })} />
               <NumberControl label={text('头像大小', 'Avatar Size')} value={Math.round(draftStyle.avatarSize)} min={16} max={300} onChange={(value) => patchStyle({ avatarSize: value })} />
               <label><span>{text('文字颜色', 'Text Color')}</span><input type="color" value={draftStyle.textColor} onChange={(event) => patchStyle({ textColor: event.target.value })} /></label>
@@ -964,7 +954,7 @@ export function FullChartExportLab({ chart, library, style, basePresets, onSelec
                 {([1, 2, 3] as CharacterSlot[]).map((role) => <button key={role} className={baseTarget === role ? 'active' : ''} onClick={() => setBaseTarget(role)}>{localizeDefaultCharacterName(draftStyle.roleStyles[role].name, role, language)}</button>)}
               </div>
               <label className="full-chart-upload-button"><Upload size={15} />{text('上传底图', 'Upload Base')}<input className="full-chart-file-input" type="file" accept="image/*" onChange={(event) => { void pickCustomBase(event.target.files?.[0] ?? null); event.currentTarget.value = ''; }} /></label>
-              {baseTarget !== 'global' && <button disabled={!baseTargetHasOverride} onClick={reuseGlobalBase}><RotateCcw size={15} />{text('复用全局底图', 'Use Global Base')}</button>}
+              {baseTarget !== 'global' && <button disabled={!baseTargetHasOverride} onClick={reuseGlobalBase}><RotateCcw size={15} />{text('复用全局底图', 'Use Global Block Background')}</button>}
               <button disabled={!baseSourceImage} onClick={saveCurrentBasePreset}><Save size={15} />{text('保存模块预设', 'Save Module Preset')}</button>
             </div>
             {assetError && <div className="full-chart-render-error">{assetError}</div>}
@@ -973,8 +963,8 @@ export function FullChartExportLab({ chart, library, style, basePresets, onSelec
                 <BaseCropEditor src={baseSourceImage} width={baseSource.capsuleImageWidth ?? 426} height={baseSource.capsuleImageHeight ?? 80} crop={baseSourceCrop} stretch={baseSourceStretch} emptyLabel={text('请选择预设或上传底图', 'Choose a preset or upload a base image')} onCropChange={(crop) => applyBasePatch({ capsuleCrop: crop })} onStretchChange={(stretch) => applyBasePatch({ capsuleStretch: stretch })} />
               </div>
               <div className="full-chart-base-parameters">
-                <strong>{baseTarget === 'global' ? text('全局底图', 'Global Base') : localizeDefaultCharacterName(draftStyle.roleStyles[baseTarget].name, baseTarget, language)}</strong>
-                <span>{baseTarget !== 'global' && !baseTargetHasOverride ? text('正在复用全局底图', 'Using global base') : customBaseNames[baseTarget] || text('当前底图', 'Current base')}</span>
+                <strong>{baseTarget === 'global' ? text('全局底图', 'Global Block Background') : localizeDefaultCharacterName(draftStyle.roleStyles[baseTarget].name, baseTarget, language)}</strong>
+                <span>{baseTarget !== 'global' && !baseTargetHasOverride ? text('正在复用全局底图', 'Using global block background') : customBaseNames[baseTarget] || text('当前底图', 'Current block background')}</span>
                 <div className="full-chart-control-grid">
                   <NumberControl label={text('裁剪 X %', 'Crop X %')} value={Math.round(baseSourceCrop.x)} min={0} max={95} onChange={(value) => patchBaseCrop({ x: value })} />
                   <NumberControl label={text('裁剪 Y %', 'Crop Y %')} value={Math.round(baseSourceCrop.y)} min={0} max={95} onChange={(value) => patchBaseCrop({ y: value })} />
@@ -982,7 +972,6 @@ export function FullChartExportLab({ chart, library, style, basePresets, onSelec
                   <NumberControl label={text('裁剪高度 %', 'Crop Height %')} value={Math.round(baseSourceCrop.h)} min={5} max={100} onChange={(value) => patchBaseCrop({ h: value })} />
                   <NumberControl label={text('左拉伸线 %', 'Left Stretch %')} value={Math.round(baseSourceStretch.left)} min={1} max={98} onChange={(value) => patchBaseStretch({ left: value })} />
                   <NumberControl label={text('右拉伸线 %', 'Right Stretch %')} value={Math.round(baseSourceStretch.right)} min={2} max={99} onChange={(value) => patchBaseStretch({ right: value })} />
-                  <NumberControl label={text('底图缩放 %', 'Base Scale %')} value={Math.round(draftStyle.capsuleImageScale * 100)} min={5} max={800} onChange={(value) => patchStyle({ capsuleImageScale: value / 100 })} />
                 </div>
               </div>
             </div>
@@ -1001,7 +990,7 @@ export function FullChartExportLab({ chart, library, style, basePresets, onSelec
                 <img src={mapping.src} alt="" />
                 <label><span>{text('图标名称', 'Icon Name')}</span><input value={mapping.label} onChange={(event) => patchMapping(mapping.id, { label: event.target.value })} /></label>
                 <MappingTriggersInput mapping={mapping} label={text('映射输入（逗号分隔）', 'Triggers (comma-separated)')} onCommit={(triggers) => patchMapping(mapping.id, { triggers })} />
-                <label><span>{text('图标倍率', 'Icon Scale')}</span><input type="number" min="0.35" max="3" step="0.05" value={mapping.iconScale ?? 1} onChange={(event) => patchMapping(mapping.id, { iconScale: clamp(Number(event.target.value) || 1, 0.35, 3) })} /></label>
+                <label><span>{text('图标倍率', 'Icon Scale')}</span><NumericDraftInput value={mapping.iconScale ?? 1} min={0.35} max={3} onCommit={(iconScale) => patchMapping(mapping.id, { iconScale })} /></label>
                 <label className="full-chart-icon-button" title={text('替换图标', 'Replace Icon')}><Upload size={16} /><input className="full-chart-file-input" type="file" accept="image/*" onChange={(event) => { void pickMappingIcon(mapping.id, event.target.files?.[0] ?? null); event.currentTarget.value = ''; }} /></label>
                 {mapping.id.startsWith('export-icon-') && <button className="icon-button danger" title={text('删除自定义图标', 'Delete Custom Icon')} onClick={() => setLocalMappings((current) => current.filter((item) => item.id !== mapping.id))}><Trash2 size={16} /></button>}
               </div>)}
@@ -1018,10 +1007,10 @@ export function FullChartExportLab({ chart, library, style, basePresets, onSelec
             {selectedBlock ? <div className="full-chart-block-fields">
               <label className="wide"><span>{text('显示内容', 'Display Content')}</span><input value={selectedBlock.text} onChange={(event) => patchSelectedBlock({ text: event.target.value })} /></label>
               <label><span>{text('角色', 'Character')}</span><select value={selectedBlock.role} onChange={(event) => patchSelectedBlock({ role: Number(event.target.value) as CharacterSlot })}><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></label>
-              <label><span>{text('独立宽度', 'Custom Width')}</span><input type="number" min="32" max="1600" placeholder={text('自动', 'Auto')} value={selectedBlock.width ?? ''} onChange={(event) => patchSelectedBlock({ width: event.target.value ? clamp(Number(event.target.value), 32, 1600) : undefined })} /></label>
+              <label><span>{text('独立宽度', 'Custom Width')}</span><NumericDraftInput value={selectedBlock.width} min={32} max={1600} placeholder={text('自动', 'Auto')} onClear={() => patchSelectedBlock({ width: undefined })} onCommit={(width) => patchSelectedBlock({ width })} /></label>
               <label className="full-chart-check"><input type="checkbox" checked={selectedBlock.showAvatar && !selectedBlock.hideAvatar} onChange={(event) => patchSelectedBlock({ showAvatar: event.target.checked, hideAvatar: !event.target.checked })} /><span>{text('显示头像', 'Show Avatar')}</span></label>
               <label className="full-chart-check"><input type="checkbox" checked={selectedBlock.hideBackground} onChange={(event) => patchSelectedBlock({ hideBackground: event.target.checked })} /><span>{text('隐藏底图', 'Hide Background')}</span></label>
-              <label className="full-chart-check"><input type="checkbox" checked={selectedBlock.breakAfter} disabled={selectedBlock.kind === 'axis'} onChange={(event) => patchSelectedBlock({ breakAfter: event.target.checked })} /><span>{selectedBlock.kind === 'axis' ? text('轴块自动换行', 'Axis Auto-Wrap') : text('此块后换行', 'Break After')}</span></label>
+              <label className="full-chart-check"><input type="checkbox" checked={selectedBlock.breakAfter} disabled={selectedBlock.kind === 'axis'} onChange={(event) => patchSelectedBlock({ breakAfter: event.target.checked })} /><span>{selectedBlock.kind === 'axis' ? text('轴块自动换行', 'Axis Auto-Wrap') : text('此块后换行', 'Line Break After')}</span></label>
               <button className="danger" onClick={() => { const next = blocks.filter((block) => block.id !== selectedBlock.id); setBlocks(next); setSelectedBlockId(next[0]?.id ?? ''); }}><Trash2 size={16} />{text('删除此块', 'Delete Block')}</button>
             </div> : <div className="full-chart-library-empty">{text('没有可编辑的招式块', 'No action blocks to edit')}</div>}
             </div>

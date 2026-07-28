@@ -112,8 +112,15 @@ html, body, #overlay-root { margin: 0; width: 100%; height: 100%; background: rg
 .rhythm-overlay-avatars { position: absolute; left: 50%; bottom: 0; width: min(calc(var(--rhythm-role-spacing, 120px) * 2 + 96px), calc(100% - 20px)); transform: translateX(-50%); height: 78px; display: grid; grid-template-columns: repeat(3, minmax(0, 96px)); justify-content: space-between; }
 .rhythm-overlay-avatar-cell { position: relative; display: grid; place-items: center; align-content: center; gap: 2px; color: #fff; font-size: 20px; font-weight: 950; text-shadow: 0 2px 5px rgba(0,0,0,.86); }
 .rhythm-overlay-lane-prompt { position: absolute; bottom: 88px; left: 4px; right: 4px; z-index: 8; color: #fff; font-size: 18px; font-weight: 950; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; text-shadow: 0 2px 6px rgba(0,0,0,.92); pointer-events: none; }
+.rhythm-overlay-crowded-prompts { position: absolute; left: calc(50% + 34px); bottom: 10px; z-index: 12; display: flex; flex-direction: column-reverse; align-items: flex-start; gap: 4px; pointer-events: none; }
+.rhythm-overlay-crowded-prompt { position: relative; width: 48px; padding: 4px; border: 2px solid var(--rhythm-crowded-color, #ffe037); border-radius: 5px; background: rgba(4,7,9,.9); box-shadow: 0 0 0 1px rgba(0,0,0,.78), 0 4px 14px rgba(0,0,0,.58); pointer-events: none; }
+.rhythm-overlay-crowded-prompt-content { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 100%; }
+.rhythm-overlay-crowded-prompt-content .combo-inline-icon-mark { width: 36px; height: 36px; flex: 0 0 36px; background: rgba(255,255,255,.08); }
+.rhythm-overlay-crowded-prompt-content .combo-inline-icon { width: 33px; height: 33px; }
 .rhythm-overlay-switch-ring { position: absolute; z-index: 7; width: 62px; height: 62px; left: calc(50% + var(--switch-ring-x, 0px)); bottom: calc(15px + var(--switch-ring-y, 0px)); background: url('/rhythm-switch-ring.png') center / contain no-repeat; transform: translateX(-50%) scale(var(--switch-ring-scale, 1.25)); opacity: var(--switch-ring-opacity, 1); pointer-events: none; filter: drop-shadow(0 0 2px rgba(0,0,0,.8)) drop-shadow(0 0 8px rgba(255,255,255,.38)); }
 .rhythm-overlay-avatar { width: 58px; height: 58px; border-radius: 50%; border: 2px solid rgba(255,255,255,.8); background-color: rgba(0,0,0,.35); background-position: center; background-repeat: no-repeat; display: grid; place-items: center; overflow: hidden; }
+.rhythm-overlay-avatar-cell .rhythm-overlay-avatar { transition: border-color .12s linear, box-shadow .12s linear, transform .12s linear; }
+.rhythm-overlay-avatar-cell.active .rhythm-overlay-avatar { border-color: #ffe037; box-shadow: 0 0 0 2px rgba(0,0,0,.72), 0 0 14px rgba(255,224,55,.58); transform: scale(1.08); }
 
 .rhythm-overlay-resize-handle { position: absolute; z-index: 30; width: 14px; height: 14px; border: 1px solid rgba(255,255,255,.9); background: rgba(12,12,12,.78); }
 .rhythm-overlay-resize-handle.n, .rhythm-overlay-resize-handle.s { left: 50%; transform: translateX(-50%); cursor: ns-resize; }

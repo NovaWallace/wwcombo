@@ -1,0 +1,8 @@
+html, body, #recording-indicator-root { width: 100%; height: 100%; margin: 0; background: transparent; overflow: hidden; }
+.recording-indicator-root { width: 100%; height: 100%; display: grid; place-items: center; background: transparent; user-select: none; pointer-events: none; }
+.recording-indicator-root.hidden { display: none; }
+.recording-status-dot { width: 18px; height: 18px; box-sizing: border-box; border: 2px solid rgba(255,255,255,.92); border-radius: 50%; }
+.recording-status-dot.idle { background: #19d66f; box-shadow: 0 0 0 3px rgba(0,0,0,.48), 0 0 12px rgba(25,214,111,.72); }
+.recording-status-dot.recording { background: #f02929; box-shadow: 0 0 0 3px rgba(0,0,0,.52), 0 0 15px rgba(240,41,41,.9); animation: recording-status-blink .78s steps(2, jump-none) infinite; }
+@keyframes recording-status-blink { 50% { opacity: .24; } }
+@media (prefers-reduced-motion: reduce) { .recording-status-dot.recording { animation-duration: 1.5s; } }

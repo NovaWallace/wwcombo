@@ -190,6 +190,8 @@ export type ComboImageStyle = {
   capsuleImage?: string;
   capsuleImageWidth?: number;
   capsuleImageHeight?: number;
+  imageBlockWidth: number;
+  imageBlockHeight: number;
   capsuleImageScale: number;
   overallScale: number;
   capsuleCrop?: RectPercent;

@@ -1,6 +1,6 @@
 {
   "name": "wuthering-combo-trainer",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "license": "MIT",
   "description": "Desktop combo trainer for Wuthering Waves.",
@@ -18,6 +18,7 @@
     "community:publish": "node scripts/community/community-combos.mjs publish",
     "community:index": "node scripts/community/community-combos.mjs index",
     "community:deploy": "node scripts/community/community-combos.mjs deploy",
+    "community:package-server": "node scripts/community/package-server.mjs",
     "community:web": "node scripts/community/server.mjs"
   },
   "dependencies": {

@@ -24,6 +24,9 @@ static RHYTHM_FEEDBACK_STATE: Lazy<Mutex<serde_json::Value>> =
 static KEY_MAPPING_STATE: Lazy<Mutex<serde_json::Value>> = Lazy::new(|| {
     Mutex::new(serde_json::json!({ "visible": false, "moveMode": false, "pressedCodes": [] }))
 });
+static RECORDING_INDICATOR_STATE: Lazy<Mutex<serde_json::Value>> = Lazy::new(|| {
+    Mutex::new(serde_json::json!({ "visible": false, "recording": false, "corner": "bottom-left" }))
+});
 
 #[derive(Clone, Serialize)]
 struct DesktopInputEvent {
@@ -80,6 +83,8 @@ const KEY_MAPPING_MIN_WIDTH: u32 = 160;
 const KEY_MAPPING_MIN_HEIGHT: u32 = 120;
 const KEY_MAPPING_MAX_WIDTH: u32 = 2400;
 const KEY_MAPPING_MAX_HEIGHT: u32 = 2000;
+const RECORDING_INDICATOR_SIZE: f64 = 48.0;
+const RECORDING_INDICATOR_MARGIN: f64 = 18.0;
 const REMOTE_CHARACTER_AVATAR_API: &str = "https://wuwa-hpyg-tool.200503.xyz/api/v1/icons/character";
 
 #[tauri::command]
@@ -188,6 +193,92 @@ fn get_display_size(app: AppHandle) -> Result<DisplaySize, String> {
         width: size.width as f64,
         height: size.height as f64,
     })
+}
+
+fn apply_recording_indicator_state(
+    app: &AppHandle,
+    payload: &serde_json::Value,
+) -> Result<(), String> {
+    let window = app
+        .get_webview_window("recording-indicator")
+        .ok_or_else(|| String::from("recording indicator window not found"))?;
+    let visible = payload
+        .get("visible")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
+    if !visible {
+        let _ = window.set_ignore_cursor_events(true);
+        return window.hide().map_err(|error| error.to_string());
+    }
+
+    let anchor = app
+        .get_webview_window("main")
+        .unwrap_or_else(|| window.clone());
+    let monitor = anchor
+        .current_monitor()
+        .map_err(|error| error.to_string())?
+        .or_else(|| anchor.primary_monitor().ok().flatten())
+        .ok_or_else(|| String::from("monitor not found"))?;
+    let corner = payload
+        .get("corner")
+        .and_then(|value| value.as_str())
+        .unwrap_or("bottom-left");
+    let scale = monitor.scale_factor().max(0.5);
+    let physical_window_size = (RECORDING_INDICATOR_SIZE * scale).round() as i32;
+    let margin = (RECORDING_INDICATOR_MARGIN * scale).round() as i32;
+    let work_area = monitor.work_area();
+    let left = work_area.position.x + margin;
+    let right = work_area.position.x + work_area.size.width as i32 - physical_window_size - margin;
+    let top = work_area.position.y + margin;
+    let bottom =
+        work_area.position.y + work_area.size.height as i32 - physical_window_size - margin;
+    let (x, y) = match corner {
+        "top-left" => (left, top),
+        "top-right" => (right, top),
+        "bottom-right" => (right, bottom),
+        _ => (left, bottom),
+    };
+
+    window
+        .set_size(Size::Logical(LogicalSize::new(
+            RECORDING_INDICATOR_SIZE,
+            RECORDING_INDICATOR_SIZE,
+        )))
+        .map_err(|error| error.to_string())?;
+    window
+        .set_position(PhysicalPosition::new(x, y))
+        .map_err(|error| error.to_string())?;
+    let _ = window.set_always_on_top(true);
+    let _ = window.set_shadow(false);
+    let _ = window.set_focusable(false);
+    let _ = window.set_ignore_cursor_events(true);
+    window.show().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn update_recording_indicator(app: AppHandle, payload: serde_json::Value) -> Result<(), String> {
+    let corner = match payload.get("corner").and_then(|value| value.as_str()) {
+        Some("top-left") => "top-left",
+        Some("top-right") => "top-right",
+        Some("bottom-right") => "bottom-right",
+        _ => "bottom-left",
+    };
+    let normalized = serde_json::json!({
+        "visible": payload.get("visible").and_then(|value| value.as_bool()).unwrap_or(false),
+        "recording": payload.get("recording").and_then(|value| value.as_bool()).unwrap_or(false),
+        "corner": corner
+    });
+    *RECORDING_INDICATOR_STATE.lock() = normalized.clone();
+    apply_recording_indicator_state(&app, &normalized)?;
+    app.get_webview_window("recording-indicator")
+        .ok_or_else(|| String::from("recording indicator window not found"))?
+        .emit("recording-indicator:update", normalized)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn get_recording_indicator_state() -> serde_json::Value {
+    RECORDING_INDICATOR_STATE.lock().clone()
 }
 
 #[tauri::command]
@@ -643,6 +734,23 @@ fn save_export_file(
 }
 
 #[tauri::command]
+fn pick_export_directory(current_directory: String, title: String) -> Option<String> {
+    let dialog_title = if title.trim().is_empty() {
+        "Select Export Folder"
+    } else {
+        title.trim()
+    };
+    let mut dialog = rfd::FileDialog::new().set_title(dialog_title);
+    let current = PathBuf::from(current_directory.trim());
+    if current.is_dir() {
+        dialog = dialog.set_directory(current);
+    }
+    dialog
+        .pick_folder()
+        .map(|path| path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
 fn pick_video_file() -> Option<PickedVideoFile> {
     rfd::FileDialog::new()
         .add_filter("视频文件", &["mp4", "mov", "mkv", "webm", "avi", "m4v"])
@@ -666,6 +774,7 @@ async fn export_video_with_overlay(
     source_path: String,
     overlay_x: i32,
     overlay_y: i32,
+    start_ms: u64,
     duration_ms: u64,
     overlay_bytes: Vec<u8>,
 ) -> Result<ExportVideoResult, String> {
@@ -688,11 +797,18 @@ async fn export_video_with_overlay(
         fs::write(&overlay_path, overlay_bytes).map_err(|error| error.to_string())?;
         let ffmpeg = find_ffmpeg(&app).ok_or_else(|| String::from("\u{672a}\u{627e}\u{5230} ffmpeg\u{ff0c}\u{65e0}\u{6cd5}\u{5408}\u{6210} MP4\u{3002}"))?;
         let error_log = fs::File::create(&error_log_path).map_err(|error| format!("\u{65e0}\u{6cd5}\u{521b}\u{5efa}\u{5bfc}\u{51fa}\u{65e5}\u{5fd7}\u{ff1a}{error}"))?;
+        let start_seconds = format!("{:.3}", start_ms as f64 / 1000.0);
+        let duration_seconds = format!("{:.3}", duration_ms as f64 / 1000.0);
         let mut child = Command::new(ffmpeg)
             .arg("-y")
-            .arg("-i").arg(&source)
-            .arg("-c:v").arg("libvpx-vp9")
-            .arg("-i").arg(&overlay_path)
+            .arg("-ss")
+            .arg(&start_seconds)
+            .arg("-i")
+            .arg(&source)
+            .arg("-c:v")
+            .arg("libvpx-vp9")
+            .arg("-i")
+            .arg(&overlay_path)
             .arg("-filter_complex").arg(format!("[1:v]format=rgba[overlay];[0:v][overlay]overlay={}:{}:format=auto:eof_action=pass[v]", overlay_x.max(0), overlay_y.max(0)))
             .arg("-map").arg("[v]")
             .arg("-map").arg("0:a?")
@@ -708,7 +824,10 @@ async fn export_video_with_overlay(
             .arg("-c:a").arg("aac")
             .arg("-b:a").arg("320k")
             .arg("-movflags").arg("+faststart")
-            .arg("-progress").arg("pipe:1")
+            .arg("-t")
+            .arg(&duration_seconds)
+            .arg("-progress")
+            .arg("pipe:1")
             .arg("-nostats")
             .arg(&temp_output_path)
             .stdout(Stdio::piped())
@@ -816,20 +935,16 @@ fn save_export_mp4(
     })
 }
 
-fn export_file_path(app: &AppHandle, directory: &str, filename: &str) -> Result<PathBuf, String> {
+fn export_file_path(_app: &AppHandle, directory: &str, filename: &str) -> Result<PathBuf, String> {
     let safe_name = Path::new(filename)
         .file_name()
         .and_then(|name| name.to_str())
         .filter(|name| !name.trim().is_empty())
         .ok_or_else(|| String::from("导出文件名无效"))?;
-    let directory_path = if directory.trim().is_empty() {
-        app.path()
-            .download_dir()
-            .or_else(|_| app.path().document_dir())
-            .map_err(|error| format!("无法获取系统下载目录：{error}"))?
-    } else {
-        PathBuf::from(directory.trim())
-    };
+    if directory.trim().is_empty() {
+        return Err(String::from("请先选择导出文件夹"));
+    }
+    let directory_path = PathBuf::from(directory.trim());
     fs::create_dir_all(&directory_path).map_err(|error| error.to_string())?;
     if !directory_path.is_dir() {
         return Err(String::from("导出路径不是文件夹"));
@@ -1277,13 +1392,26 @@ pub fn run() {
                     _ => {}
                 });
             }
+            if let Some(indicator) = app.get_webview_window("recording-indicator") {
+                let _ = indicator.set_always_on_top(true);
+                let _ = indicator.set_shadow(false);
+                let _ = indicator.set_focusable(false);
+                let _ = indicator.set_ignore_cursor_events(true);
+            }
             if let Some(main) = app.get_webview_window("main") {
                 let app_handle = app.handle().clone();
-                main.on_window_event(move |event| {
-                    if matches!(
-                        event,
-                        WindowEvent::CloseRequested { .. } | WindowEvent::Destroyed
-                    ) {
+                main.on_window_event(move |event| match event {
+                    WindowEvent::Moved(_) => {
+                        let state = RECORDING_INDICATOR_STATE.lock().clone();
+                        if state
+                            .get("visible")
+                            .and_then(|value| value.as_bool())
+                            .unwrap_or(false)
+                        {
+                            let _ = apply_recording_indicator_state(&app_handle, &state);
+                        }
+                    }
+                    WindowEvent::CloseRequested { .. } | WindowEvent::Destroyed => {
                         if let Some(overlay) = app_handle.get_webview_window("overlay") {
                             let _ = overlay.hide();
                             let _ = overlay.destroy();
@@ -1296,8 +1424,15 @@ pub fn run() {
                             let _ = key_mapping.hide();
                             let _ = key_mapping.destroy();
                         }
+                        if let Some(indicator) =
+                            app_handle.get_webview_window("recording-indicator")
+                        {
+                            let _ = indicator.hide();
+                            let _ = indicator.destroy();
+                        }
                         app_handle.exit(0);
                     }
+                    _ => {}
                 });
             }
             Ok(())
@@ -1328,10 +1463,13 @@ pub fn run() {
             set_key_mapping_position,
             start_key_mapping_drag,
             notify_key_mapping_bounds_changed,
+            update_recording_indicator,
+            get_recording_indicator_state,
             start_global_input,
             global_input_status,
             fetch_remote_character_avatars,
             save_export_file,
+            pick_export_directory,
             pick_video_file,
             cancel_video_export,
             export_video_with_overlay,

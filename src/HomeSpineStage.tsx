@@ -39,6 +39,14 @@ export function HomeSpineStage({ skeletonUrl, scale = 2, offsetX = 0, offsetY = 
     let disposed = false;
     let resizeObserver: ResizeObserver | null = null;
     let application: import('pixi.js').Application | null = null;
+    let assets: typeof import('pixi.js').Assets | null = null;
+    let assetLoaded = false;
+
+    const releaseAsset = () => {
+      if (!assets || !assetLoaded) return;
+      assetLoaded = false;
+      void assets.unload(skeletonUrl).catch(() => undefined);
+    };
 
     async function initialize() {
       const [{ Application, Assets }, { Spine }] = await Promise.all([
@@ -46,14 +54,16 @@ export function HomeSpineStage({ skeletonUrl, scale = 2, offsetX = 0, offsetY = 
         import('pixi-spine')
       ]);
       if (disposed) return;
+      assets = Assets;
 
       const nextApplication = new Application({
         antialias: true,
         autoDensity: true,
         backgroundAlpha: 0,
         powerPreference: 'high-performance',
-        resolution: Math.min(window.devicePixelRatio || 1, 2)
+        resolution: Math.min(window.devicePixelRatio || 1, 1.5)
       });
+      nextApplication.ticker.maxFPS = 45;
       application = nextApplication;
       applicationRef.current = nextApplication;
       const canvas = nextApplication.view as HTMLCanvasElement;
@@ -63,7 +73,11 @@ export function HomeSpineStage({ skeletonUrl, scale = 2, offsetX = 0, offsetY = 
 
       type SpineResource = { spineData?: ConstructorParameters<typeof Spine>[0] };
       const resource = await Assets.load(skeletonUrl) as SpineResource;
-      if (disposed) return;
+      assetLoaded = true;
+      if (disposed) {
+        releaseAsset();
+        return;
+      }
       if (!resource.spineData) throw new Error('The home Spine resource did not include skeleton data.');
 
       const model = new Spine(resource.spineData);
@@ -102,6 +116,7 @@ export function HomeSpineStage({ skeletonUrl, scale = 2, offsetX = 0, offsetY = 
       if (disposed) return;
       console.error('Unable to load the home Spine animation.', error);
       application?.destroy(true, { children: true, texture: false, baseTexture: false });
+      releaseAsset();
       if (applicationRef.current === application) applicationRef.current = null;
       application = null;
       stageHost.replaceChildren();
@@ -112,6 +127,7 @@ export function HomeSpineStage({ skeletonUrl, scale = 2, offsetX = 0, offsetY = 
       disposed = true;
       resizeObserver?.disconnect();
       application?.destroy(true, { children: true, texture: false, baseTexture: false });
+      releaseAsset();
       if (applicationRef.current === application) applicationRef.current = null;
       stageHost.replaceChildren();
     };

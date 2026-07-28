@@ -13,6 +13,7 @@ import type {
 
 const DEFAULT_GAP_MS = 300;
 const MIN_UNIT_MS = 35;
+const BASIC_ATTACK_TAP_SPLIT_MS = 400;
 
 export type RecorderOptions = {
   moves: MoveDefinition[];
@@ -270,8 +271,19 @@ export class ComboRecorder {
     if (!unit) return;
     unit.endTime = releaseTime;
     unit.duration = Math.max(MIN_UNIT_MS, unit.endTime - unit.startTime);
-    this.closeUnit(unit, unit.endTime);
+    if (!this.mergeRapidBasicAttackTap(sourceMove, unit)) this.closeUnit(unit, unit.endTime);
     if (this.activeMain === unit) this.activeMain = null;
+  }
+
+  private mergeRapidBasicAttackTap(sourceMove: MoveDefinition, unit: RecordedUnit): boolean {
+    if (sourceMove.id !== 'basic_attack') return false;
+    const previous = this.units[this.units.length - 1];
+    if (!previous || previous.moveId !== sourceMove.id || previous.characterSlot !== unit.characterSlot || previous.lane !== unit.lane) return false;
+    if (unit.startTime - previous.startTime >= BASIC_ATTACK_TAP_SPLIT_MS) return false;
+    previous.endTime = Math.max(previous.endTime, unit.endTime);
+    previous.duration = Math.max(MIN_UNIT_MS, previous.endTime - previous.startTime);
+    unit.sourceCodes.forEach((code) => addSourceCode(previous, code));
+    return true;
   }
 
   private extendPressedUnit(sourceMove: MoveDefinition, pressTime: number, releaseTime: number): void {

@@ -1,7 +1,7 @@
 import { cloneElement, isValidElement, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode, WheelEvent as ReactWheelEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronUp, Download, FileVideo, Move, Pause, Play, Save, Upload, X } from 'lucide-react';
+import { Check, ChevronUp, Download, FileVideo, Move, Pause, Play, Save, Scissors, SkipBack, SkipForward, Upload, Volume2, VolumeX, X } from 'lucide-react';
 import type { CharacterSlot, ComboChart, ComboImageStyle, ComboPeriod, ComboStep } from '../combo-core';
 import {
   chartToComboImageItems,
@@ -18,6 +18,8 @@ import {
 import { localizeEnglish, useI18n } from './i18n';
 import type { AppLanguage } from './i18n';
 import { localizedMovePrompt } from './moveLabels';
+import { NumericDraftInput } from './NumericDraftInput';
+import { buildRhythmCrowdedGroups, rhythmNoteHeight, rhythmNoteOpacity, rhythmNoteTop, visibleRhythmCrowdedGroups } from './rhythmCrowding';
 
 type ComboLayout = 'horizontal' | 'vertical' | 'waterfall';
 type LinearComboLayout = Exclude<ComboLayout, 'waterfall'>;
@@ -73,6 +75,7 @@ type VideoAxisWorkbenchProps = {
   overlaySettings: OverlaySettings;
   rhythmUiSettings: RhythmUiSettings;
   exportDirectory?: string;
+  ensureExportDirectory?: () => Promise<string | null>;
   timelineEditor: ReactNode;
   onApplyChart: (chart: ComboChart) => void;
   onApplyContentLabels: (contentLabels: Record<string, string>) => void;
@@ -102,8 +105,12 @@ const MIN_FRAME_GAP_MS = 120;
 const MIN_VIDEO_TIMELINE_HEIGHT = 88;
 const MAX_VIDEO_TIMELINE_HEIGHT_RATIO = 0.52;
 const TIMELINE_TOGGLE_DRAG_THRESHOLD = 4;
+const MIN_VIDEO_TIMELINE_LANE_HEIGHT = 24;
+const MAX_VIDEO_TIMELINE_LANE_HEIGHT = 64;
+const VIDEO_TIMELINE_LANE_HEIGHT_STEP = 4;
 const MAX_WORKBENCH_HISTORY = 80;
 const VIDEO_PLAYBACK_RATES = [1, 0.5, 0.2] as const;
+const MIN_VIDEO_TRIM_DURATION_MS = 100;
 const DEFAULT_VIDEO_META: VideoMeta = { width: 1920, height: 1080, durationMs: 0, name: '未导入视频' };
 const VIDEO_MIME_CANDIDATES = [
   'video/webm;codecs=vp9,opus',
@@ -687,6 +694,16 @@ function drawRhythmLayerToCanvas(ctx: CanvasRenderingContext2D, chart: ComboChar
   const judgeY = clamp(stageHeight - settings.judgeLineOffset, 120, stageHeight - 90);
   const ordered = [...chart.steps].sort((a, b) => a.startMin - b.startMin || (a.characterSlot ?? 1) - (b.characterSlot ?? 1) || a.id.localeCompare(b.id));
   const activeSlot = rhythmActiveSlotAt(ordered, timeMs);
+  const notePartsByStepId = new Map(ordered.map((step) => {
+    const slot = (step.characterSlot ?? 1) as CharacterSlot;
+    const display = rhythmStepText(step, style);
+    return [step.id, comboTextParts(display.text, display.useIcons, effectiveIconMappings(style, slot)).filter((part) => part.kind === 'icon')] as const;
+  }));
+  const crowdedGroups = buildRhythmCrowdedGroups(ordered.flatMap((step) => {
+    const parts = notePartsByStepId.get(step.id) ?? [];
+    return parts.length ? [{ step, height: rhythmNoteHeight(parts.length) }] : [];
+  }), settings.fallSpeed);
+  const visibleCrowdedGroups = visibleRhythmCrowdedGroups(crowdedGroups, timeMs, judgeY, stageHeight, settings.fallSpeed);
   const laneGap = settings.laneGap;
   const laneWidth = Math.min(96, Math.max(44, (stageWidth - 20 - laneGap * 2) / 3));
   const laneSpan = Math.min(stageWidth - 20, settings.roleSpacing * 2 + laneWidth);
@@ -711,13 +728,14 @@ function drawRhythmLayerToCanvas(ctx: CanvasRenderingContext2D, chart: ComboChar
     ordered.filter((step) => (step.characterSlot ?? 1) === slot).forEach((step) => {
       const fallingTop = judgeY - (step.startMin - timeMs) * settings.fallSpeed;
       if (fallingTop < -100 || fallingTop > stageHeight + 100) return;
-      const display = rhythmStepText(step, style);
-      const parts = comboTextParts(display.text, display.useIcons, effectiveIconMappings(style, slot)).filter((part) => part.kind === 'icon');
-      const noteHeight = Math.max(34, parts.length > 1 ? parts.length * 36 + 6 : 34);
+      const parts = notePartsByStepId.get(step.id) ?? [];
+      const noteHeight = rhythmNoteHeight(parts.length);
       const active = timeMs >= step.startMin && timeMs <= step.startMin + step.durationMax;
-      const top = active ? Math.min(fallingTop - noteHeight, judgeY + 4) : fallingTop - noteHeight;
+      const top = rhythmNoteTop(step, noteHeight, timeMs, judgeY, settings.fallSpeed);
       const noteWidth = Math.min(78, laneWidth - 4);
       const noteX = laneX + (laneWidth - noteWidth) / 2;
+      ctx.save();
+      ctx.globalAlpha = rhythmNoteOpacity(step, timeMs);
       if (active) {
         ctx.fillStyle = 'rgba(255,224,55,.92)';
         roundedRect(ctx, noteX, top, noteWidth, noteHeight, 4);
@@ -728,6 +746,7 @@ function drawRhythmLayerToCanvas(ctx: CanvasRenderingContext2D, chart: ComboChar
       ctx.textBaseline = 'middle';
       ctx.textAlign = 'left';
       drawComboTextParts(ctx, parts, noteX + 4, top + noteHeight / 2, noteWidth - 8, 20, imageCache, false);
+      ctx.restore();
     });
   });
   ctx.fillStyle = '#d50000';
@@ -744,6 +763,41 @@ function drawRhythmLayerToCanvas(ctx: CanvasRenderingContext2D, chart: ComboChar
       ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.beginPath(); ctx.arc(avatarX + avatarSize / 2, avatarY + avatarSize / 2, avatarSize / 2, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = '#fff'; ctx.font = '900 20px Microsoft YaHei, sans-serif'; ctx.textAlign = 'center'; ctx.fillText(String(slot), avatarX + avatarSize / 2, avatarY + avatarSize / 2);
     }
+    ctx.beginPath();
+    ctx.arc(avatarX + avatarSize / 2, avatarY + avatarSize / 2, avatarSize / 2 - 1, 0, Math.PI * 2);
+    ctx.strokeStyle = activeSlot === slot ? '#ffe037' : 'rgba(255,255,255,.8)';
+    ctx.lineWidth = activeSlot === slot ? 3 : 2;
+    ctx.stroke();
+  });
+  CHARACTER_SLOTS.forEach((slot, slotIndex) => {
+    const crowdedPrompts = visibleCrowdedGroups
+      .filter((group) => group.characterSlot === slot)
+      .map((group) => ({
+        group,
+        parts: [...group.entries].reverse().flatMap((entry) => notePartsByStepId.get(entry.step.id) ?? [])
+      }))
+      .filter((prompt) => prompt.parts.length > 1);
+    if (!crowdedPrompts.length) return;
+    const laneX = laneStart + slotIndex * laneStep;
+    const avatarSize = 58;
+    const avatarX = laneX + (laneWidth - avatarSize) / 2;
+    const avatarY = stageHeight - avatarHeight + (avatarHeight - avatarSize) / 2;
+    const panelWidth = 48;
+    const rowHeight = 40;
+    crowdedPrompts.forEach(({ parts }, promptIndex) => {
+      const panelHeight = parts.length * rowHeight + 8;
+      const panelX = avatarX + avatarSize + 4 + promptIndex * (panelWidth + 4);
+      const panelY = avatarY + avatarSize - panelHeight;
+      roundedRect(ctx, panelX, panelY, panelWidth, panelHeight, 5);
+      ctx.fillStyle = 'rgba(4,7,9,.9)';
+      ctx.fill();
+      ctx.strokeStyle = style.roleStyles[slot].color;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.fillStyle = '#fff';
+      ctx.font = '900 22px Microsoft YaHei, sans-serif';
+      parts.forEach((part, index) => drawComboTextParts(ctx, [part], panelX + 6, panelY + 4 + rowHeight * index + rowHeight / 2, panelWidth - 12, 22, imageCache, false));
+    });
   });
   ctx.restore();
 }
@@ -1017,7 +1071,10 @@ function VideoComboLayer({ chart, style, timeMs, layout, bounds }: { chart: Comb
 }
 function rhythmStepText(step: ComboStep, style: ComboImageStyle): { text: string; useIcons: boolean } {
   const slot = step.moveId === 'switch_1' ? 1 : step.moveId === 'switch_2' ? 2 : step.moveId === 'switch_3' ? 3 : null;
-  return slot ? { text: ['i', 'ii', 'iii'][slot - 1], useIcons: true } : { text: style.contentLabels[step.id]?.trim() || displayMoveLabel(step), useIcons: style.convertIcons };
+  return {
+    text: style.contentLabels[step.id]?.trim() || defaultComboContentLabelForMoveId(step.moveId) || displayMoveLabel(step),
+    useIcons: style.convertIcons || slot !== null
+  };
 }
 
 function rhythmActiveSlotAt(steps: ComboStep[], timeMs: number): CharacterSlot {
@@ -1039,6 +1096,16 @@ function VideoRhythmLayer({ chart, style, timeMs, settings, bounds }: { chart: C
   const judgeY = clamp(stageHeight - settings.judgeLineOffset, 120, stageHeight - 90);
   const visibleSteps = orderedSteps.filter((step) => step.startMin + Math.max(120, step.durationMax) >= timeMs && step.startMin <= timeMs + Math.ceil((judgeY + 120) / Math.max(0.03, settings.fallSpeed)));
   const activeSlot = rhythmActiveSlotAt(orderedSteps, timeMs);
+  const notePartsByStepId = useMemo(() => new Map(orderedSteps.map((step) => {
+    const slot = (step.characterSlot ?? 1) as CharacterSlot;
+    const display = rhythmStepText(step, style);
+    return [step.id, comboTextParts(display.text, display.useIcons, effectiveIconMappings(style, slot)).filter((part) => part.kind === 'icon')] as const;
+  })), [orderedSteps, style]);
+  const crowdedGroups = useMemo(() => buildRhythmCrowdedGroups(orderedSteps.flatMap((step) => {
+    const parts = notePartsByStepId.get(step.id) ?? [];
+    return parts.length ? [{ step, height: rhythmNoteHeight(parts.length) }] : [];
+  }), settings.fallSpeed), [notePartsByStepId, orderedSteps, settings.fallSpeed]);
+  const visibleCrowdedGroups = visibleRhythmCrowdedGroups(crowdedGroups, timeMs, judgeY, stageHeight, settings.fallSpeed);
 
   useEffect(() => {
     const node = hostRef.current;
@@ -1055,18 +1122,22 @@ function VideoRhythmLayer({ chart, style, timeMs, settings, bounds }: { chart: C
 
   const scaleX = hostSize.width / Math.max(1, bounds.width);
   const scaleY = hostSize.height / Math.max(1, bounds.height);
-  return <div ref={hostRef} className="video-rhythm-scale-host"><div className="video-rhythm-shell" style={{ width: stageWidth, height: stageHeight, transform: `scale(${scaleX * scale}, ${scaleY * scale})`, '--rhythm-judge-y': judgeY + 'px', '--rhythm-lane-gap': settings.laneGap + 'px', '--rhythm-role-spacing': settings.roleSpacing + 'px' } as CSSProperties}><div className="rhythm-overlay-lanes">{CHARACTER_SLOTS.map((slot) => <div key={slot} className="rhythm-overlay-lane">{activeSlot === slot && <div className="rhythm-overlay-active-role-gradient" />}{visibleSteps.filter((step) => (step.characterSlot ?? 1) === slot).map((step) => { const display = rhythmStepText(step, style); const parts = comboTextParts(display.text, display.useIcons, effectiveIconMappings(style, slot)).filter((part) => part.kind === 'icon'); const height = Math.max(34, parts.length > 1 ? parts.length * 36 + 6 : 34); const fallingTop = judgeY - (step.startMin - timeMs) * settings.fallSpeed; const active = timeMs >= step.startMin && timeMs <= step.startMin + step.durationMax; return <div key={step.id} className={'rhythm-overlay-note ' + (step.moveId === 'heavy_attack' || step.moveId.endsWith('_hold') ? 'hold' : 'normal') + (parts.length > 1 ? ' stacked' : '') + (active ? ' active' : '')} style={{ top: active ? Math.min(fallingTop - height, judgeY + 4) : fallingTop - height, height } as CSSProperties}><ComboInlineContent parts={parts} className="rhythm-overlay-note-content" hideIconAlt /></div>; })}</div>)}</div><div className="rhythm-overlay-judge" /><div className="rhythm-overlay-avatars">{CHARACTER_SLOTS.map((slot) => { const role = style.roleStyles[slot]; const prompt = orderedSteps.find((step) => (step.characterSlot ?? 1) === slot && timeMs <= step.startMin + step.durationMax); return <div key={slot} className="rhythm-overlay-avatar-cell"><span className="rhythm-overlay-lane-prompt">{promptTextForStep(prompt, style, language)}</span><span className="rhythm-overlay-avatar" style={imageCropBackground(role.avatar, role.avatarCrop)}>{role.avatar ? null : slot}</span></div>; })}</div></div></div>;
+  return <div ref={hostRef} className="video-rhythm-scale-host"><div className="video-rhythm-shell" style={{ width: stageWidth, height: stageHeight, transform: `scale(${scaleX * scale}, ${scaleY * scale})`, '--rhythm-judge-y': judgeY + 'px', '--rhythm-lane-gap': settings.laneGap + 'px', '--rhythm-role-spacing': settings.roleSpacing + 'px' } as CSSProperties}><div className="rhythm-overlay-lanes">{CHARACTER_SLOTS.map((slot) => <div key={slot} className="rhythm-overlay-lane">{activeSlot === slot && <div className="rhythm-overlay-active-role-gradient" />}{visibleSteps.filter((step) => (step.characterSlot ?? 1) === slot).map((step) => { const parts = notePartsByStepId.get(step.id) ?? []; const height = rhythmNoteHeight(parts.length); const active = timeMs >= step.startMin && timeMs <= step.startMin + step.durationMax; return <div key={step.id} className={'rhythm-overlay-note ' + (step.moveId === 'heavy_attack' || step.moveId.endsWith('_hold') ? 'hold' : 'normal') + (parts.length > 1 ? ' stacked' : '') + (active ? ' active' : '')} style={{ top: rhythmNoteTop(step, height, timeMs, judgeY, settings.fallSpeed), height, opacity: rhythmNoteOpacity(step, timeMs) } as CSSProperties}><ComboInlineContent parts={parts} className="rhythm-overlay-note-content" hideIconAlt /></div>; })}</div>)}</div><div className="rhythm-overlay-judge" /><div className="rhythm-overlay-avatars">{CHARACTER_SLOTS.map((slot) => { const role = style.roleStyles[slot]; const prompt = orderedSteps.find((step) => (step.characterSlot ?? 1) === slot && timeMs <= step.startMin + step.durationMax); const crowdedPrompts = visibleCrowdedGroups.filter((group) => group.characterSlot === slot).map((group) => ({ group, parts: [...group.entries].reverse().flatMap((entry) => notePartsByStepId.get(entry.step.id) ?? []) })).filter((item) => item.parts.length > 1); return <div key={slot} className={`rhythm-overlay-avatar-cell ${activeSlot === slot ? 'active' : ''}`}><span className="rhythm-overlay-lane-prompt">{promptTextForStep(prompt, style, language)}</span>{crowdedPrompts.length > 0 && <span className="rhythm-overlay-crowded-prompts">{crowdedPrompts.map(({ group, parts }) => <span key={group.id} className="rhythm-overlay-crowded-prompt" style={{ '--rhythm-crowded-color': role.color } as CSSProperties}><ComboInlineContent parts={parts} className="rhythm-overlay-crowded-prompt-content" hideIconAlt /></span>)}</span>}<span className="rhythm-overlay-avatar" style={imageCropBackground(role.avatar, role.avatarCrop)}>{role.avatar ? null : slot}</span></div>; })}</div></div></div>;
 }
 
-export function VideoAxisWorkbench({ open, desktop, chart, comboImageStyle, timelineContentLabels, overlaySettings, rhythmUiSettings, exportDirectory, timelineEditor, onApplyChart, onApplyContentLabels, onClose, onSave, getDisplaySize }: VideoAxisWorkbenchProps) {
+export function VideoAxisWorkbench({ open, desktop, chart, comboImageStyle, timelineContentLabels, overlaySettings, rhythmUiSettings, exportDirectory, ensureExportDirectory, timelineEditor, onApplyChart, onApplyContentLabels, onClose, onSave, getDisplaySize }: VideoAxisWorkbenchProps) {
   const { language, text } = useI18n();
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [videoSourcePath, setVideoSourcePath] = useState<string | null>(null);
   const [videoMeta, setVideoMeta] = useState<VideoMeta>(DEFAULT_VIDEO_META);
+  const [trimStartMs, setTrimStartMs] = useState(0);
+  const [trimEndMs, setTrimEndMs] = useState(0);
   const [playbackMs, setPlaybackMs] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackRate, setPlaybackRate] = useState<(typeof VIDEO_PLAYBACK_RATES)[number]>(1);
   const [playbackRateMenuOpen, setPlaybackRateMenuOpen] = useState(false);
+  const [timelineAutoFollow, setTimelineAutoFollow] = useState(true);
+  const [previewMuted, setPreviewMuted] = useState(false);
   const [keyframes, setKeyframes] = useState<ZoomKeyframe[]>(() => {
     const extent = chartExtentMs(chart);
     return [
@@ -1080,6 +1151,7 @@ export function VideoAxisWorkbench({ open, desktop, chart, comboImageStyle, time
   const [timelineCollapsed, setTimelineCollapsed] = useState(false);
   const [timelineHeight, setTimelineHeight] = useState(() => Math.round(Math.max(window.innerHeight * 0.25, MIN_VIDEO_TIMELINE_HEIGHT)));
   const [timelineZoom, setTimelineZoom] = useState(1);
+  const [timelineLaneHeight, setTimelineLaneHeight] = useState(48);
   const [undoStack, setUndoStack] = useState<WorkbenchHistorySnapshot[]>([]);
   const [redoStack, setRedoStack] = useState<WorkbenchHistorySnapshot[]>([]);
   const [timelineToggleDragMoved, setTimelineToggleDragMoved] = useState(false);
@@ -1103,6 +1175,11 @@ export function VideoAxisWorkbench({ open, desktop, chart, comboImageStyle, time
   const videoToastTimerRef = useRef<number | null>(null);
   const exportCancelRef = useRef(false);
   const activeExportRecorderRef = useRef<MediaRecorder | null>(null);
+  const keyboardStateRef = useRef({ isExporting: false  });
+  const togglePlayRef = useRef<() => void>(() => undefined);
+  const seekByRef = useRef<(deltaMs: number) => void>(() => undefined);
+  const undoWorkbenchRef = useRef<() => void>(() => undefined);
+  const redoWorkbenchRef = useRef<() => void>(() => undefined);
   const imageCacheRef = useRef<ImageCache>(new Map());
   const stageShellRef = useRef<HTMLDivElement | null>(null);
   const [displaySize, setDisplaySize] = useState<{ width: number; height: number } | null>(() => normalizeDisplaySize(currentScreenSize(overlaySettings)));
@@ -1111,9 +1188,11 @@ export function VideoAxisWorkbench({ open, desktop, chart, comboImageStyle, time
   const [stageShellSize, setStageShellSize] = useState({ width: 0, height: 0 });
 
   const chartTotal = chartExtentMs(chart);
-  const renderTotal = Math.max(chartTotal, videoMeta.durationMs || 0, ...keyframes.map((frame) => frame.timeMs + 600));
+  const trimDurationMs = videoUrl ? Math.max(0, trimEndMs - trimStartMs) : 0;
+  const playbackDurationMs = trimDurationMs || chartTotal;
+  const renderTotal = Math.max(chartTotal, trimDurationMs, ...keyframes.map((frame) => frame.timeMs + 600));
   const isExporting = exportStatus.state === 'running';
-  const zoomTrackTotal = Math.max(renderTotal, videoMeta.durationMs || 0, chartTotal);
+  const zoomTrackTotal = Math.max(renderTotal, trimDurationMs, chartTotal);
   const frameAspect = `${Math.max(1, videoMeta.width)} / ${Math.max(1, videoMeta.height)}`;
   const stageFrameSize = useMemo(() => {
     if (!stageShellSize.width || !stageShellSize.height) return null;
@@ -1175,8 +1254,9 @@ export function VideoAxisWorkbench({ open, desktop, chart, comboImageStyle, time
     onApplyChart(cloneChartSnapshot(snapshot.chart));
     onApplyContentLabels({ ...snapshot.contentLabels });
     setKeyframes(snapshot.keyframes.map((frame) => ({ ...frame })).sort((left, right) => left.timeMs - right.timeMs || left.id.localeCompare(right.id)));
-    setPlaybackMs(snapshot.playbackMs);
-    if (videoRef.current) videoRef.current.currentTime = snapshot.playbackMs / 1000;
+    const restoredPlaybackMs = clamp(snapshot.playbackMs, 0, playbackDurationMs);
+    setPlaybackMs(restoredPlaybackMs);
+    if (videoRef.current) videoRef.current.currentTime = (trimStartMs + restoredPlaybackMs) / 1000;
     setTimelineHeight(snapshot.timelineHeight);
     setTimelineZoom(snapshot.timelineZoom);
     setTimelineCollapsed(snapshot.timelineCollapsed);
@@ -1462,6 +1542,14 @@ export function VideoAxisWorkbench({ open, desktop, chart, comboImageStyle, time
     setTimelineCollapsed((collapsed) => !collapsed);
   }
 
+  function changeTimelineLaneHeight(event: ReactWheelEvent<HTMLButtonElement>) {
+    if (timelineCollapsed || event.deltaY === 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const delta = event.deltaY > 0 ? -VIDEO_TIMELINE_LANE_HEIGHT_STEP : VIDEO_TIMELINE_LANE_HEIGHT_STEP;
+    setTimelineLaneHeight((current) => Math.round(clamp(current + delta, MIN_VIDEO_TIMELINE_LANE_HEIGHT, MAX_VIDEO_TIMELINE_LANE_HEIGHT)));
+  }
+
   useEffect(() => {
     if (!open) {
       videoRef.current?.pause();
@@ -1483,39 +1571,69 @@ export function VideoAxisWorkbench({ open, desktop, chart, comboImageStyle, time
     return () => window.removeEventListener('pointerdown', closeMenu);
   }, [playbackRateMenuOpen]);
 
+  keyboardStateRef.current.isExporting = isExporting;
+  togglePlayRef.current = () => { void togglePlay();  };
+  seekByRef.current = seekBy;
+  undoWorkbenchRef.current = undoWorkbench;
+  redoWorkbenchRef.current = redoWorkbench;
+
   useEffect(() => {
+    if (!open) return;
+    const isSpaceEvent = (event: KeyboardEvent) => event.code === 'Space' || event.key === ' ';
+    const isTypingTarget = (target: EventTarget | null) => {
+      const element = target as HTMLElement | null;
+      return Boolean(element?.closest('input, textarea, select, [contenteditable="true"]'));
+    };
     const onKeyDown = (event: KeyboardEvent) => {
-      if (!open) return;
-      if (isExporting) {
-        if (event.code === 'Space' || event.key === 'ArrowLeft' || event.key === 'ArrowRight') event.preventDefault();
+      if (keyboardStateRef.current.isExporting) {
+        if (isSpaceEvent(event) || event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+          event.preventDefault();
+          event.stopPropagation();
+          event.stopImmediatePropagation();
+        }
         return;
       }
-      const target = event.target as HTMLElement | null;
-      const isTyping = target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.tagName === 'SELECT' || target?.isContentEditable;
-      if (!isTyping && event.code === 'Space' && !(event.ctrlKey || event.metaKey || event.altKey)) {
+      const isTyping = isTypingTarget(event.target);
+      if (!isTyping && isSpaceEvent(event) && !(event.ctrlKey || event.metaKey || event.altKey)) {
         event.preventDefault();
-        void togglePlay();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        if (!event.repeat) togglePlayRef.current();
         return;
       }
       if (!isTyping && (event.key === 'ArrowLeft' || event.key === 'ArrowRight') && !(event.ctrlKey || event.metaKey || event.altKey)) {
         event.preventDefault();
-        seekBy(event.key === 'ArrowLeft' ? -3000 : 3000);
+        seekByRef.current(event.key === 'ArrowLeft' ? -500 : 500);
         return;
       }
       if (!(event.ctrlKey || event.metaKey)) return;
       const key = event.key.toLowerCase();
       if (key === 'z' && !event.shiftKey) {
         event.preventDefault();
-        undoWorkbench();
+        undoWorkbenchRef.current();
       }
       if (key === 'y' || (key === 'z' && event.shiftKey)) {
         event.preventDefault();
-        redoWorkbench();
+        redoWorkbenchRef.current();
       }
     };
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (!isSpaceEvent(event)) return;
+      if (!keyboardStateRef.current.isExporting && (isTypingTarget(event.target) || event.ctrlKey || event.metaKey || event.altKey)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+    };
+    const onContextMenu = (event: MouseEvent) => event.preventDefault();
     window.addEventListener('keydown', onKeyDown, true);
-    return () => window.removeEventListener('keydown', onKeyDown, true);
-  }, [open, isExporting, undoStack, redoStack, chart, sortedKeyframes, playbackMs, timelineHeight, timelineZoom, timelineCollapsed, videoUrl, renderTotal]);
+    window.addEventListener('keyup', onKeyUp, true);
+    window.addEventListener('contextmenu', onContextMenu, true);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown, true);
+      window.removeEventListener('keyup', onKeyUp, true);
+      window.removeEventListener('contextmenu', onContextMenu, true);
+    };
+  }, [open]);
 
   useEffect(() => {
     let disposed = false;
@@ -1560,6 +1678,10 @@ export function VideoAxisWorkbench({ open, desktop, chart, comboImageStyle, time
   }, [playbackRate, videoUrl]);
 
   useEffect(() => {
+    if (videoRef.current) videoRef.current.muted = previewMuted;
+  }, [previewMuted, videoUrl]);
+
+  useEffect(() => {
     setPreviewTransform((current) => clampPreviewTransform(current));
   }, [stageFrameSize?.height, stageFrameSize?.width]);
 
@@ -1568,15 +1690,26 @@ export function VideoAxisWorkbench({ open, desktop, chart, comboImageStyle, time
   }, []);
 
   useEffect(() => {
+    if (!open || !isPlaying) return;
     let frame = 0;
     const tick = () => {
       const video = videoRef.current;
-      if (video) setPlaybackMs(Math.round(video.currentTime * 1000));
+      if (video) {
+        const sourceTimeMs = Math.round(video.currentTime * 1000);
+        if (trimDurationMs > 0 && sourceTimeMs >= trimEndMs - 16) {
+          video.pause();
+          video.currentTime = trimEndMs / 1000;
+          setPlaybackMs(trimDurationMs);
+          setIsPlaying(false);
+          return;
+        }
+        setPlaybackMs(clamp(sourceTimeMs - trimStartMs, 0, playbackDurationMs));
+      }
       frame = window.requestAnimationFrame(tick);
     };
     frame = window.requestAnimationFrame(tick);
     return () => window.cancelAnimationFrame(frame);
-  }, []);
+  }, [isPlaying, open, playbackDurationMs, trimDurationMs, trimEndMs, trimStartMs, videoUrl]);
 
   async function importVideo(file: File | null) {
     if (!file) return;
@@ -1589,6 +1722,8 @@ export function VideoAxisWorkbench({ open, desktop, chart, comboImageStyle, time
     try {
       const meta = await readVideoMetadata(file.name, nextUrl);
       setVideoMeta(meta);
+      setTrimStartMs(0);
+      setTrimEndMs(meta.durationMs);
       setPlaybackMs(0);
       setIsPlaying(false);
       setKeyframes((current) => {
@@ -1626,6 +1761,8 @@ export function VideoAxisWorkbench({ open, desktop, chart, comboImageStyle, time
     try {
       const meta = await readVideoMetadata(picked.name, picked.url);
       setVideoMeta(meta);
+      setTrimStartMs(0);
+      setTrimEndMs(meta.durationMs);
       setPlaybackMs(0);
       setIsPlaying(false);
       setImportMessage(text(`已导入 ${meta.name}，${meta.width}x${meta.height}，${formatMs(meta.durationMs)}`, `Imported ${meta.name}, ${meta.width}x${meta.height}, ${formatMs(meta.durationMs)}`));
@@ -1638,6 +1775,11 @@ export function VideoAxisWorkbench({ open, desktop, chart, comboImageStyle, time
     const video = videoRef.current;
     if (!videoUrl || !video) return;
     if (video.paused) {
+      const sourceTimeMs = video.currentTime * 1000;
+      if (playbackMs >= playbackDurationMs - 16 || sourceTimeMs < trimStartMs || sourceTimeMs >= trimEndMs - 16) {
+        await seekVideo(video, trimStartMs / 1000);
+        setPlaybackMs(0);
+      }
       await video.play();
       setIsPlaying(true);
     } else {
@@ -1648,22 +1790,70 @@ export function VideoAxisWorkbench({ open, desktop, chart, comboImageStyle, time
 
   function seekTo(ms: number) {
     const video = videoRef.current;
-    const next = clamp(ms, 0, renderTotal);
+    const next = clamp(ms, 0, playbackDurationMs);
     setPlaybackMs(next);
-    if (video) video.currentTime = next / 1000;
+    if (video) video.currentTime = (trimStartMs + next) / 1000;
   }
 
   function seekBy(deltaMs: number) {
     if (!videoUrl) return;
-    const videoTimeMs = videoRef.current ? videoRef.current.currentTime * 1000 : playbackMs;
-    const videoEndMs = videoMeta.durationMs || renderTotal;
-    seekTo(clamp(videoTimeMs + deltaMs, 0, videoEndMs));
+    const relativeTimeMs = videoRef.current ? videoRef.current.currentTime * 1000 - trimStartMs : playbackMs;
+    seekTo(relativeTimeMs + deltaMs);
+  }
+
+  function applyTrimRange(nextStartMs: number, nextEndMs: number, preferredPlaybackMs = playbackMs) {
+    if (!videoUrl || videoMeta.durationMs <= 0) return;
+    const sourceDurationMs = videoMeta.durationMs;
+    const start = clamp(Math.round(nextStartMs), 0, Math.max(0, sourceDurationMs - MIN_VIDEO_TRIM_DURATION_MS));
+    const end = clamp(Math.round(nextEndMs), start + MIN_VIDEO_TRIM_DURATION_MS, sourceDurationMs);
+    const nextDuration = end - start;
+    const nextPlayback = clamp(Math.round(preferredPlaybackMs), 0, nextDuration);
+    setTrimStartMs(start);
+    setTrimEndMs(end);
+    setPlaybackMs(nextPlayback);
+    const video = videoRef.current;
+    if (video) video.currentTime = (start + nextPlayback) / 1000;
+    if (video && nextPlayback >= nextDuration && !video.paused) video.pause();
+  }
+
+  function commitTrimStart(seconds: number) {
+    applyTrimRange(seconds * 1000, trimEndMs);
+  }
+
+  function commitTrimEnd(seconds: number) {
+    applyTrimRange(trimStartMs, seconds * 1000);
+  }
+
+  function setTrimStartFromPlayhead() {
+    const sourceTimeMs = trimStartMs + playbackMs;
+    if (trimEndMs - sourceTimeMs < MIN_VIDEO_TRIM_DURATION_MS) {
+      showVideoToast(text('裁剪区间至少保留 0.1 秒。', 'Keep at least 0.1 seconds in the trimmed range.'));
+      return;
+    }
+    applyTrimRange(sourceTimeMs, trimEndMs, 0);
+  }
+
+  function setTrimEndFromPlayhead() {
+    const sourceTimeMs = trimStartMs + playbackMs;
+    if (sourceTimeMs - trimStartMs < MIN_VIDEO_TRIM_DURATION_MS) {
+      showVideoToast(text('裁剪区间至少保留 0.1 秒。', 'Keep at least 0.1 seconds in the trimmed range.'));
+      return;
+    }
+    applyTrimRange(trimStartMs, sourceTimeMs, playbackMs);
   }
 
   function choosePlaybackRate(rate: (typeof VIDEO_PLAYBACK_RATES)[number]) {
     setPlaybackRate(rate);
     setPlaybackRateMenuOpen(false);
-  }
+   }
+
+  function togglePreviewMuted() {
+    setPreviewMuted((muted) => {
+      const nextMuted = !muted;
+      if (videoRef.current) videoRef.current.muted = nextMuted;
+      return nextMuted;
+     });
+   }
 
   function placeZoomKeyframe(timeMs: number) {
     const nextTime = Math.round(clamp(timeMs, 0, zoomTrackTotal));
@@ -1706,8 +1896,7 @@ export function VideoAxisWorkbench({ open, desktop, chart, comboImageStyle, time
     const minTime = previous ? previous.timeMs + MIN_FRAME_GAP_MS : 0;
     const maxTime = next ? next.timeMs - MIN_FRAME_GAP_MS : drag.renderTotal;
     const nextTime = Math.round(clamp(original.timeMs + deltaMs, minTime, maxTime));
-    setPlaybackMs(nextTime);
-    if (videoRef.current) videoRef.current.currentTime = nextTime / 1000;
+    seekTo(nextTime);
     if (previous) {
       const scaledChart = scaleChartBetweenZoomFrames(drag.chart, previous.timeMs, original.timeMs, nextTime);
       onApplyChart(scaledChart);
@@ -1750,14 +1939,34 @@ export function VideoAxisWorkbench({ open, desktop, chart, comboImageStyle, time
     }
     const width = sourceVideo.videoWidth || videoMeta.width;
     const height = sourceVideo.videoHeight || videoMeta.height;
-    const duration = Number.isFinite(sourceVideo.duration) ? sourceVideo.duration : videoMeta.durationMs / 1000;
-    if (!width || !height || !duration) {
+    const sourceDurationMs = Number.isFinite(sourceVideo.duration) ? Math.round(sourceVideo.duration * 1000) : videoMeta.durationMs;
+    const clipStartMs = clamp(trimStartMs, 0, Math.max(0, sourceDurationMs - MIN_VIDEO_TRIM_DURATION_MS));
+    const clipEndMs = clamp(trimEndMs || sourceDurationMs, clipStartMs + MIN_VIDEO_TRIM_DURATION_MS, sourceDurationMs);
+    const durationMs = clipEndMs - clipStartMs;
+    if (!width || !height || !sourceDurationMs || durationMs < MIN_VIDEO_TRIM_DURATION_MS) {
       const message = text('视频信息不完整，无法导出。', 'The video information is incomplete and cannot be exported.');
       setExportStatus({ state: 'error', message, progress: 0 });
       showVideoToast(message);
       return;
     }
     const nativeOverlayExport = desktopOverlayExportAvailable && Boolean(videoSourcePath);
+    let targetExportDirectory = exportDirectory?.trim() ?? '';
+    if (nativeOverlayExport && !targetExportDirectory) {
+      try {
+        targetExportDirectory = (await ensureExportDirectory?.())?.trim() ?? '';
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        setExportStatus({ state: 'error', message, progress: 0 });
+        showVideoToast(message);
+        return;
+      }
+      if (!targetExportDirectory) {
+        const message = text('未选择导出文件夹，已取消导出。', 'No export folder was selected. Export cancelled.');
+        setExportStatus({ state: 'idle', message, progress: 0 });
+        showVideoToast(message);
+        return;
+      }
+    }
     const nativeClipLeft = clamp(layerBounds.x, 0, 100);
     const nativeClipTop = clamp(layerBounds.y, 0, 100);
     const nativeClipRight = clamp(layerBounds.x + layerBounds.width, 0, 100);
@@ -1837,7 +2046,8 @@ export function VideoAxisWorkbench({ open, desktop, chart, comboImageStyle, time
           return;
         }
         if (!nativeOverlayExport) ctx.drawImage(sourceVideo, 0, 0, width, height);
-        const timeMs = Math.round(sourceVideo.currentTime * 1000);
+        const sourceTimeMs = Math.round(sourceVideo.currentTime * 1000);
+        const timeMs = clamp(sourceTimeMs - clipStartMs, 0, durationMs);
         const exportContentBounds = nativeOverlayExport ? nativeContentBounds : layerContentBounds;
         const exportClipBounds = nativeOverlayExport ? nativeCanvasClipBounds : layerBounds;
         if (waterfallMode) {
@@ -1848,9 +2058,9 @@ export function VideoAxisWorkbench({ open, desktop, chart, comboImageStyle, time
         const now = performance.now();
         if (now - lastProgressUpdate >= 200 || sourceVideo.ended) {
           lastProgressUpdate = now;
-          setExportStatus({ state: 'running', message: text(`${nativeOverlayExport ? '正在生成透明连段图层' : '正在导出视频'} ${formatMs(timeMs)} / ${formatMs(duration * 1000)}`, `${nativeOverlayExport ? 'Generating transparent combo layer' : 'Exporting video'} ${formatMs(timeMs)} / ${formatMs(duration * 1000)}`), progress: clamp(timeMs / Math.max(1, duration * 1000), 0, 1) * (nativeOverlayExport ? 0.7 : 1) });
+          setExportStatus({ state: 'running', message: text(`${nativeOverlayExport ? '正在生成透明连段图层' : '正在导出视频'} ${formatMs(timeMs)} / ${formatMs(durationMs)}`, `${nativeOverlayExport ? 'Generating transparent combo layer' : 'Exporting video'} ${formatMs(timeMs)} / ${formatMs(durationMs)}`), progress: clamp(timeMs / Math.max(1, durationMs), 0, 1) * (nativeOverlayExport ? 0.7 : 1) });
         }
-        if (sourceVideo.ended || sourceVideo.currentTime >= duration - 0.03) {
+        if (sourceVideo.ended || sourceTimeMs >= clipEndMs - 30) {
           recorder.stop();
           return;
         }
@@ -1872,7 +2082,7 @@ export function VideoAxisWorkbench({ open, desktop, chart, comboImageStyle, time
         await sourceVideo.play();
         draw();
       };
-      void seekVideo(sourceVideo, 0).then(startRecording).catch((error) => {
+      void seekVideo(sourceVideo, clipStartMs / 1000).then(startRecording).catch((error) => {
         cleanup();
         reject(error instanceof Error ? error : new Error(text('视频播放失败', 'Video playback failed')));
       });
@@ -1890,7 +2100,7 @@ export function VideoAxisWorkbench({ open, desktop, chart, comboImageStyle, time
         ? desktop.onVideoExportProgress((next) => {
             setExportStatus({
               state: 'running',
-              message: text(`正在合成 MP4 ${formatMs(next.processedMs)} / ${formatMs(next.durationMs || duration * 1000)}`, `Composing MP4 ${formatMs(next.processedMs)} / ${formatMs(next.durationMs || duration * 1000)}`),
+              message: text(`正在合成 MP4 ${formatMs(next.processedMs)} / ${formatMs(next.durationMs || durationMs)}`, `Composing MP4 ${formatMs(next.processedMs)} / ${formatMs(next.durationMs || durationMs)}`),
               progress: 0.7 + clamp(next.progress, 0, 1) * 0.29
             });
           })
@@ -1898,8 +2108,8 @@ export function VideoAxisWorkbench({ open, desktop, chart, comboImageStyle, time
       let saved: { path: string | null; format: 'mp4' | 'webm' };
       try {
         saved = nativeOverlayExport && videoSourcePath && desktop?.exportVideoWithOverlay
-          ? { ...(await desktop.exportVideoWithOverlay(exportDirectory?.trim() ?? '', `${baseName}.mp4`, videoSourcePath, nativeOverlayX, nativeOverlayY, duration * 1000, new Uint8Array(await blob.arrayBuffer()))), format: 'mp4' as const }
-          : await exportBlob(blob, `${baseName}.webm`, exportDirectory);
+          ? { ...(await desktop.exportVideoWithOverlay(targetExportDirectory, `${baseName}.mp4`, videoSourcePath, nativeOverlayX, nativeOverlayY, clipStartMs, durationMs, new Uint8Array(await blob.arrayBuffer()))), format: 'mp4' as const }
+          : await exportBlob(blob, `${baseName}.webm`, targetExportDirectory);
       } finally {
         stopProgress?.();
       }
@@ -1919,7 +2129,7 @@ export function VideoAxisWorkbench({ open, desktop, chart, comboImageStyle, time
       sourceVideo.loop = wasLooping;
       sourceVideo.muted = wasMuted;
       sourceVideo.currentTime = originalTime;
-      setPlaybackMs(Math.round(originalTime * 1000));
+      setPlaybackMs(clamp(Math.round(originalTime * 1000) - trimStartMs, 0, playbackDurationMs));
       setIsPlaying(!wasPaused);
       if (!wasPaused) void sourceVideo.play().catch(() => undefined);
       exportCancelRef.current = false;
@@ -1972,8 +2182,11 @@ export function VideoAxisWorkbench({ open, desktop, chart, comboImageStyle, time
       onScalePointerDown: beginLayerScaleDrag,
       onScalePointerMove: moveLayerScaleDrag,
       onScalePointerUp: endLayerScaleDrag
-    }
-  } as Record<string, unknown>) : timelineEditor;
+    },
+    videoLaneHeight: timelineLaneHeight,
+    keyboardShortcutsEnabled: open,
+    videoAutoFollow: timelineAutoFollow
+   } as Record<string, unknown>) : timelineEditor;
 
   const panel = (
     <div className={`video-workbench ${open ? '' : 'hidden'}`} role="dialog" aria-modal="true" aria-hidden={!open} aria-label={text('视频辅助轴编辑', 'Video Timeline Editor') }>
@@ -1985,6 +2198,14 @@ export function VideoAxisWorkbench({ open, desktop, chart, comboImageStyle, time
             <div><FileVideo size={17} /><strong>{videoMeta.name === DEFAULT_VIDEO_META.name ? text('未导入视频', 'No Video Imported') : videoMeta.name}</strong><span>{videoMeta.width}x{videoMeta.height}</span><span>{formatMs(videoMeta.durationMs || renderTotal)}</span></div>
             <span>{importMessage}</span>
           </div>
+          {videoUrl && <div className="video-trim-row">
+            <span className="video-trim-title"><Scissors size={14} />{text('裁剪时长', 'Trim Video')}</span>
+            <label><span>{text('开始 秒', 'Trim Start s')}</span><NumericDraftInput value={Number((trimStartMs / 1000).toFixed(3))} onCommit={commitTrimStart} disabled={isExporting} /></label>
+            <button className="icon-button" type="button" title={text('将当前位置设为裁剪起点', 'Set current position as trim start')} onClick={setTrimStartFromPlayhead} disabled={isExporting}><SkipBack size={14} /></button>
+            <label><span>{text('结束 秒', 'Trim End s')}</span><NumericDraftInput value={Number((trimEndMs / 1000).toFixed(3))} onCommit={commitTrimEnd} disabled={isExporting} /></label>
+            <button className="icon-button" type="button" title={text('将当前位置设为裁剪终点', 'Set current position as trim end')} onClick={setTrimEndFromPlayhead} disabled={isExporting}><SkipForward size={14} /></button>
+            <output>{text(`裁后时长 ${formatMs(trimDurationMs)}`, `Trimmed duration: ${formatMs(trimDurationMs)}`)}</output>
+          </div>}
           <div ref={stageShellRef} className="video-stage-shell">
             <div
               className={`video-stage-frame ${previewTransform.scale > 1 ? 'is-zoomed' : ''}`}
@@ -1999,7 +2220,7 @@ export function VideoAxisWorkbench({ open, desktop, chart, comboImageStyle, time
               onPointerCancel={endPreviewPan}
             >
               <div className="video-stage-content" style={previewTransformStyle}>
-                {videoUrl ? <video ref={videoRef} src={videoUrl} playsInline onPlay={() => setIsPlaying(true)} onPause={() => setIsPlaying(false)} onEnded={() => setIsPlaying(false)} /> : <div className="video-empty"><FileVideo size={38} /><strong>{text('导入实战视频', 'Import Gameplay Video') }</strong><span>{text('视频不会写入项目文件，只在当前会话中引用。', 'The video is referenced only for this session and is not stored in the project.') }</span></div>}
+                {videoUrl ? <video ref={videoRef} src={videoUrl} playsInline onLoadedMetadata={(event) => { event.currentTarget.currentTime = trimStartMs / 1000; }} onPlay={() => setIsPlaying(true)} onPause={() => setIsPlaying(false)} onEnded={() => { setPlaybackMs(trimDurationMs); setIsPlaying(false); }} /> : <div className="video-empty"><FileVideo size={38} /><strong>{text('导入实战视频', 'Import Gameplay Video') }</strong><span>{text('视频不会写入项目文件，只在当前会话中引用。', 'The video is referenced only for this session and is not stored in the project.') }</span></div>}
                 <div className={`video-combo-layer-box synced ${layerTransformMode ? 'transform-active' : ''}`} style={{ left: `${layerBounds.x}%`, top: `${layerBounds.y}%`, width: `${layerBounds.width}%`, height: `${layerBounds.height}%` }} title={layerTransformMode ? text('拖动移动整个连段图层', 'Drag to move the entire combo layer') : text('位置和尺寸来自连段图外观设置', 'Position and size come from the combo appearance settings')} onPointerDown={beginLayerMoveDrag} onPointerMove={moveLayerMoveDrag} onPointerUp={endLayerMoveDrag} onPointerCancel={endLayerMoveDrag}>
                   <div className="video-combo-layer-viewport">
                     <div className="video-combo-layer-content" style={layerContentStyle}>
@@ -2031,11 +2252,13 @@ export function VideoAxisWorkbench({ open, desktop, chart, comboImageStyle, time
                 <button className={playbackRate === 1 ? 'active' : ''} onClick={() => choosePlaybackRate(1)}>{text('正常 1×', 'Normal 1x') }</button>
                 <button className={playbackRate === 0.5 ? 'active' : ''} onClick={() => choosePlaybackRate(0.5)}>{text('慢放 0.5×', 'Slow 0.5x') }</button>
                 <button className={playbackRate === 0.2 ? 'active' : ''} onClick={() => choosePlaybackRate(0.2)}>{text('慢放 0.2×', 'Slow 0.2x') }</button>
+                <button className={`video-auto-follow-option ${timelineAutoFollow ? 'active' : ''}`} type="button" aria-pressed={timelineAutoFollow} onClick={() => setTimelineAutoFollow((enabled) => !enabled)}><Check size={13} />{text('自动跟随', 'Auto Follow') }</button>
               </div>}
             </div>
+            <button className={`icon-button video-preview-mute ${previewMuted ? 'active' : ''}`} type="button" aria-pressed={previewMuted} title={previewMuted ? text('取消静音', 'Unmute') : text('静音', 'Mute')} onClick={togglePreviewMuted} disabled={!videoUrl || isExporting}>{previewMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}</button>
             <span>{formatMs(playbackMs)}</span>
-            <input type="range" min="0" max={Math.max(1, renderTotal)} step="16" value={Math.min(playbackMs, renderTotal)} onChange={(event) => seekTo(Number(event.target.value))} disabled={isExporting} />
-            <span>{formatMs(renderTotal)}</span>
+            <input type="range" min="0" max={Math.max(1, playbackDurationMs)} step="16" value={Math.min(playbackMs, playbackDurationMs)} onChange={(event) => seekTo(Number(event.target.value))} disabled={isExporting} />
+            <span>{formatMs(playbackDurationMs)}</span>
           </div>
         </section>
         <aside className="video-side-inspector" ref={setInspectorPortalTarget}>
@@ -2051,7 +2274,7 @@ export function VideoAxisWorkbench({ open, desktop, chart, comboImageStyle, time
         </aside>
 
         <section className={`video-edit-panel ${timelineCollapsed ? 'collapsed' : ''}`}>
-          <button className="video-timeline-toggle icon-button" title={timelineCollapsed ? text('展开时间轴；按住拖动：上下调高度，左右调时间轴缩放', 'Expand timeline. Drag vertically to resize or horizontally to zoom.') : text('收起时间轴；按住拖动：上下调高度，左右调时间轴缩放', 'Collapse timeline. Drag vertically to resize or horizontally to zoom.')} onPointerDown={beginTimelinePanelDrag} onPointerMove={moveTimelinePanelDrag} onPointerUp={endTimelinePanelDrag} onPointerCancel={endTimelinePanelDrag} onClick={toggleTimelineCollapsedFromButton}>
+          <button className="video-timeline-toggle icon-button" title={timelineCollapsed ? text('展开时间轴；按住拖动：上下调高度，左右调时间轴缩放；悬浮滚轮调轨道密度', 'Expand timeline. Drag vertically to resize or horizontally to zoom; hover and scroll to change lane density.') : text('收起时间轴；按住拖动：上下调高度，左右调时间轴缩放；悬浮滚轮调轨道密度', 'Collapse timeline. Drag vertically to resize or horizontally to zoom; hover and scroll to change lane density.')} onPointerDown={beginTimelinePanelDrag} onPointerMove={moveTimelinePanelDrag} onPointerUp={endTimelinePanelDrag} onPointerCancel={endTimelinePanelDrag} onClick={toggleTimelineCollapsedFromButton} onWheel={changeTimelineLaneHeight}>
             {timelineCollapsed ? <ChevronUp size={16} /> : <Move size={16} />}
           </button>
           {!timelineCollapsed && <div className="video-timeline-compact">
