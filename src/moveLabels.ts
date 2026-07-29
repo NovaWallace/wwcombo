@@ -20,6 +20,7 @@ export const ENGLISH_MOVE_LABELS: Record<string, string> = {
   dodge_hold: 'Hold Dodge',
   jump: 'Jump',
   jump_hold: 'Hold Jump',
+  finisher: 'Finisher',
   empty_action: 'Empty Action',
   switch_1: 'Switch 1',
   switch_2: 'Switch 2',
@@ -42,6 +43,7 @@ const JAPANESE_MOVE_LABELS: Record<string, string> = {
   dodge_hold: '回避長押し',
   jump: 'ジャンプ',
   jump_hold: 'ジャンプ長押し',
+  finisher: 'フィニッシャー',
   empty_action: '空アクション',
   switch_1: 'キャラクター切替 1',
   switch_2: 'キャラクター切替 2',
@@ -64,6 +66,7 @@ const KOREAN_MOVE_LABELS: Record<string, string> = {
   dodge_hold: '회피 길게 누르기',
   jump: '점프',
   jump_hold: '점프 길게 누르기',
+  finisher: '피니셔',
   empty_action: '빈 동작',
   switch_1: '캐릭터 전환 1',
   switch_2: '캐릭터 전환 2',
@@ -110,12 +113,12 @@ export function localizedDefaultMoveLabel(moveId: string, fallback: string, lang
 }
 
 export function localizedMovePrompt(moveId: string, fallback: string, contentText: string | undefined, language: MoveLabelLanguage): string {
-  if (moveId === 'empty_action') {
-    const prompt = CONTENT_PROMPT_LABELS[String(contentText ?? '').trim()];
-    if (prompt) {
-      if (language === 'ja-JP') return annotateJapaneseTerminology(prompt[language]);
-      return language === 'ko-KR' ? annotateKoreanTerminology(prompt[language]) : prompt[language];
-    }
+  const content = String(contentText ?? '').trim();
+  const suffixKey = (['b', 'y', 'f', 'w'] as const).find((key) => content.endsWith(key));
+  const prompt = CONTENT_PROMPT_LABELS[content] ?? (suffixKey ? CONTENT_PROMPT_LABELS[suffixKey] : undefined);
+  if (prompt) {
+    if (language === 'ja-JP') return annotateJapaneseTerminology(prompt[language]);
+    return language === 'ko-KR' ? annotateKoreanTerminology(prompt[language]) : prompt[language];
   }
   return localizedDefaultMoveLabel(moveId, fallback, language);
 }

@@ -13,9 +13,10 @@
         "h": 14
       },
       "stretch": {
-        "left": 34,
+        "left": 11,
         "right": 86
       },
+      "edge": 0,
       "user": false
     },
     {
@@ -26,15 +27,16 @@
       "imageHeight": 426,
       "crop": {
         "x": 3,
-        "y": 41,
-        "w": 95,
-        "h": 18
+        "y": 44,
+        "w": 93,
+        "h": 13
       },
       "stretch": {
         "left": 29,
         "right": 78
       },
-      "user": false
+      "user": false,
+      "edge": 10
     },
     {
       "id": "base_安可",
@@ -44,15 +46,16 @@
       "imageHeight": 426,
       "crop": {
         "x": 3,
-        "y": 41,
-        "w": 95,
-        "h": 18
+        "y": 44,
+        "w": 93,
+        "h": 13
       },
       "stretch": {
         "left": 29,
         "right": 78
       },
-      "user": false
+      "user": false,
+      "edge": 10
     },
     {
       "id": "base_暗主",
@@ -61,16 +64,17 @@
       "imageWidth": 426,
       "imageHeight": 78,
       "crop": {
-        "x": 0,
-        "y": 0,
-        "w": 100,
-        "h": 100
+        "x": 5,
+        "y": 12,
+        "w": 92,
+        "h": 72
       },
       "stretch": {
         "left": 32,
         "right": 72
       },
-      "user": false
+      "user": false,
+      "edge": 6
     },
     {
       "id": "base_奥古斯塔",
@@ -80,15 +84,16 @@
       "imageHeight": 426,
       "crop": {
         "x": 3,
-        "y": 41,
-        "w": 95,
-        "h": 18
+        "y": 44,
+        "w": 93,
+        "h": 13
       },
       "stretch": {
         "left": 29,
         "right": 78
       },
-      "user": false
+      "user": false,
+      "edge": 10
     },
     {
       "id": "base_白芷",
@@ -134,15 +139,16 @@
       "imageHeight": 426,
       "crop": {
         "x": 3,
-        "y": 41,
-        "w": 95,
-        "h": 18
+        "y": 44,
+        "w": 93,
+        "h": 13
       },
       "stretch": {
         "left": 29,
         "right": 78
       },
-      "user": false
+      "user": false,
+      "edge": 10
     },
     {
       "id": "base_长离",
@@ -152,15 +158,16 @@
       "imageHeight": 426,
       "crop": {
         "x": 3,
-        "y": 41,
-        "w": 95,
-        "h": 18
+        "y": 44,
+        "w": 93,
+        "h": 13
       },
       "stretch": {
         "left": 29,
         "right": 78
       },
-      "user": false
+      "user": false,
+      "edge": 10
     },
     {
       "id": "base_炽霞",
@@ -188,15 +195,16 @@
       "imageHeight": 426,
       "crop": {
         "x": 3,
-        "y": 41,
-        "w": 95,
-        "h": 18
+        "y": 44,
+        "w": 93,
+        "h": 13
       },
       "stretch": {
         "left": 29,
         "right": 78
       },
-      "user": false
+      "user": false,
+      "edge": 10
     },
     {
       "id": "base_达妮娅",
@@ -206,15 +214,16 @@
       "imageHeight": 426,
       "crop": {
         "x": 3,
-        "y": 41,
-        "w": 95,
-        "h": 18
+        "y": 44,
+        "w": 93,
+        "h": 13
       },
       "stretch": {
         "left": 29,
         "right": 78
       },
-      "user": false
+      "user": false,
+      "edge": 10
     },
     {
       "id": "base_丹瑾",
@@ -260,15 +269,16 @@
       "imageHeight": 426,
       "crop": {
         "x": 3,
-        "y": 41,
-        "w": 95,
-        "h": 18
+        "y": 44,
+        "w": 93,
+        "h": 13
       },
       "stretch": {
         "left": 29,
         "right": 78
       },
-      "user": false
+      "user": false,
+      "edge": 10
     },
     {
       "id": "base_菲比",
@@ -278,15 +288,16 @@
       "imageHeight": 426,
       "crop": {
         "x": 3,
-        "y": 41,
-        "w": 95,
-        "h": 18
+        "y": 44,
+        "w": 93,
+        "h": 13
       },
       "stretch": {
         "left": 29,
         "right": 78
       },
-      "user": false
+      "user": false,
+      "edge": 10
     },
     {
       "id": "base_风主",
@@ -295,16 +306,17 @@
       "imageWidth": 426,
       "imageHeight": 78,
       "crop": {
-        "x": 0,
-        "y": 0,
-        "w": 100,
-        "h": 100
+        "x": 5,
+        "y": 12,
+        "w": 92,
+        "h": 72
       },
       "stretch": {
         "left": 32,
         "right": 72
       },
-      "user": false
+      "user": false,
+      "edge": 6
     },
     {
       "id": "base_弗洛洛",
@@ -314,15 +326,16 @@
       "imageHeight": 426,
       "crop": {
         "x": 3,
-        "y": 41,
-        "w": 95,
-        "h": 18
+        "y": 44,
+        "w": 93,
+        "h": 13
       },
       "stretch": {
         "left": 29,
         "right": 78
       },
-      "user": false
+      "user": false,
+      "edge": 10
     },
     {
       "id": "base_光主",
@@ -331,16 +344,17 @@
       "imageWidth": 426,
       "imageHeight": 78,
       "crop": {
-        "x": 0,
-        "y": 0,
-        "w": 100,
-        "h": 100
+        "x": 5,
+        "y": 12,
+        "w": 92,
+        "h": 72
       },
       "stretch": {
         "left": 32,
         "right": 72
       },
-      "user": false
+      "user": false,
+      "edge": 6
     },
     {
       "id": "base_忌炎",
@@ -350,15 +364,16 @@
       "imageHeight": 426,
       "crop": {
         "x": 3,
-        "y": 41,
-        "w": 95,
-        "h": 18
+        "y": 44,
+        "w": 93,
+        "h": 13
       },
       "stretch": {
         "left": 29,
         "right": 78
       },
-      "user": false
+      "user": false,
+      "edge": 10
     },
     {
       "id": "base_嘉贝丽娜",
@@ -368,15 +383,16 @@
       "imageHeight": 426,
       "crop": {
         "x": 3,
-        "y": 41,
-        "w": 95,
-        "h": 18
+        "y": 44,
+        "w": 93,
+        "h": 13
       },
       "stretch": {
         "left": 29,
         "right": 78
       },
-      "user": false
+      "user": false,
+      "edge": 10
     },
     {
       "id": "base_鉴心",
@@ -386,15 +402,16 @@
       "imageHeight": 426,
       "crop": {
         "x": 3,
-        "y": 41,
-        "w": 95,
-        "h": 18
+        "y": 44,
+        "w": 93,
+        "h": 13
       },
       "stretch": {
         "left": 29,
         "right": 78
       },
-      "user": false
+      "user": false,
+      "edge": 10
     },
     {
       "id": "base_今汐",
@@ -404,15 +421,16 @@
       "imageHeight": 426,
       "crop": {
         "x": 3,
-        "y": 41,
-        "w": 95,
-        "h": 18
+        "y": 44,
+        "w": 93,
+        "h": 13
       },
       "stretch": {
         "left": 29,
         "right": 78
       },
-      "user": false
+      "user": false,
+      "edge": 10
     },
     {
       "id": "base_卡卡罗",
@@ -422,15 +440,16 @@
       "imageHeight": 426,
       "crop": {
         "x": 3,
-        "y": 41,
-        "w": 95,
-        "h": 18
+        "y": 44,
+        "w": 93,
+        "h": 13
       },
       "stretch": {
         "left": 29,
         "right": 78
       },
-      "user": false
+      "user": false,
+      "edge": 10
     },
     {
       "id": "base_卡提希娅",
@@ -440,15 +459,16 @@
       "imageHeight": 426,
       "crop": {
         "x": 3,
-        "y": 41,
-        "w": 95,
-        "h": 18
+        "y": 44,
+        "w": 93,
+        "h": 13
       },
       "stretch": {
         "left": 29,
         "right": 78
       },
-      "user": false
+      "user": false,
+      "edge": 10
     },
     {
       "id": "base_坎特蕾拉",
@@ -458,15 +478,16 @@
       "imageHeight": 426,
       "crop": {
         "x": 3,
-        "y": 41,
-        "w": 95,
-        "h": 18
+        "y": 44,
+        "w": 93,
+        "h": 13
       },
       "stretch": {
         "left": 29,
         "right": 78
       },
-      "user": false
+      "user": false,
+      "edge": 10
     },
     {
       "id": "base_珂莱塔",
@@ -476,15 +497,16 @@
       "imageHeight": 426,
       "crop": {
         "x": 3,
-        "y": 41,
-        "w": 95,
-        "h": 18
+        "y": 44,
+        "w": 93,
+        "h": 13
       },
       "stretch": {
         "left": 29,
         "right": 78
       },
-      "user": false
+      "user": false,
+      "edge": 10
     },
     {
       "id": "base_雷主",
@@ -493,16 +515,17 @@
       "imageWidth": 426,
       "imageHeight": 78,
       "crop": {
-        "x": 0,
-        "y": 0,
-        "w": 100,
-        "h": 100
+        "x": 5,
+        "y": 12,
+        "w": 92,
+        "h": 72
       },
       "stretch": {
         "left": 32,
         "right": 72
       },
-      "user": false
+      "user": false,
+      "edge": 6
     },
     {
       "id": "base_丽贝卡",
@@ -512,15 +535,16 @@
       "imageHeight": 426,
       "crop": {
         "x": 3,
-        "y": 41,
-        "w": 95,
-        "h": 18
+        "y": 44,
+        "w": 93,
+        "h": 13
       },
       "stretch": {
         "left": 29,
         "right": 78
       },
-      "user": false
+      "user": false,
+      "edge": 10
     },
     {
       "id": "base_琳奈",
@@ -530,15 +554,16 @@
       "imageHeight": 426,
       "crop": {
         "x": 3,
-        "y": 41,
-        "w": 95,
-        "h": 18
+        "y": 44,
+        "w": 93,
+        "h": 13
       },
       "stretch": {
         "left": 29,
         "right": 78
       },
-      "user": false
+      "user": false,
+      "edge": 10
     },
     {
       "id": "base_凌阳",
@@ -548,15 +573,16 @@
       "imageHeight": 426,
       "crop": {
         "x": 3,
-        "y": 41,
-        "w": 95,
-        "h": 18
+        "y": 44,
+        "w": 93,
+        "h": 13
       },
       "stretch": {
         "left": 29,
         "right": 78
       },
-      "user": false
+      "user": false,
+      "edge": 10
     },
     {
       "id": "base_陆赫兹",
@@ -566,15 +592,16 @@
       "imageHeight": 426,
       "crop": {
         "x": 3,
-        "y": 41,
-        "w": 95,
-        "h": 18
+        "y": 44,
+        "w": 93,
+        "h": 13
       },
       "stretch": {
         "left": 29,
         "right": 78
       },
-      "user": false
+      "user": false,
+      "edge": 10
     },
     {
       "id": "base_露帕",
@@ -584,15 +611,16 @@
       "imageHeight": 426,
       "crop": {
         "x": 3,
-        "y": 41,
-        "w": 95,
-        "h": 18
+        "y": 44,
+        "w": 93,
+        "h": 13
       },
       "stretch": {
         "left": 29,
         "right": 78
       },
-      "user": false
+      "user": false,
+      "edge": 10
     },
     {
       "id": "base_露西",
@@ -602,15 +630,16 @@
       "imageHeight": 426,
       "crop": {
         "x": 3,
-        "y": 41,
-        "w": 95,
-        "h": 18
+        "y": 44,
+        "w": 93,
+        "h": 13
       },
       "stretch": {
         "left": 29,
         "right": 78
       },
-      "user": false
+      "user": false,
+      "edge": 10
     },
     {
       "id": "base_洛可可",
@@ -620,15 +649,16 @@
       "imageHeight": 426,
       "crop": {
         "x": 3,
-        "y": 41,
-        "w": 95,
-        "h": 18
+        "y": 44,
+        "w": 93,
+        "h": 13
       },
       "stretch": {
         "left": 29,
         "right": 78
       },
-      "user": false
+      "user": false,
+      "edge": 10
     },
     {
       "id": "base_洛瑟拉",
@@ -638,15 +668,16 @@
       "imageHeight": 426,
       "crop": {
         "x": 3,
-        "y": 41,
-        "w": 95,
-        "h": 18
+        "y": 44,
+        "w": 93,
+        "h": 13
       },
       "stretch": {
         "left": 29,
         "right": 78
       },
-      "user": false
+      "user": false,
+      "edge": 10
     },
     {
       "id": "base_莫宁",
@@ -656,15 +687,16 @@
       "imageHeight": 426,
       "crop": {
         "x": 3,
-        "y": 41,
-        "w": 95,
-        "h": 18
+        "y": 44,
+        "w": 93,
+        "h": 13
       },
       "stretch": {
         "left": 29,
         "right": 78
       },
-      "user": false
+      "user": false,
+      "edge": 10
     },
     {
       "id": "base_莫特斐",
@@ -692,15 +724,16 @@
       "imageHeight": 426,
       "crop": {
         "x": 3,
-        "y": 41,
-        "w": 95,
-        "h": 18
+        "y": 44,
+        "w": 93,
+        "h": 13
       },
       "stretch": {
         "left": 29,
         "right": 78
       },
-      "user": false
+      "user": false,
+      "edge": 10
     },
     {
       "id": "base_秋水",
@@ -728,15 +761,16 @@
       "imageHeight": 426,
       "crop": {
         "x": 3,
-        "y": 41,
-        "w": 95,
-        "h": 18
+        "y": 44,
+        "w": 93,
+        "h": 13
       },
       "stretch": {
         "left": 29,
         "right": 78
       },
-      "user": false
+      "user": false,
+      "edge": 10
     },
     {
       "id": "base_散华",
@@ -764,15 +798,16 @@
       "imageHeight": 426,
       "crop": {
         "x": 3,
-        "y": 41,
-        "w": 95,
-        "h": 18
+        "y": 44,
+        "w": 93,
+        "h": 13
       },
       "stretch": {
         "left": 29,
         "right": 78
       },
-      "user": false
+      "user": false,
+      "edge": 10
     },
     {
       "id": "base_穗穗",
@@ -782,15 +817,16 @@
       "imageHeight": 426,
       "crop": {
         "x": 3,
-        "y": 41,
-        "w": 95,
-        "h": 18
+        "y": 44,
+        "w": 93,
+        "h": 13
       },
       "stretch": {
         "left": 29,
         "right": 78
       },
-      "user": false
+      "user": false,
+      "edge": 10
     },
     {
       "id": "base_桃祈",
@@ -818,15 +854,16 @@
       "imageHeight": 426,
       "crop": {
         "x": 3,
-        "y": 41,
-        "w": 95,
-        "h": 18
+        "y": 44,
+        "w": 93,
+        "h": 13
       },
       "stretch": {
         "left": 29,
         "right": 78
       },
-      "user": false
+      "user": false,
+      "edge": 10
     },
     {
       "id": "base_西格莉卡",
@@ -836,15 +873,16 @@
       "imageHeight": 426,
       "crop": {
         "x": 3,
-        "y": 41,
-        "w": 95,
-        "h": 18
+        "y": 44,
+        "w": 93,
+        "h": 13
       },
       "stretch": {
         "left": 29,
         "right": 78
       },
-      "user": false
+      "user": false,
+      "edge": 10
     },
     {
       "id": "base_夏空",
@@ -854,15 +892,16 @@
       "imageHeight": 426,
       "crop": {
         "x": 3,
-        "y": 41,
-        "w": 95,
-        "h": 18
+        "y": 44,
+        "w": 93,
+        "h": 13
       },
       "stretch": {
         "left": 29,
         "right": 78
       },
-      "user": false
+      "user": false,
+      "edge": 10
     },
     {
       "id": "base_相里要",
@@ -872,15 +911,16 @@
       "imageHeight": 426,
       "crop": {
         "x": 3,
-        "y": 41,
-        "w": 95,
-        "h": 18
+        "y": 44,
+        "w": 93,
+        "h": 13
       },
       "stretch": {
         "left": 29,
         "right": 78
       },
-      "user": false
+      "user": false,
+      "edge": 10
     },
     {
       "id": "base_玄翎",
@@ -890,15 +930,16 @@
       "imageHeight": 426,
       "crop": {
         "x": 3,
-        "y": 41,
-        "w": 95,
-        "h": 18
+        "y": 44,
+        "w": 93,
+        "h": 13
       },
       "stretch": {
         "left": 29,
         "right": 78
       },
-      "user": false
+      "user": false,
+      "edge": 10
     },
     {
       "id": "base_秧秧",
@@ -908,15 +949,16 @@
       "imageHeight": 426,
       "crop": {
         "x": 3,
-        "y": 41,
-        "w": 95,
-        "h": 18
+        "y": 44,
+        "w": 93,
+        "h": 13
       },
       "stretch": {
         "left": 29,
         "right": 78
       },
-      "user": false
+      "user": false,
+      "edge": 10
     },
     {
       "id": "base_吟霖",
@@ -926,15 +968,16 @@
       "imageHeight": 426,
       "crop": {
         "x": 3,
-        "y": 41,
-        "w": 95,
-        "h": 18
+        "y": 44,
+        "w": 93,
+        "h": 13
       },
       "stretch": {
         "left": 29,
         "right": 78
       },
-      "user": false
+      "user": false,
+      "edge": 10
     },
     {
       "id": "base_尤诺",
@@ -944,15 +987,16 @@
       "imageHeight": 426,
       "crop": {
         "x": 3,
-        "y": 41,
-        "w": 95,
-        "h": 18
+        "y": 44,
+        "w": 93,
+        "h": 13
       },
       "stretch": {
         "left": 29,
         "right": 78
       },
-      "user": false
+      "user": false,
+      "edge": 10
     },
     {
       "id": "base_釉瑚",
@@ -998,15 +1042,16 @@
       "imageHeight": 426,
       "crop": {
         "x": 3,
-        "y": 41,
-        "w": 95,
-        "h": 18
+        "y": 44,
+        "w": 93,
+        "h": 13
       },
       "stretch": {
         "left": 29,
         "right": 78
       },
-      "user": false
+      "user": false,
+      "edge": 10
     },
     {
       "id": "base_折枝",
@@ -1016,15 +1061,16 @@
       "imageHeight": 426,
       "crop": {
         "x": 3,
-        "y": 41,
-        "w": 95,
-        "h": 18
+        "y": 44,
+        "w": 93,
+        "h": 13
       },
       "stretch": {
         "left": 29,
         "right": 78
       },
-      "user": false
+      "user": false,
+      "edge": 10
     }
   ]
 }

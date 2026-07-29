@@ -4,14 +4,28 @@
 
 WW Combo Trainer is a Windows desktop tool for recording, editing, practicing, and exporting Wuthering Waves combos. It only reads input for recording and judgement; it never sends gameplay input for you. This is an unofficial fan project and is not affiliated with Kuro Games.
 
+## v0.3.0 update (2026-07-30)
+
+- Added built-in help in four languages, learner and guide-author tutorials, detailed shortcut reference, a full changelog, and first-run guidance.
+- Settings now imports and exports `.wwkeys.json` binding backups and provides configurable single-key and Shift shortcuts; editing combinations beginning with Ctrl or Alt remain fixed.
+- The Windows build now requires administrator privileges at launch. Global Input Capture, mouse side buttons, dual bindings, and the gamepad input path were improved.
+- Fixed `Delete`, `Ctrl+C`, and `Ctrl+V`; added `C` for Split and `V` for Merge. Delete enters Continuous Delete with no selection, and conflicting browser defaults are suppressed.
+- Add mode now supports `F` for Finisher and `B` for adaptive Intro switches. Press `Y` on selected blocks to append Outro, with default prompts for Finisher, Intro, Outro, and Move Forward.
+- Action text supports literal square brackets such as `[Basic Attack]`: bracketed text bypasses icon conversion and the brackets are hidden when rendered.
+- Added Change and Merge to the context menu, enabled selection actions from empty timeline space, and fixed block dragging plus `Alt`-drag warm-up/recovery editing.
+- Appearance adds text outlines, protected background edges, team presets, and actual-key icons, with improved default crops and light-theme contrast.
+- The Record timeline adds playback, speed, and Auto Follow, with zoom centered on the white playhead. Video trimming and the five-tool/multifunction layout were refined.
+- Improved home backgrounds, icons, and Live2D across three themes, added a Live2D off switch, and fixed the navigation visibility eye background and position jump.
+- Recording status is green while ready and red while recording; axis export, key mapping, and video output received further improvements.
+
 ## Installation and first setup
 
-1. Download `WW Combo Trainer_*_x64-setup.exe` from GitHub Releases. An MSI installer is also provided.
+1. Download `WW Combo Trainer_*_x64-setup.exe` from GitHub Releases. MSI and portable ZIP packages with a shortcut and FFmpeg are also provided.
 2. Install and launch the application. If Windows shows a source warning, continue only after confirming that the file came from this repository's Release page.
 3. Open `Settings` and select Chinese, English, Japanese, or Korean.
 4. Switch between `Keyboard & Mouse` and `Gamepad`, then match every action to your in-game controls.
 5. Each action accepts two bindings. For example, Dodge can use both `Shift` and the right mouse button.
-6. Enable Global Input at the bottom of the sidebar so the desktop build can receive input while the game is focused. If the game runs as administrator, run the trainer at the same privilege level.
+6. Enable Global Input at the bottom of the sidebar so the desktop build can receive input while the game is focused. The Windows build requests administrator privileges at launch; approve the UAC prompt.
 
 Changing language only changes built-in interface text. It never rewrites custom combo names, character names, notes, or labels.
 
@@ -93,6 +107,7 @@ Appearance controls the chart shared by Record and Practice. Horizontal, Vertica
 - Background X/Y/W/H controls crop. Left and right stretch guides protect borders and decorative end caps while the center stretches.
 - `Icons` manages text-to-image mappings, character-specific mappings, and icon size.
 - Icon Conversion, Merge Same Character, and Pre-prompt affect display only, not judgement.
+- Wrap action content in square brackets to keep it as literal text. For example, `[Basic Attack]` displays as `Basic Attack` without icon conversion or visible brackets.
 - Overall scale, block height, gap, font, avatar size/offset, fade strength, and merge limit adjust presentation only.
 
 ## Export Axis

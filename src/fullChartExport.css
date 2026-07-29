@@ -52,7 +52,8 @@
 .full-chart-crop-editor { min-width: 0; min-height: 420px; display: grid; place-items: center; padding: 14px; border: 1px solid rgba(255,255,255,.12); background: #090a0c; overflow: auto; }
 .full-chart-crop-stage { position: relative; width: min(100%, 980px); margin: auto; border: 1px solid rgba(130,176,224,.42); border-radius: 8px; overflow: hidden; touch-action: none; background-color: #f7fbff; background-image: linear-gradient(45deg, #e8eef5 25%, transparent 25%), linear-gradient(-45deg, #e8eef5 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #e8eef5 75%), linear-gradient(-45deg, transparent 75%, #e8eef5 75%); background-size: 34px 34px; background-position: 0 0, 0 17px, 17px -17px, -17px 0; }
 .full-chart-crop-stage > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; }
-.full-chart-crop-box { position: absolute; border: 2px solid #fff; background: rgba(255,255,255,.08); box-shadow: 0 0 0 999px rgba(0,0,0,.56); cursor: move; }
+.full-chart-crop-box { position: absolute; border: 2px solid #fff; background: rgba(255,255,255,.08); box-shadow: 0 0 0 999px rgba(0,0,0,.56); cursor: move; z-index: 2; }
+.full-chart-edge-preview { position: absolute; border: 2px dashed #ffd44d; background: rgba(255,212,77,.16); pointer-events: none; z-index: 1; }
 .full-chart-crop-handle { position: absolute; width: 13px; height: 13px; border: 2px solid #fff; background: #d50000; }
 .full-chart-crop-handle.nw { left: -7px; top: -7px; cursor: nwse-resize; }
 .full-chart-crop-handle.se { right: -7px; bottom: -7px; cursor: nwse-resize; }

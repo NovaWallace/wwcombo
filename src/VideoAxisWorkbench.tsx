@@ -1,10 +1,11 @@
 import { cloneElement, isValidElement, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode, WheelEvent as ReactWheelEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, ChevronUp, Download, FileVideo, Move, Pause, Play, Save, Scissors, SkipBack, SkipForward, Upload, Volume2, VolumeX, X } from 'lucide-react';
+import { Check, Clock3, Download, FileVideo, PanelBottomClose, PanelBottomOpen, Pause, Play, Save, Scissors, Upload, Volume2, VolumeX, X } from 'lucide-react';
 import type { CharacterSlot, ComboChart, ComboImageStyle, ComboPeriod, ComboStep } from '../combo-core';
 import {
   chartToComboImageItems,
+  capsuleEdgeSourceRange,
   comboImageDisplayIndexForStep,
   comboImageItemSizeForDisplayItem,
   comboImageItemContainsStep,
@@ -20,6 +21,8 @@ import type { AppLanguage } from './i18n';
 import { localizedMovePrompt } from './moveLabels';
 import { NumericDraftInput } from './NumericDraftInput';
 import { buildRhythmCrowdedGroups, rhythmNoteHeight, rhythmNoteOpacity, rhythmNoteTop, visibleRhythmCrowdedGroups } from './rhythmCrowding';
+import { shortcutMatches } from './shortcutSettings';
+import type { ShortcutSettings } from './shortcutSettings';
 
 type ComboLayout = 'horizontal' | 'vertical' | 'waterfall';
 type LinearComboLayout = Exclude<ComboLayout, 'waterfall'>;
@@ -30,6 +33,7 @@ type VideoLayerMoveDrag = { pointerId: number; startX: number; startY: number; o
 type VideoLayerScaleDrag = { pointerId: number; startX: number; origin: VideoLayerTransform; moved: boolean; historyCaptured: boolean };
 type VideoLayerCropEdge = 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w' | 'nw';
 type VideoLayerCropDrag = { pointerId: number; edge: VideoLayerCropEdge; startX: number; startY: number; origin: VideoLayerTransform; moved: boolean; historyCaptured: boolean };
+type VideoTrimDrag = { pointerId: number; edge: 'start' | 'end'; trackLeft: number; trackWidth: number };
 type OverlaySettings = { layout: ComboLayout; x: number; y: number; width: number; height: number };
 type ZoomKeyframe = { id: string; timeMs: number };
 type ZoomDragSnapshot = {
@@ -74,6 +78,7 @@ type VideoAxisWorkbenchProps = {
   timelineContentLabels: Record<string, string>;
   overlaySettings: OverlaySettings;
   rhythmUiSettings: RhythmUiSettings;
+  shortcutSettings: ShortcutSettings;
   exportDirectory?: string;
   ensureExportDirectory?: () => Promise<string | null>;
   timelineEditor: ReactNode;
@@ -256,6 +261,9 @@ function capsuleBackgroundVars(style: ComboImageStyle, targetWidthInput: number,
   const middleScaleX = destMiddle / stretchWidth;
   const rightSourceWidth = Math.max(1, cropWidth - rightLine);
   const rightScaleX = destRight / rightSourceWidth;
+  const edgeSource = capsuleEdgeSourceRange(naturalHeight, cropY, cropHeight, capsule.edge);
+  const edgeTopHeight = Math.max(0, (cropY - edgeSource.y) * heightScale);
+  const edgeBottomHeight = Math.max(0, (edgeSource.y + edgeSource.height - cropY - cropHeight) * heightScale);
   return {
     '--capsule-bg-source': cssImageUrl(source),
     '--capsule-bg-left-width': cssPx(destLeft),
@@ -268,7 +276,16 @@ function capsuleBackgroundVars(style: ComboImageStyle, targetWidthInput: number,
     '--capsule-bg-middle-size': `${cssPx(naturalWidth * middleScaleX)} ${cssPx(naturalHeight * heightScale)}`,
     '--capsule-bg-middle-position': `${cssPx(-(cropX + leftLine) * middleScaleX)} ${cssPx(-cropY * heightScale)}`,
     '--capsule-bg-right-size': `${cssPx(naturalWidth * rightScaleX)} ${cssPx(naturalHeight * heightScale)}`,
-    '--capsule-bg-right-position': `${cssPx(-(cropX + rightLine) * rightScaleX)} ${cssPx(-cropY * heightScale)}`
+    '--capsule-bg-right-position': `${cssPx(-(cropX + rightLine) * rightScaleX)} ${cssPx(-cropY * heightScale)}`,
+    '--capsule-bg-edge-top-top': cssPx(-edgeTopHeight),
+    '--capsule-bg-edge-top-height': cssPx(edgeTopHeight),
+    '--capsule-bg-edge-bottom-top': cssPx(targetHeight),
+    '--capsule-bg-edge-bottom-height': cssPx(edgeBottomHeight),
+    '--capsule-bg-edge-left-position-x': cssPx(-cropX * leftScaleX),
+    '--capsule-bg-edge-middle-position-x': cssPx(-(cropX + leftLine) * middleScaleX),
+    '--capsule-bg-edge-right-position-x': cssPx(-(cropX + rightLine) * rightScaleX),
+    '--capsule-bg-edge-top-position-y': cssPx(-edgeSource.y * heightScale),
+    '--capsule-bg-edge-bottom-position-y': cssPx(-(cropY + cropHeight) * heightScale)
   } as CSSProperties;
 }
 
@@ -306,7 +323,7 @@ function activeFrameVars(showAvatar: boolean, blockMode: ComboImageStyle['blockM
 }
 
 function CapsuleBlockBackground() {
-  return <div className="capsule-bg" aria-hidden="true"><div className="capsule-bg-piece left" /><div className="capsule-bg-piece middle" /><div className="capsule-bg-piece right" /></div>;
+  return <div className="capsule-bg" aria-hidden="true"><div className="capsule-bg-edge left top" /><div className="capsule-bg-edge left bottom" /><div className="capsule-bg-edge middle top" /><div className="capsule-bg-edge middle bottom" /><div className="capsule-bg-edge right top" /><div className="capsule-bg-edge right bottom" /><div className="capsule-bg-body"><div className="capsule-bg-piece left" /><div className="capsule-bg-piece middle" /><div className="capsule-bg-piece right" /></div></div>;
 }
 
 function ComboInlineContent({ parts, className, hideIconAlt = false }: { parts: ReturnType<typeof comboTextParts>; className: string; hideIconAlt?: boolean }) {
@@ -352,6 +369,11 @@ function currentPeriodLabel(chart: ComboChart, timeMs: number, language: AppLang
 
 function chooseMediaRecorderMime(): string {
   return VIDEO_MIME_CANDIDATES.find((mime) => MediaRecorder.isTypeSupported(mime)) ?? '';
+}
+
+function exportVideoBitrate(width: number, height: number, frameRate: number): number {
+  const bitsPerPixel = 0.16;
+  return Math.round(clamp(width * height * frameRate * bitsPerPixel, 20_000_000, 100_000_000));
 }
 
 function downloadBlob(blob: Blob, filename: string) {
@@ -593,8 +615,18 @@ function drawCapsuleImageBlock(ctx: CanvasRenderingContext2D, image: HTMLImageEl
   const destRight = Math.max(0, Math.min(width - destLeft, Math.round(rawDestRight * edgeScale)));
   const destMiddle = Math.max(0, width - destLeft - destRight);
   const middleSourceWidth = Math.max(1, rightLine - leftLine);
+  const edgeSource = capsuleEdgeSourceRange(naturalHeight, cropY, cropHeight, capsule.edge);
+  const topSourceHeight = Math.max(0, cropY - edgeSource.y);
+  const bottomSourceY = cropY + cropHeight;
+  const bottomSourceHeight = Math.max(0, edgeSource.y + edgeSource.height - bottomSourceY);
   const previousSmoothing = ctx.imageSmoothingEnabled;
   ctx.imageSmoothingEnabled = false;
+  if (topSourceHeight > 0 && destLeft > 0) ctx.drawImage(image, cropX, edgeSource.y, leftLine, topSourceHeight, x, y - topSourceHeight * heightScale, destLeft, topSourceHeight * heightScale);
+  if (topSourceHeight > 0 && destMiddle > 0) ctx.drawImage(image, cropX + leftLine, edgeSource.y, middleSourceWidth, topSourceHeight, x + destLeft, y - topSourceHeight * heightScale, destMiddle, topSourceHeight * heightScale);
+  if (topSourceHeight > 0 && destRight > 0) ctx.drawImage(image, cropX + rightLine, edgeSource.y, Math.max(1, cropWidth - rightLine), topSourceHeight, x + destLeft + destMiddle, y - topSourceHeight * heightScale, destRight, topSourceHeight * heightScale);
+  if (bottomSourceHeight > 0 && destLeft > 0) ctx.drawImage(image, cropX, bottomSourceY, leftLine, bottomSourceHeight, x, y + height, destLeft, bottomSourceHeight * heightScale);
+  if (bottomSourceHeight > 0 && destMiddle > 0) ctx.drawImage(image, cropX + leftLine, bottomSourceY, middleSourceWidth, bottomSourceHeight, x + destLeft, y + height, destMiddle, bottomSourceHeight * heightScale);
+  if (bottomSourceHeight > 0 && destRight > 0) ctx.drawImage(image, cropX + rightLine, bottomSourceY, Math.max(1, cropWidth - rightLine), bottomSourceHeight, x + destLeft + destMiddle, y + height, destRight, bottomSourceHeight * heightScale);
   if (destLeft > 0) ctx.drawImage(image, cropX, cropY, leftLine, cropHeight, x, y, destLeft, height);
   if (destMiddle > 0) ctx.drawImage(image, cropX + leftLine, cropY, middleSourceWidth, cropHeight, x + destLeft, y, destMiddle, height);
   if (destRight > 0) ctx.drawImage(image, cropX + rightLine, cropY, Math.max(1, cropWidth - rightLine), cropHeight, x + destLeft + destMiddle, y, destRight, height);
@@ -1125,13 +1157,17 @@ function VideoRhythmLayer({ chart, style, timeMs, settings, bounds }: { chart: C
   return <div ref={hostRef} className="video-rhythm-scale-host"><div className="video-rhythm-shell" style={{ width: stageWidth, height: stageHeight, transform: `scale(${scaleX * scale}, ${scaleY * scale})`, '--rhythm-judge-y': judgeY + 'px', '--rhythm-lane-gap': settings.laneGap + 'px', '--rhythm-role-spacing': settings.roleSpacing + 'px' } as CSSProperties}><div className="rhythm-overlay-lanes">{CHARACTER_SLOTS.map((slot) => <div key={slot} className="rhythm-overlay-lane">{activeSlot === slot && <div className="rhythm-overlay-active-role-gradient" />}{visibleSteps.filter((step) => (step.characterSlot ?? 1) === slot).map((step) => { const parts = notePartsByStepId.get(step.id) ?? []; const height = rhythmNoteHeight(parts.length); const active = timeMs >= step.startMin && timeMs <= step.startMin + step.durationMax; return <div key={step.id} className={'rhythm-overlay-note ' + (step.moveId === 'heavy_attack' || step.moveId.endsWith('_hold') ? 'hold' : 'normal') + (parts.length > 1 ? ' stacked' : '') + (active ? ' active' : '')} style={{ top: rhythmNoteTop(step, height, timeMs, judgeY, settings.fallSpeed), height, opacity: rhythmNoteOpacity(step, timeMs) } as CSSProperties}><ComboInlineContent parts={parts} className="rhythm-overlay-note-content" hideIconAlt /></div>; })}</div>)}</div><div className="rhythm-overlay-judge" /><div className="rhythm-overlay-avatars">{CHARACTER_SLOTS.map((slot) => { const role = style.roleStyles[slot]; const prompt = orderedSteps.find((step) => (step.characterSlot ?? 1) === slot && timeMs <= step.startMin + step.durationMax); const crowdedPrompts = visibleCrowdedGroups.filter((group) => group.characterSlot === slot).map((group) => ({ group, parts: [...group.entries].reverse().flatMap((entry) => notePartsByStepId.get(entry.step.id) ?? []) })).filter((item) => item.parts.length > 1); return <div key={slot} className={`rhythm-overlay-avatar-cell ${activeSlot === slot ? 'active' : ''}`}><span className="rhythm-overlay-lane-prompt">{promptTextForStep(prompt, style, language)}</span>{crowdedPrompts.length > 0 && <span className="rhythm-overlay-crowded-prompts">{crowdedPrompts.map(({ group, parts }) => <span key={group.id} className="rhythm-overlay-crowded-prompt" style={{ '--rhythm-crowded-color': role.color } as CSSProperties}><ComboInlineContent parts={parts} className="rhythm-overlay-crowded-prompt-content" hideIconAlt /></span>)}</span>}<span className="rhythm-overlay-avatar" style={imageCropBackground(role.avatar, role.avatarCrop)}>{role.avatar ? null : slot}</span></div>; })}</div></div></div>;
 }
 
-export function VideoAxisWorkbench({ open, desktop, chart, comboImageStyle, timelineContentLabels, overlaySettings, rhythmUiSettings, exportDirectory, ensureExportDirectory, timelineEditor, onApplyChart, onApplyContentLabels, onClose, onSave, getDisplaySize }: VideoAxisWorkbenchProps) {
+export function VideoAxisWorkbench({ open, desktop, chart, comboImageStyle, timelineContentLabels, overlaySettings, rhythmUiSettings, shortcutSettings, exportDirectory, ensureExportDirectory, timelineEditor, onApplyChart, onApplyContentLabels, onClose, onSave, getDisplaySize }: VideoAxisWorkbenchProps) {
   const { language, text } = useI18n();
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [videoSourcePath, setVideoSourcePath] = useState<string | null>(null);
   const [videoMeta, setVideoMeta] = useState<VideoMeta>(DEFAULT_VIDEO_META);
   const [trimStartMs, setTrimStartMs] = useState(0);
   const [trimEndMs, setTrimEndMs] = useState(0);
+  const [trimDialogOpen, setTrimDialogOpen] = useState(false);
+  const [trimDraftStartMs, setTrimDraftStartMs] = useState(0);
+  const [trimDraftEndMs, setTrimDraftEndMs] = useState(0);
+  const [trimPreviewMs, setTrimPreviewMs] = useState(0);
   const [playbackMs, setPlaybackMs] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackRate, setPlaybackRate] = useState<(typeof VIDEO_PLAYBACK_RATES)[number]>(1);
@@ -1160,6 +1196,8 @@ export function VideoAxisWorkbench({ open, desktop, chart, comboImageStyle, time
   const [layerTransform, setLayerTransform] = useState<VideoLayerTransform>({ offsetX: 0, offsetY: 0, scale: 1, cropLeft: 0, cropTop: 0, cropRight: 0, cropBottom: 0 });
   const [stageHudVisible, setStageHudVisible] = useState(true);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const trimPreviewRef = useRef<HTMLVideoElement | null>(null);
+  const trimDragRef = useRef<VideoTrimDrag | null>(null);
   const playbackRateMenuRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const objectVideoUrlRef = useRef<string | null>(null);
@@ -1193,6 +1231,9 @@ export function VideoAxisWorkbench({ open, desktop, chart, comboImageStyle, time
   const renderTotal = Math.max(chartTotal, trimDurationMs, ...keyframes.map((frame) => frame.timeMs + 600));
   const isExporting = exportStatus.state === 'running';
   const zoomTrackTotal = Math.max(renderTotal, trimDurationMs, chartTotal);
+  const trimSourceDurationMs = Math.max(MIN_VIDEO_TRIM_DURATION_MS, videoMeta.durationMs);
+  const trimDraftStartPercent = (trimDraftStartMs / trimSourceDurationMs) * 100;
+  const trimDraftEndPercent = (trimDraftEndMs / trimSourceDurationMs) * 100;
   const frameAspect = `${Math.max(1, videoMeta.width)} / ${Math.max(1, videoMeta.height)}`;
   const stageFrameSize = useMemo(() => {
     if (!stageShellSize.width || !stageShellSize.height) return null;
@@ -1579,31 +1620,48 @@ export function VideoAxisWorkbench({ open, desktop, chart, comboImageStyle, time
 
   useEffect(() => {
     if (!open) return;
-    const isSpaceEvent = (event: KeyboardEvent) => event.code === 'Space' || event.key === ' ';
+    const isPlaybackEvent = (event: KeyboardEvent) => shortcutMatches(event, shortcutSettings.videoPlayPause);
+    const isSeekBackwardEvent = (event: KeyboardEvent) => shortcutMatches(event, shortcutSettings.videoSeekBackward);
+    const isSeekForwardEvent = (event: KeyboardEvent) => shortcutMatches(event, shortcutSettings.videoSeekForward);
     const isTypingTarget = (target: EventTarget | null) => {
       const element = target as HTMLElement | null;
       return Boolean(element?.closest('input, textarea, select, [contenteditable="true"]'));
     };
     const onKeyDown = (event: KeyboardEvent) => {
       if (keyboardStateRef.current.isExporting) {
-        if (isSpaceEvent(event) || event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+        if (isPlaybackEvent(event) || isSeekBackwardEvent(event) || isSeekForwardEvent(event)) {
           event.preventDefault();
           event.stopPropagation();
           event.stopImmediatePropagation();
         }
         return;
       }
+      if (trimDialogOpen) {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          event.stopPropagation();
+          trimPreviewRef.current?.pause();
+          trimDragRef.current = null;
+          setTrimDialogOpen(false);
+          return;
+        }
+        if (isPlaybackEvent(event) || isSeekBackwardEvent(event) || isSeekForwardEvent(event)) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+        return;
+      }
       const isTyping = isTypingTarget(event.target);
-      if (!isTyping && isSpaceEvent(event) && !(event.ctrlKey || event.metaKey || event.altKey)) {
+      if (!isTyping && isPlaybackEvent(event)) {
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation();
         if (!event.repeat) togglePlayRef.current();
         return;
       }
-      if (!isTyping && (event.key === 'ArrowLeft' || event.key === 'ArrowRight') && !(event.ctrlKey || event.metaKey || event.altKey)) {
+      if (!isTyping && (isSeekBackwardEvent(event) || isSeekForwardEvent(event))) {
         event.preventDefault();
-        seekByRef.current(event.key === 'ArrowLeft' ? -500 : 500);
+        seekByRef.current(isSeekBackwardEvent(event) ? -500 : 500);
         return;
       }
       if (!(event.ctrlKey || event.metaKey)) return;
@@ -1618,7 +1676,7 @@ export function VideoAxisWorkbench({ open, desktop, chart, comboImageStyle, time
       }
     };
     const onKeyUp = (event: KeyboardEvent) => {
-      if (!isSpaceEvent(event)) return;
+      if (!isPlaybackEvent(event)) return;
       if (!keyboardStateRef.current.isExporting && (isTypingTarget(event.target) || event.ctrlKey || event.metaKey || event.altKey)) return;
       event.preventDefault();
       event.stopPropagation();
@@ -1633,7 +1691,7 @@ export function VideoAxisWorkbench({ open, desktop, chart, comboImageStyle, time
       window.removeEventListener('keyup', onKeyUp, true);
       window.removeEventListener('contextmenu', onContextMenu, true);
     };
-  }, [open]);
+  }, [open, trimDialogOpen, shortcutSettings]);
 
   useEffect(() => {
     let disposed = false;
@@ -1816,30 +1874,101 @@ export function VideoAxisWorkbench({ open, desktop, chart, comboImageStyle, time
     if (video && nextPlayback >= nextDuration && !video.paused) video.pause();
   }
 
-  function commitTrimStart(seconds: number) {
-    applyTrimRange(seconds * 1000, trimEndMs);
+  function setTrimDraftRange(nextStartMs: number, nextEndMs: number, previewMs?: number) {
+    const sourceDurationMs = Math.max(MIN_VIDEO_TRIM_DURATION_MS, videoMeta.durationMs);
+    const start = clamp(Math.round(nextStartMs), 0, Math.max(0, sourceDurationMs - MIN_VIDEO_TRIM_DURATION_MS));
+    const end = clamp(Math.round(nextEndMs), start + MIN_VIDEO_TRIM_DURATION_MS, sourceDurationMs);
+    const nextPreview = clamp(Math.round(previewMs ?? trimPreviewMs), start, end);
+    setTrimDraftStartMs(start);
+    setTrimDraftEndMs(end);
+    setTrimPreviewMs(nextPreview);
+    if (trimPreviewRef.current) trimPreviewRef.current.currentTime = nextPreview / 1000;
   }
 
-  function commitTrimEnd(seconds: number) {
-    applyTrimRange(trimStartMs, seconds * 1000);
+  function openTrimDialog() {
+    if (!videoUrl || isExporting) return;
+    videoRef.current?.pause();
+    setTrimDraftStartMs(trimStartMs);
+    setTrimDraftEndMs(trimEndMs);
+    setTrimPreviewMs(trimStartMs);
+    setTrimDialogOpen(true);
   }
 
-  function setTrimStartFromPlayhead() {
-    const sourceTimeMs = trimStartMs + playbackMs;
-    if (trimEndMs - sourceTimeMs < MIN_VIDEO_TRIM_DURATION_MS) {
-      showVideoToast(text('裁剪区间至少保留 0.1 秒。', 'Keep at least 0.1 seconds in the trimmed range.'));
+  function closeTrimDialog() {
+    trimPreviewRef.current?.pause();
+    trimDragRef.current = null;
+    setTrimDialogOpen(false);
+  }
+
+  function saveTrimDraft() {
+    const absolutePlaybackMs = trimStartMs + playbackMs;
+    applyTrimRange(trimDraftStartMs, trimDraftEndMs, absolutePlaybackMs - trimDraftStartMs);
+    closeTrimDialog();
+  }
+
+  function commitTrimDraftStart(seconds: number) {
+    setTrimDraftRange(seconds * 1000, trimDraftEndMs, seconds * 1000);
+  }
+
+  function commitTrimDraftEnd(seconds: number) {
+    setTrimDraftRange(trimDraftStartMs, seconds * 1000, seconds * 1000);
+  }
+
+  function seekTrimPreview(clientX: number, trackLeft: number, trackWidth: number) {
+    const ratio = clamp((clientX - trackLeft) / Math.max(1, trackWidth), 0, 1);
+    const next = clamp(Math.round(ratio * trimSourceDurationMs), trimDraftStartMs, trimDraftEndMs);
+    setTrimPreviewMs(next);
+    if (trimPreviewRef.current) trimPreviewRef.current.currentTime = next / 1000;
+  }
+
+  function beginTrimDrag(event: ReactPointerEvent<HTMLButtonElement>, edge: 'start' | 'end') {
+    if (isExporting) return;
+    const track = event.currentTarget.parentElement;
+    if (!track) return;
+    const rect = track.getBoundingClientRect();
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    trimDragRef.current = { pointerId: event.pointerId, edge, trackLeft: rect.left, trackWidth: rect.width };
+  }
+
+  function moveTrimDrag(event: ReactPointerEvent<HTMLButtonElement>) {
+    const drag = trimDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    const rawMs = clamp(Math.round(((event.clientX - drag.trackLeft) / Math.max(1, drag.trackWidth)) * trimSourceDurationMs), 0, trimSourceDurationMs);
+    if (drag.edge === 'start') {
+      const start = Math.min(rawMs, trimDraftEndMs - MIN_VIDEO_TRIM_DURATION_MS);
+      setTrimDraftRange(start, trimDraftEndMs, start);
+    } else {
+      const end = Math.max(rawMs, trimDraftStartMs + MIN_VIDEO_TRIM_DURATION_MS);
+      setTrimDraftRange(trimDraftStartMs, end, end);
+    }
+  }
+
+  function endTrimDrag(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (trimDragRef.current?.pointerId !== event.pointerId) return;
+    trimDragRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  }
+
+  function handleTrimTrackPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    if ((event.target as HTMLElement).closest('.video-trim-handle')) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    seekTrimPreview(event.clientX, rect.left, rect.width);
+  }
+
+  function handleTrimPreviewTimeUpdate() {
+    const video = trimPreviewRef.current;
+    if (!video) return;
+    const sourceTimeMs = Math.round(video.currentTime * 1000);
+    if (sourceTimeMs >= trimDraftEndMs) {
+      video.pause();
+      video.currentTime = trimDraftStartMs / 1000;
+      setTrimPreviewMs(trimDraftStartMs);
       return;
     }
-    applyTrimRange(sourceTimeMs, trimEndMs, 0);
-  }
-
-  function setTrimEndFromPlayhead() {
-    const sourceTimeMs = trimStartMs + playbackMs;
-    if (sourceTimeMs - trimStartMs < MIN_VIDEO_TRIM_DURATION_MS) {
-      showVideoToast(text('裁剪区间至少保留 0.1 秒。', 'Keep at least 0.1 seconds in the trimmed range.'));
-      return;
-    }
-    applyTrimRange(trimStartMs, sourceTimeMs, playbackMs);
+    setTrimPreviewMs(clamp(sourceTimeMs, trimDraftStartMs, trimDraftEndMs));
   }
 
   function choosePlaybackRate(rate: (typeof VIDEO_PLAYBACK_RATES)[number]) {
@@ -1992,14 +2121,15 @@ export function VideoAxisWorkbench({ open, desktop, chart, comboImageStyle, time
       showVideoToast(message);
       return;
     }
-    const canvasStream = canvas.captureStream(nativeOverlayExport ? 60 : 30);
+    const exportFrameRate = 60;
+    const canvasStream = canvas.captureStream(exportFrameRate);
     if (!nativeOverlayExport) {
       const captureSource = sourceVideo as HTMLVideoElement & { captureStream?: () => MediaStream; mozCaptureStream?: () => MediaStream };
       const sourceStream = captureSource.captureStream?.() ?? captureSource.mozCaptureStream?.();
       sourceStream?.getAudioTracks().forEach((track) => canvasStream.addTrack(track));
     }
     const mimeType = chooseMediaRecorderMime();
-    const videoBitsPerSecond = nativeOverlayExport ? 20_000_000 : 8_000_000;
+    const videoBitsPerSecond = exportVideoBitrate(canvas.width, canvas.height, exportFrameRate);
     const recorder = new MediaRecorder(canvasStream, mimeType ? { mimeType, videoBitsPerSecond } : { videoBitsPerSecond });
     const chunks: BlobPart[] = [];
     const originalTime = sourceVideo.currentTime;
@@ -2192,20 +2322,44 @@ export function VideoAxisWorkbench({ open, desktop, chart, comboImageStyle, time
     <div className={`video-workbench ${open ? '' : 'hidden'}`} role="dialog" aria-modal="true" aria-hidden={!open} aria-label={text('视频辅助轴编辑', 'Video Timeline Editor') }>
       {videoToast && <div className="video-export-toast" role="status">{videoToast}</div>}
       <input ref={fileInputRef} className="file-input" type="file" accept="video/*" onChange={(event) => void importVideo(event.target.files?.[0] ?? null)} />
+      {trimDialogOpen && videoUrl && <div className="video-trim-dialog-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget) closeTrimDialog(); }}>
+        <section className="video-trim-dialog" role="dialog" aria-modal="true" aria-label={text('裁剪时长', 'Trim Video')} onPointerDown={(event) => event.stopPropagation()}>
+          <header>
+            <div><Scissors size={17} /><strong>{text('裁剪时长', 'Trim Video')}</strong><span>{text(`裁后时长 ${formatMs(trimDraftEndMs - trimDraftStartMs)}`, `Trimmed duration: ${formatMs(trimDraftEndMs - trimDraftStartMs)}`)}</span></div>
+            <button className="icon-button" type="button" title={text('取消', 'Cancel')} onClick={closeTrimDialog}><X size={17} /></button>
+          </header>
+          <div className="video-trim-preview">
+            <video ref={trimPreviewRef} src={videoUrl} controls muted={previewMuted} playsInline onLoadedMetadata={(event) => { event.currentTarget.currentTime = trimPreviewMs / 1000; }} onTimeUpdate={handleTrimPreviewTimeUpdate} />
+          </div>
+          <div className="video-trim-dialog-timeline">
+            <div className="video-trim-time-labels"><span>{formatMs(0)}</span><span>{formatMs(videoMeta.durationMs)}</span></div>
+            <div className="video-trim-track" onPointerDown={handleTrimTrackPointerDown}>
+              <span className="video-trim-excluded before" style={{ width: `${trimDraftStartPercent}%` }} />
+              <span className="video-trim-selection" style={{ left: `${trimDraftStartPercent}%`, width: `${Math.max(0, trimDraftEndPercent - trimDraftStartPercent)}%` }} />
+              <span className="video-trim-excluded after" style={{ left: `${trimDraftEndPercent}%` }} />
+              <span className="video-trim-playhead" style={{ left: `${(trimPreviewMs / trimSourceDurationMs) * 100}%` }} />
+              <button className="video-trim-handle start" type="button" style={{ left: `${trimDraftStartPercent}%` }} aria-label={text('裁剪开始', 'Trim Start s')} onPointerDown={(event) => beginTrimDrag(event, 'start')} onPointerMove={moveTrimDrag} onPointerUp={endTrimDrag} onPointerCancel={endTrimDrag} />
+              <button className="video-trim-handle end" type="button" style={{ left: `${trimDraftEndPercent}%` }} aria-label={text('裁剪结束', 'Trim End s')} onPointerDown={(event) => beginTrimDrag(event, 'end')} onPointerMove={moveTrimDrag} onPointerUp={endTrimDrag} onPointerCancel={endTrimDrag} />
+            </div>
+          </div>
+          <footer>
+            <div className="video-trim-fields">
+              <label><span>{text('开始 秒', 'Trim Start s')}</span><NumericDraftInput value={Number((trimDraftStartMs / 1000).toFixed(3))} onCommit={commitTrimDraftStart} /></label>
+              <label><span>{text('结束 秒', 'Trim End s')}</span><NumericDraftInput value={Number((trimDraftEndMs / 1000).toFixed(3))} onCommit={commitTrimDraftEnd} /></label>
+            </div>
+            <div className="video-trim-dialog-actions">
+              <button className="primary" type="button" onClick={saveTrimDraft}><Save size={16} />{text('保存裁剪', 'Save Trim')}</button>
+              <button type="button" onClick={closeTrimDialog}>{text('取消', 'Cancel')}</button>
+            </div>
+          </footer>
+        </section>
+      </div>}
       <div className={`video-workbench-main ${timelineCollapsed ? 'timeline-collapsed' : ''}`} style={workbenchMainStyle}>
         <section className="video-preview-panel">
           <div className="video-info-row">
             <div><FileVideo size={17} /><strong>{videoMeta.name === DEFAULT_VIDEO_META.name ? text('未导入视频', 'No Video Imported') : videoMeta.name}</strong><span>{videoMeta.width}x{videoMeta.height}</span><span>{formatMs(videoMeta.durationMs || renderTotal)}</span></div>
             <span>{importMessage}</span>
           </div>
-          {videoUrl && <div className="video-trim-row">
-            <span className="video-trim-title"><Scissors size={14} />{text('裁剪时长', 'Trim Video')}</span>
-            <label><span>{text('开始 秒', 'Trim Start s')}</span><NumericDraftInput value={Number((trimStartMs / 1000).toFixed(3))} onCommit={commitTrimStart} disabled={isExporting} /></label>
-            <button className="icon-button" type="button" title={text('将当前位置设为裁剪起点', 'Set current position as trim start')} onClick={setTrimStartFromPlayhead} disabled={isExporting}><SkipBack size={14} /></button>
-            <label><span>{text('结束 秒', 'Trim End s')}</span><NumericDraftInput value={Number((trimEndMs / 1000).toFixed(3))} onCommit={commitTrimEnd} disabled={isExporting} /></label>
-            <button className="icon-button" type="button" title={text('将当前位置设为裁剪终点', 'Set current position as trim end')} onClick={setTrimEndFromPlayhead} disabled={isExporting}><SkipForward size={14} /></button>
-            <output>{text(`裁后时长 ${formatMs(trimDurationMs)}`, `Trimmed duration: ${formatMs(trimDurationMs)}`)}</output>
-          </div>}
           <div ref={stageShellRef} className="video-stage-shell">
             <div
               className={`video-stage-frame ${previewTransform.scale > 1 ? 'is-zoomed' : ''}`}
@@ -2263,7 +2417,6 @@ export function VideoAxisWorkbench({ open, desktop, chart, comboImageStyle, time
         </section>
         <aside className="video-side-inspector" ref={setInspectorPortalTarget}>
           <div className="video-side-toolbar" onPointerDown={(event) => event.stopPropagation()}>
-            <div className="video-timeline-tools-slot" ref={setToolbarPortalTarget} />
             <div className="video-file-actions">
               <button className="icon-button" title={text('导入视频', 'Import Video') } onClick={() => void chooseVideo()} disabled={isExporting}><Upload size={18} /></button>
               <button className="icon-button" title={text('保存连段', 'Save Combo') } onClick={onSave} disabled={isExporting}><Save size={18} /></button>
@@ -2274,10 +2427,17 @@ export function VideoAxisWorkbench({ open, desktop, chart, comboImageStyle, time
         </aside>
 
         <section className={`video-edit-panel ${timelineCollapsed ? 'collapsed' : ''}`}>
-          <button className="video-timeline-toggle icon-button" title={timelineCollapsed ? text('展开时间轴；按住拖动：上下调高度，左右调时间轴缩放；悬浮滚轮调轨道密度', 'Expand timeline. Drag vertically to resize or horizontally to zoom; hover and scroll to change lane density.') : text('收起时间轴；按住拖动：上下调高度，左右调时间轴缩放；悬浮滚轮调轨道密度', 'Collapse timeline. Drag vertically to resize or horizontally to zoom; hover and scroll to change lane density.')} onPointerDown={beginTimelinePanelDrag} onPointerMove={moveTimelinePanelDrag} onPointerUp={endTimelinePanelDrag} onPointerCancel={endTimelinePanelDrag} onClick={toggleTimelineCollapsedFromButton} onWheel={changeTimelineLaneHeight}>
-            {timelineCollapsed ? <ChevronUp size={16} /> : <Move size={16} />}
-          </button>
+          {timelineCollapsed && <button className="video-timeline-toggle floating icon-button" title={text('展开时间轴；按住拖动：上下调高度，左右调时间轴缩放；悬浮滚轮调轨道密度', 'Expand timeline. Drag vertically to resize or horizontally to zoom; hover and scroll to change lane density.')} onPointerDown={beginTimelinePanelDrag} onPointerMove={moveTimelinePanelDrag} onPointerUp={endTimelinePanelDrag} onPointerCancel={endTimelinePanelDrag} onClick={toggleTimelineCollapsedFromButton} onWheel={changeTimelineLaneHeight}>
+            <PanelBottomOpen size={16} />
+          </button>}
           {!timelineCollapsed && <div className="video-timeline-compact">
+            <div className="video-timeline-topbar" onPointerDown={(event) => event.stopPropagation()}>
+              <button className={`icon-button video-trim-trigger ${trimStartMs > 0 || trimEndMs < videoMeta.durationMs ? 'active' : ''}`} type="button" title={text('裁剪时长', 'Trim Video')} aria-label={text('裁剪时长', 'Trim Video')} onClick={openTrimDialog} disabled={!videoUrl || isExporting}><Clock3 size={16} /></button>
+              <div className="video-timeline-tools-slot" ref={setToolbarPortalTarget} />
+              <button className="video-timeline-toggle inline icon-button" title={text('多功能：点击收起时间轴；按住拖动时，上下调高度、左右调时间轴缩放；悬浮滚轮调轨道密度', 'Multifunction: click to collapse the timeline; drag vertically to resize or horizontally to zoom; hover and scroll to change lane density.')} onPointerDown={beginTimelinePanelDrag} onPointerMove={moveTimelinePanelDrag} onPointerUp={endTimelinePanelDrag} onPointerCancel={endTimelinePanelDrag} onClick={toggleTimelineCollapsedFromButton} onWheel={changeTimelineLaneHeight}>
+                <PanelBottomClose size={16} />
+              </button>
+            </div>
             {enhancedTimelineEditor}
           </div>}
         </section>

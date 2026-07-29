@@ -4,6 +4,7 @@ import { ArrowLeft, Crop, Download, Image as ImageIcon, Images, ListChecks, Plus
 import type { CharacterSlot, ComboBasePreset, ComboChart, ComboIconMapping, ComboImageStyle, ComboPeriod, RectPercent } from '../combo-core';
 import {
   chartToComboImageItems,
+  capsuleEdgeSourceRange,
   comboImageItemSizeForText,
   comboTextParts,
   effectiveCapsuleImageFields,
@@ -12,7 +13,7 @@ import {
   normalizeComboImageStyle,
   normalizeRectPercent
 } from './combo-image/comboImage';
-import { localizeDefaultCharacterName, localizeEnglish, useI18n } from './i18n';
+import { localizeCharacterName, localizeDefaultCharacterName, localizeEnglish, useI18n } from './i18n';
 import type { AppLanguage } from './i18n';
 import { NumericDraftInput } from './NumericDraftInput';
 import './fullChartExport.css';
@@ -340,6 +341,16 @@ async function drawNineSlice(ctx: CanvasRenderingContext2D, image: HTMLImageElem
   const destinationLeft = Math.max(0, rawLeft * edgeScale);
   const destinationRight = Math.max(0, rawRight * edgeScale);
   const destinationMiddle = Math.max(0, width - destinationLeft - destinationRight);
+  const edgeSource = capsuleEdgeSourceRange(image.naturalHeight, crop.y, crop.height, fields.edge);
+  const topSourceHeight = Math.max(0, crop.y - edgeSource.y);
+  const bottomSourceY = crop.y + crop.height;
+  const bottomSourceHeight = Math.max(0, edgeSource.y + edgeSource.height - bottomSourceY);
+  if (topSourceHeight > 0 && destinationLeft > 0) ctx.drawImage(image, crop.x, edgeSource.y, leftSource, topSourceHeight, x, y - topSourceHeight * heightScale, destinationLeft, topSourceHeight * heightScale);
+  if (topSourceHeight > 0 && destinationMiddle > 0) ctx.drawImage(image, crop.x + leftSource, edgeSource.y, Math.max(1, rightLine - leftSource), topSourceHeight, x + destinationLeft, y - topSourceHeight * heightScale, destinationMiddle, topSourceHeight * heightScale);
+  if (topSourceHeight > 0 && destinationRight > 0) ctx.drawImage(image, crop.x + rightLine, edgeSource.y, rightSource, topSourceHeight, x + destinationLeft + destinationMiddle, y - topSourceHeight * heightScale, destinationRight, topSourceHeight * heightScale);
+  if (bottomSourceHeight > 0 && destinationLeft > 0) ctx.drawImage(image, crop.x, bottomSourceY, leftSource, bottomSourceHeight, x, y + height, destinationLeft, bottomSourceHeight * heightScale);
+  if (bottomSourceHeight > 0 && destinationMiddle > 0) ctx.drawImage(image, crop.x + leftSource, bottomSourceY, Math.max(1, rightLine - leftSource), bottomSourceHeight, x + destinationLeft, y + height, destinationMiddle, bottomSourceHeight * heightScale);
+  if (bottomSourceHeight > 0 && destinationRight > 0) ctx.drawImage(image, crop.x + rightLine, bottomSourceY, rightSource, bottomSourceHeight, x + destinationLeft + destinationMiddle, y + height, destinationRight, bottomSourceHeight * heightScale);
   ctx.drawImage(image, crop.x, crop.y, leftSource, crop.height, x, y, destinationLeft, height);
   ctx.drawImage(image, crop.x + leftSource, crop.y, Math.max(1, rightLine - leftSource), crop.height, x + destinationLeft, y, destinationMiddle, height);
   ctx.drawImage(image, crop.x + rightLine, crop.y, rightSource, crop.height, x + destinationLeft + destinationMiddle, y, destinationRight, height);
@@ -385,6 +396,10 @@ async function drawInlineContent(ctx: CanvasRenderingContext2D, block: ExportBlo
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
   ctx.fillStyle = style.textColor;
+  ctx.strokeStyle = style.textStrokeColor;
+  ctx.lineWidth = Math.max(0, style.textStrokeWidth * scale);
+  ctx.lineJoin = 'round';
+  ctx.miterLimit = 2;
   ctx.font = `900 ${fittedFontSize}px ${style.fontFamily}`;
   ctx.shadowColor = 'rgba(0,0,0,.72)';
   ctx.shadowBlur = Math.max(1, 3 * scale);
@@ -398,6 +413,7 @@ async function drawInlineContent(ctx: CanvasRenderingContext2D, block: ExportBlo
         ctx.drawImage(image, cursorX, centerY - size / 2, size, size);
       }
     } else {
+      if (style.textStrokeEnabled && ctx.lineWidth > 0) ctx.strokeText(measurement.part.value, cursorX, centerY);
       ctx.fillText(measurement.part.value, cursorX, centerY);
     }
     cursorX += width + 2 * scale * fit;
@@ -519,12 +535,13 @@ function BasePresetPreview({ preset }: { preset: ComboBasePreset }) {
   }} />;
 }
 
-function BaseCropEditor({ src, width, height, crop, stretch, emptyLabel, onCropChange, onStretchChange }: {
+function BaseCropEditor({ src, width, height, crop, stretch, edge, emptyLabel, onCropChange, onStretchChange }: {
   src: string | undefined;
   width: number;
   height: number;
   crop: RectPercent;
   stretch: { left: number; right: number };
+  edge: number;
   emptyLabel: string;
   onCropChange: (crop: RectPercent) => void;
   onStretchChange: (stretch: { left: number; right: number }) => void;
@@ -582,8 +599,11 @@ function BaseCropEditor({ src, width, height, crop, stretch, emptyLabel, onCropC
   }
 
   if (!src) return <div className="full-chart-empty"><Crop size={36} /><strong>{emptyLabel}</strong></div>;
+  const edgeHeight = Math.min(100, crop.h + edge);
+  const edgeTop = clamp(crop.y - (edgeHeight - crop.h) / 2, 0, 100 - edgeHeight);
   return <div ref={stageRef} className="full-chart-crop-stage" style={{ aspectRatio: `${Math.max(1, width)} / ${Math.max(1, height)}` }}>
     <img src={src} alt="" />
+    {edge > 0 && <span className="full-chart-edge-preview" style={{ left: `${crop.x}%`, top: `${edgeTop}%`, width: `${crop.w}%`, height: `${edgeHeight}%` }} />}
     <div className="full-chart-crop-box" style={{ left: `${crop.x}%`, top: `${crop.y}%`, width: `${crop.w}%`, height: `${crop.h}%` }} onPointerDown={(event) => beginCropDrag(event, 'move')}>
       <span className="full-chart-crop-handle nw" onPointerDown={(event) => beginCropDrag(event, 'nw')} />
       <span className="full-chart-crop-handle se" onPointerDown={(event) => beginCropDrag(event, 'se')} />
@@ -698,6 +718,7 @@ export function FullChartExportLab({ chart, library, style, basePresets, onSelec
   const baseSourceImage = baseSource.capsuleImage;
   const baseSourceCrop = normalizeRectPercent(baseSource.capsuleCrop, { x: 0, y: 0, w: 100, h: 100 });
   const baseSourceStretch = baseSource.capsuleStretch ?? { left: 25, right: 75 };
+  const baseSourceEdge = baseSource.capsuleEdge ?? 0;
 
   function patchSettings(patch: Partial<ExportSettings>) {
     setSettings((current) => ({ ...current, ...patch }));
@@ -783,6 +804,7 @@ export function FullChartExportLab({ chart, library, style, basePresets, onSelec
     capsuleImageHeight?: number;
     capsuleCrop?: RectPercent;
     capsuleStretch?: { left: number; right: number };
+    capsuleEdge?: number;
   }) {
     if (baseTarget === 'global') {
       setDraftStyle((current) => normalizeComboImageStyle({ ...current, blockMode: 'image', ...patch }));
@@ -798,7 +820,8 @@ export function FullChartExportLab({ chart, library, style, basePresets, onSelec
       capsuleImageWidth: preset.imageWidth,
       capsuleImageHeight: preset.imageHeight,
       capsuleCrop: normalizeRectPercent(preset.crop, { x: 0, y: 0, w: 100, h: 100 }),
-      capsuleStretch: preset.stretch ?? { left: 25, right: 75 }
+      capsuleStretch: preset.stretch ?? { left: 25, right: 75 },
+      capsuleEdge: preset.edge ?? 0
     });
     setCustomBaseNames((current) => ({ ...current, [baseTarget]: preset.name }));
   }
@@ -824,7 +847,8 @@ export function FullChartExportLab({ chart, library, style, basePresets, onSelec
         capsuleImageWidth: uploaded.width,
         capsuleImageHeight: uploaded.height,
         capsuleCrop: { x: 0, y: 0, w: 100, h: 100 } as RectPercent,
-        capsuleStretch: { left: 25, right: 75 }
+        capsuleStretch: { left: 25, right: 75 },
+        capsuleEdge: 0
       };
       if (target === 'global') {
         setDraftStyle((current) => normalizeComboImageStyle({ ...current, blockMode: 'image', ...patch }));
@@ -840,7 +864,7 @@ export function FullChartExportLab({ chart, library, style, basePresets, onSelec
 
   function reuseGlobalBase() {
     if (baseTarget === 'global') return;
-    patchRole(baseTarget, { capsuleImage: undefined, capsuleImageWidth: undefined, capsuleImageHeight: undefined, capsuleCrop: undefined, capsuleStretch: undefined });
+    patchRole(baseTarget, { capsuleImage: undefined, capsuleImageWidth: undefined, capsuleImageHeight: undefined, capsuleCrop: undefined, capsuleStretch: undefined, capsuleEdge: undefined });
     setCustomBaseNames((current) => ({ ...current, [baseTarget]: '' }));
     setAssetError('');
   }
@@ -855,6 +879,7 @@ export function FullChartExportLab({ chart, library, style, basePresets, onSelec
       imageHeight: baseSource.capsuleImageHeight,
       crop: baseSourceCrop,
       stretch: baseSourceStretch,
+      edge: baseSourceEdge,
       user: true
     };
     setLocalBasePresets((current) => mergeBasePresets(current, [preset]));
@@ -942,6 +967,9 @@ export function FullChartExportLab({ chart, library, style, basePresets, onSelec
               <NumberControl label={text('文字大小', 'Font Size')} value={Math.round(draftStyle.fontSize)} min={12} max={120} onChange={(value) => patchStyle({ fontSize: value })} />
               <NumberControl label={text('头像大小', 'Avatar Size')} value={Math.round(draftStyle.avatarSize)} min={16} max={300} onChange={(value) => patchStyle({ avatarSize: value })} />
               <label><span>{text('文字颜色', 'Text Color')}</span><input type="color" value={draftStyle.textColor} onChange={(event) => patchStyle({ textColor: event.target.value })} /></label>
+              <label className="full-chart-check"><input type="checkbox" checked={draftStyle.textStrokeEnabled} onChange={(event) => patchStyle({ textStrokeEnabled: event.target.checked })} /><span>{text('文字描边', 'Text Outline')}</span></label>
+              <NumberControl label={text('描边粗细', 'Outline Width')} value={draftStyle.textStrokeWidth} min={0} max={12} disabled={!draftStyle.textStrokeEnabled} onChange={(value) => patchStyle({ textStrokeWidth: value })} />
+              <label><span>{text('描边颜色', 'Outline Color')}</span><input type="color" disabled={!draftStyle.textStrokeEnabled} value={draftStyle.textStrokeColor} onChange={(event) => patchStyle({ textStrokeColor: event.target.value })} /></label>
               <label className="full-chart-check"><input type="checkbox" checked={draftStyle.convertIcons} onChange={(event) => patchStyle({ convertIcons: event.target.checked })} /><span>{text('图标转换', 'Icon Conversion')}</span></label>
             </div></fieldset>
             <fieldset><legend>{text('角色颜色', 'Character Colors')}</legend><div className="full-chart-role-colors">{([1, 2, 3] as CharacterSlot[]).map((role) => <label key={role}><span>{localizeDefaultCharacterName(draftStyle.roleStyles[role].name, role, language)}</span><input type="color" value={draftStyle.roleStyles[role].color} onChange={(event) => patchRole(role, { color: event.target.value })} /></label>)}</div></fieldset>
@@ -960,7 +988,7 @@ export function FullChartExportLab({ chart, library, style, basePresets, onSelec
             {assetError && <div className="full-chart-render-error">{assetError}</div>}
             <div className="full-chart-base-workspace">
               <div className="full-chart-crop-editor">
-                <BaseCropEditor src={baseSourceImage} width={baseSource.capsuleImageWidth ?? 426} height={baseSource.capsuleImageHeight ?? 80} crop={baseSourceCrop} stretch={baseSourceStretch} emptyLabel={text('请选择预设或上传底图', 'Choose a preset or upload a base image')} onCropChange={(crop) => applyBasePatch({ capsuleCrop: crop })} onStretchChange={(stretch) => applyBasePatch({ capsuleStretch: stretch })} />
+                <BaseCropEditor src={baseSourceImage} width={baseSource.capsuleImageWidth ?? 426} height={baseSource.capsuleImageHeight ?? 80} crop={baseSourceCrop} stretch={baseSourceStretch} edge={baseSourceEdge} emptyLabel={text('请选择预设或上传底图', 'Choose a preset or upload a base image')} onCropChange={(crop) => applyBasePatch({ capsuleCrop: crop })} onStretchChange={(stretch) => applyBasePatch({ capsuleStretch: stretch })} />
               </div>
               <div className="full-chart-base-parameters">
                 <strong>{baseTarget === 'global' ? text('全局底图', 'Global Block Background') : localizeDefaultCharacterName(draftStyle.roleStyles[baseTarget].name, baseTarget, language)}</strong>
@@ -970,12 +998,13 @@ export function FullChartExportLab({ chart, library, style, basePresets, onSelec
                   <NumberControl label={text('裁剪 Y %', 'Crop Y %')} value={Math.round(baseSourceCrop.y)} min={0} max={95} onChange={(value) => patchBaseCrop({ y: value })} />
                   <NumberControl label={text('裁剪宽度 %', 'Crop Width %')} value={Math.round(baseSourceCrop.w)} min={5} max={100} onChange={(value) => patchBaseCrop({ w: value })} />
                   <NumberControl label={text('裁剪高度 %', 'Crop Height %')} value={Math.round(baseSourceCrop.h)} min={5} max={100} onChange={(value) => patchBaseCrop({ h: value })} />
+                  <NumberControl label={text('边缘 %', 'Edge Height %')} value={Math.round(baseSourceEdge)} min={0} max={100} onChange={(value) => applyBasePatch({ capsuleEdge: value })} />
                   <NumberControl label={text('左拉伸线 %', 'Left Stretch %')} value={Math.round(baseSourceStretch.left)} min={1} max={98} onChange={(value) => patchBaseStretch({ left: value })} />
                   <NumberControl label={text('右拉伸线 %', 'Right Stretch %')} value={Math.round(baseSourceStretch.right)} min={2} max={99} onChange={(value) => patchBaseStretch({ right: value })} />
                 </div>
               </div>
             </div>
-            <div className="full-chart-base-presets">{localBasePresets.map((preset) => <button key={`${preset.id}-${preset.src}`} className={preset.src === baseSourceImage ? 'active' : ''} onClick={() => applyBasePreset(preset)}><BasePresetPreview preset={preset} /><strong>{preset.name}</strong></button>)}</div>
+            <div className="full-chart-base-presets">{localBasePresets.map((preset) => <button key={`${preset.id}-${preset.src}`} className={preset.src === baseSourceImage ? 'active' : ''} onClick={() => applyBasePreset(preset)}><BasePresetPreview preset={preset} /><strong>{localizeCharacterName(preset.name, language)}</strong></button>)}</div>
           </div>
         ) : editorTab === 'icons' ? (
           <div className="full-chart-icons-editor">

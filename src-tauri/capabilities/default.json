@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Default capability for the combo trainer desktop windows.",
-  "windows": ["main", "overlay", "rhythm-feedback", "key-mapping"],
+  "windows": ["main", "overlay", "rhythm-feedback", "key-mapping", "recording-indicator"],
   "permissions": [
     "core:default",
     "core:event:default",

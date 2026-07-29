@@ -32,8 +32,15 @@ html, body, #overlay-root { margin: 0; width: 100%; height: 100%; background: rg
 .combo-chip.next { overflow: visible; }
 .combo-chip > span:not(.avatar-slot) { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background-color: rgba(7,12,16,.82); font-size: 13px; flex: 0 0 26px; }
 .combo-chip .overlay-action-prompt { width: auto; height: auto; border-radius: 0; display: block; place-items: initial; background: transparent; font-size: 20px; flex: none; }
-.combo-chip.image-block { padding: 0; justify-content: center; align-items: center; overflow: visible; background-color: transparent !important; border-color: transparent; }
-.combo-chip.image-block .capsule-bg { position: absolute; inset: 0; z-index: 1; pointer-events: none; overflow: hidden; }
+.combo-chip.image-block { padding: 0; justify-content: center; align-items: center; overflow: visible; background-color: transparent !important; border-width: 0; border-color: transparent; }
+.combo-chip.image-block .capsule-bg { position: absolute; inset: 0; z-index: 1; pointer-events: none; overflow: visible; }
+.combo-chip.image-block .capsule-bg-body { position: absolute; inset: 0; overflow: hidden; z-index: 1; }
+.combo-chip.image-block .capsule-bg-edge { position: absolute; background-image: var(--capsule-bg-source); background-repeat: no-repeat; image-rendering: pixelated; image-rendering: crisp-edges; z-index: 0; }
+.combo-chip.image-block .capsule-bg-edge.top { top: var(--capsule-bg-edge-top-top); height: var(--capsule-bg-edge-top-height); background-position-y: var(--capsule-bg-edge-top-position-y); }
+.combo-chip.image-block .capsule-bg-edge.bottom { top: 100%; height: var(--capsule-bg-edge-bottom-height); background-position-y: var(--capsule-bg-edge-bottom-position-y); }
+.combo-chip.image-block .capsule-bg-edge.left { left: 0; width: var(--capsule-bg-left-width); background-size: var(--capsule-bg-left-size); background-position-x: var(--capsule-bg-edge-left-position-x); }
+.combo-chip.image-block .capsule-bg-edge.middle { left: var(--capsule-bg-middle-left); width: var(--capsule-bg-middle-width); background-size: var(--capsule-bg-middle-size); background-position-x: var(--capsule-bg-edge-middle-position-x); }
+.combo-chip.image-block .capsule-bg-edge.right { left: var(--capsule-bg-right-left); width: var(--capsule-bg-right-width); background-size: var(--capsule-bg-right-size); background-position-x: var(--capsule-bg-edge-right-position-x); }
 .combo-chip.image-block .capsule-bg-piece { position: absolute; top: 0; bottom: 0; background-image: var(--capsule-bg-source); background-repeat: no-repeat; image-rendering: pixelated; image-rendering: crisp-edges; }
 .combo-chip.image-block .capsule-bg-piece.left { left: 0; width: var(--capsule-bg-left-width); background-size: var(--capsule-bg-left-size); background-position: var(--capsule-bg-left-position); }
 .combo-chip.image-block .capsule-bg-piece.middle { left: var(--capsule-bg-middle-left); width: var(--capsule-bg-middle-width); background-size: var(--capsule-bg-middle-size); background-position: var(--capsule-bg-middle-position); }

@@ -229,8 +229,10 @@ function normalizeBinding(value: unknown, index: number): KeyMappingBinding | nu
   const moveId = typeof record.moveId === 'string' && record.moveId.trim()
     ? (migratedDefaultDodge ? 'dodge' : record.moveId.trim())
     : defaultMoveId || undefined;
-  const codes = migratedDefaultDodge ? ['MouseRight'] : code ? [code] : storedCodes;
-  const primaryCode = code || codes?.[0] || '';
+  const codes = migratedDefaultDodge
+    ? ['MouseRight']
+    : [...new Set([code, ...(storedCodes ?? [])].filter(Boolean).map(normalizeInputCode))];
+  const primaryCode = codes[0] || '';
   const defaultName = defaultIndex >= 0 ? DEFAULT_CODES[defaultIndex][0] : undefined;
   const storedName = typeof record.name === 'string' && record.name.trim() ? record.name.trim() : '';
   const name = migratedDefaultDodge ? '闪避' : storedName || defaultName || primaryCode || `按键 ${index + 1}`;
@@ -352,7 +354,7 @@ export function keyMappingCodeLabel(code: string, translate?: KeyMappingLabelTra
 }
 
 export function keyMappingBindingCodes(binding: Pick<KeyMappingBinding, 'code' | 'codes'>): string[] {
-  const raw = binding.code ? [binding.code] : binding.codes?.length ? binding.codes : [];
+  const raw = [binding.code, ...(binding.codes ?? [])];
   const seen = new Set<string>();
   const result: string[] = [];
   for (const item of raw) {

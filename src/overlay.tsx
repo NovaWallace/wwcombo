@@ -4,6 +4,7 @@ import ReactDOM from 'react-dom/client';
 import type { CharacterSlot, ComboChart, ComboImageStyle, PracticeSnapshot, RectPercent } from '../combo-core';
 import {
   chartToComboImageItems,
+  capsuleEdgeSourceRange,
   comboImageBackgroundSource,
   comboImageContentCenterPercent,
   comboImageDisplayIndexForStep,
@@ -309,7 +310,7 @@ function OverlayApp() {
                 {comboStyle.blockMode === 'image' && <CapsuleBlockBackground />}
                 {layout === 'horizontal' && promptText && comboImageItemContainsStep(item, promptStep?.id) && <div className={`overlay-action-prompt horizontal ${promptSide}`}>{promptText}</div>}
                 {layout === 'vertical' && promptText && isActive && <div className={`overlay-action-prompt vertical ${nextIndicatorSide}`}>{promptText}</div>}
-                <ComboItemContent item={item} parts={contentParts} className="combo-chip-content" mappings={itemIconMappings} activeMergedStepId={activeMergedStepId} />
+                <ComboItemContent item={item} parts={contentParts} className="combo-chip-content" mappings={itemIconMappings} activeMergedStepId={activeMergedStepId} textStyle={comboTextStrokeStyle(comboStyle)} />
               </div>
             );
           }) : <div className="placeholder">{text('暂无连段图', 'No Combo Chart') }</div>}
@@ -421,21 +422,26 @@ function RhythmOverlay({ chart, practice, style, bounds, settings, language }: {
 }
 
 function CapsuleBlockBackground() {
-  return <div className="capsule-bg" aria-hidden="true"><div className="capsule-bg-piece left" /><div className="capsule-bg-piece middle" /><div className="capsule-bg-piece right" /></div>;
+  return <div className="capsule-bg" aria-hidden="true"><div className="capsule-bg-edge left top" /><div className="capsule-bg-edge left bottom" /><div className="capsule-bg-edge middle top" /><div className="capsule-bg-edge middle bottom" /><div className="capsule-bg-edge right top" /><div className="capsule-bg-edge right bottom" /><div className="capsule-bg-body"><div className="capsule-bg-piece left" /><div className="capsule-bg-piece middle" /><div className="capsule-bg-piece right" /></div></div>;
 }
 
-function ComboInlineContent({ parts, className, hideIconAlt = false }: { parts: ReturnType<typeof comboTextParts>; className: string; hideIconAlt?: boolean }) {
-  return <strong className={className}>{parts.map((part, index) => part.kind === 'icon' ? <span key={`${part.iconId}-${index}`} className="combo-inline-icon-mark" style={{ '--icon-scale': part.iconScale } as CSSProperties}><img className="combo-inline-icon" src={part.src} alt={hideIconAlt ? '' : part.label} title={part.label} /></span> : <span key={`text-${index}`}>{part.value}</span>)}</strong>;
+function ComboInlineContent({ parts, className, hideIconAlt = false, textStyle }: { parts: ReturnType<typeof comboTextParts>; className: string; hideIconAlt?: boolean; textStyle?: CSSProperties }) {
+  return <strong className={className} style={textStyle}>{parts.map((part, index) => part.kind === 'icon' ? <span key={`${part.iconId}-${index}`} className="combo-inline-icon-mark" style={{ '--icon-scale': part.iconScale } as CSSProperties}><img className="combo-inline-icon" src={part.src} alt={hideIconAlt ? '' : part.label} title={part.label} /></span> : <span key={`text-${index}`}>{part.value}</span>)}</strong>;
 }
 
-function ComboItemContent({ item, parts, className, mappings, activeMergedStepId }: { item: ReturnType<typeof chartToComboImageItems>[number]; parts: ReturnType<typeof comboTextParts>; className: string; mappings: ComboImageStyle['iconMappings']; activeMergedStepId?: string }) {
+function ComboItemContent({ item, parts, className, mappings, activeMergedStepId, textStyle }: { item: ReturnType<typeof chartToComboImageItems>[number]; parts: ReturnType<typeof comboTextParts>; className: string; mappings: ComboImageStyle['iconMappings']; activeMergedStepId?: string; textStyle?: CSSProperties }) {
   if (item.mergedParts?.length && activeMergedStepId) {
-    return <strong className={className}>{item.mergedParts.map((part) => {
+    return <strong className={className} style={textStyle}>{item.mergedParts.map((part) => {
       const active = part.stepId === activeMergedStepId;
       return <span key={part.stepId} className={active ? 'combo-merged-part active' : 'combo-merged-part'}>{comboTextParts(part.displayText, Boolean(part.iconId), mappings).map((piece, index) => piece.kind === 'icon' ? <span key={`${piece.iconId}-${index}`} className={active ? 'combo-inline-icon-mark active' : 'combo-inline-icon-mark'} style={{ '--icon-scale': piece.iconScale } as CSSProperties}><img className="combo-inline-icon" src={piece.src} alt={piece.label} title={piece.label} /></span> : <span key={`text-${index}`}>{piece.value}</span>)}</span>;
     })}</strong>;
   }
-  return <ComboInlineContent parts={parts} className={className} />;
+  return <ComboInlineContent parts={parts} className={className} textStyle={textStyle} />;
+}
+
+function comboTextStrokeStyle(style: ComboImageStyle): CSSProperties | undefined {
+  if (!style.textStrokeEnabled || style.textStrokeWidth <= 0) return undefined;
+  return { WebkitTextStroke: `${style.textStrokeWidth}px ${style.textStrokeColor}`, paintOrder: 'stroke fill' };
 }
 
 function activeFrameVars(showAvatar: boolean, blockMode: ComboImageStyle['blockMode'], avatarLeft: number, avatarSize: number, avatarOffsetY: number, blockHeight: number, visualHeight = blockHeight): CSSProperties {
@@ -625,6 +631,9 @@ function capsuleBackgroundVars(style: ComboImageStyle, targetWidthInput: number,
   const middleScaleX = destMiddle / stretchWidth;
   const rightSourceWidth = Math.max(1, cropWidth - rightLine);
   const rightScaleX = destRight / rightSourceWidth;
+  const edgeSource = capsuleEdgeSourceRange(naturalHeight, cropY, cropHeight, capsule.edge);
+  const edgeTopHeight = Math.max(0, (cropY - edgeSource.y) * heightScale);
+  const edgeBottomHeight = Math.max(0, (edgeSource.y + edgeSource.height - cropY - cropHeight) * heightScale);
   return {
     '--capsule-bg-source': cssImageUrl(source),
     '--capsule-bg-left-width': cssPx(destLeft),
@@ -637,7 +646,16 @@ function capsuleBackgroundVars(style: ComboImageStyle, targetWidthInput: number,
     '--capsule-bg-middle-size': `${cssPx(naturalWidth * middleScaleX)} ${cssPx(naturalHeight * heightScale)}`,
     '--capsule-bg-middle-position': `${cssPx(-(cropX + leftLine) * middleScaleX)} ${cssPx(-cropY * heightScale)}`,
     '--capsule-bg-right-size': `${cssPx(naturalWidth * rightScaleX)} ${cssPx(naturalHeight * heightScale)}`,
-    '--capsule-bg-right-position': `${cssPx(-(cropX + rightLine) * rightScaleX)} ${cssPx(-cropY * heightScale)}`
+    '--capsule-bg-right-position': `${cssPx(-(cropX + rightLine) * rightScaleX)} ${cssPx(-cropY * heightScale)}`,
+    '--capsule-bg-edge-top-top': cssPx(-edgeTopHeight),
+    '--capsule-bg-edge-top-height': cssPx(edgeTopHeight),
+    '--capsule-bg-edge-bottom-top': cssPx(targetHeight),
+    '--capsule-bg-edge-bottom-height': cssPx(edgeBottomHeight),
+    '--capsule-bg-edge-left-position-x': cssPx(-cropX * leftScaleX),
+    '--capsule-bg-edge-middle-position-x': cssPx(-(cropX + leftLine) * middleScaleX),
+    '--capsule-bg-edge-right-position-x': cssPx(-(cropX + rightLine) * rightScaleX),
+    '--capsule-bg-edge-top-position-y': cssPx(-edgeSource.y * heightScale),
+    '--capsule-bg-edge-bottom-position-y': cssPx(-(cropY + cropHeight) * heightScale)
   } as CSSProperties;
 }
 

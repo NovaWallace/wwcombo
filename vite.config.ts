@@ -2,6 +2,7 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { rmSync } from 'node:fs';
 import { resolve } from 'node:path';
+import packageMetadata from './package.json';
 
 const excludeLocalPublicArtifacts = () => ({
   name: 'exclude-local-public-artifacts',
@@ -11,6 +12,9 @@ const excludeLocalPublicArtifacts = () => ({
 });
 
 export default defineConfig({
+  define: {
+    __APP_VERSION__: JSON.stringify(packageMetadata.version)
+  },
   plugins: [react(), excludeLocalPublicArtifacts()],
   base: './',
   server: {

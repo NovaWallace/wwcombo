@@ -139,6 +139,7 @@ export type ComboImageRoleStyle = {
   capsuleImageHeight?: number;
   capsuleCrop?: RectPercent;
   capsuleStretch?: StretchPercent;
+  capsuleEdge?: number;
   iconMappings?: ComboIconMapping[];
 };
 
@@ -170,6 +171,7 @@ export type ComboBasePreset = {
   imageHeight?: number;
   crop?: RectPercent;
   stretch?: StretchPercent;
+  edge?: number;
   user?: boolean;
 };
 
@@ -196,9 +198,13 @@ export type ComboImageStyle = {
   overallScale: number;
   capsuleCrop?: RectPercent;
   capsuleStretch?: StretchPercent;
+  capsuleEdge: number;
   capsuleColor: string;
   useCustomCapsuleColor: boolean;
   textColor: string;
+  textStrokeEnabled: boolean;
+  textStrokeWidth: number;
+  textStrokeColor: string;
   fontSize: number;
   fontFamily: string;
   avatarSize: number;

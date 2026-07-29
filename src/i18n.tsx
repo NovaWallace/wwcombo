@@ -16,6 +16,8 @@ type I18nContextValue = {
 const LANGUAGE_STORAGE_KEY = 'ww-combo-trainer-language-v1';
 const I18nContext = createContext<I18nContextValue | null>(null);
 const APP_LANGUAGES: readonly AppLanguage[] = ['zh-CN', 'en-US', 'ja-JP', 'ko-KR'];
+type CharacterNames = Record<AppLanguage, string>;
+let remoteCharacterNames = new Map<string, CharacterNames>();
 
 type TemplateTranslation = {
   expression: RegExp;
@@ -69,11 +71,27 @@ export function localizeEnglish(english: string, language: AppLanguage): string 
   return english;
 }
 
+export function setRemoteCharacterNames(characters: Array<{ names?: Partial<Record<AppLanguage, string>> }> | undefined): void {
+  const next = new Map<string, CharacterNames>();
+  for (const character of characters ?? []) {
+    const chinese = character.names?.['zh-CN']?.trim() ?? '';
+    if (!chinese) continue;
+    const names = Object.fromEntries(APP_LANGUAGES.map((entry) => [entry, character.names?.[entry]?.trim() || chinese])) as CharacterNames;
+    for (const alias of Object.values(names)) if (alias) next.set(alias, names);
+  }
+  remoteCharacterNames = next;
+}
+
+export function localizeCharacterName(name: string | undefined, language: AppLanguage): string {
+  if (!name) return '';
+  return remoteCharacterNames.get(name.trim())?.[language] || name;
+}
+
 export function localizeDefaultCharacterName(name: string | undefined, slot: number, language: AppLanguage): string {
   const chineseDefault = `角色${slot}`;
   if (language === 'zh-CN') return name || chineseDefault;
   if (!name || /^角色\s*[123]$/.test(name)) return localizeEnglish(`Character ${slot}`, language);
-  return name;
+  return localizeCharacterName(name, language);
 }
 
 function loadLanguage(): AppLanguage {

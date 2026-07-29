@@ -44,6 +44,7 @@ type CapsuleImageFields = {
   height?: number;
   crop?: RectPercent;
   stretch?: StretchPercent;
+  edge: number;
 };
 
 export const DEFAULT_ROLE_COLORS: Record<CharacterSlot, string> = {
@@ -133,6 +134,7 @@ export function scaleComboImageStyle(style: ComboImageStyle, scaleInput: number)
       3: scaleRole(style.roleStyles[3])
     },
     fontSize: style.fontSize * scale,
+    textStrokeWidth: style.textStrokeWidth * scale,
     avatarSize: style.avatarSize * scale,
     avatarOffsetX: style.avatarOffsetX * scale,
     avatarOffsetY: style.avatarOffsetY * scale,
@@ -169,8 +171,12 @@ export function createDefaultComboImageStyle(): ComboImageStyle {
     capsuleImageScale: 1,
     overallScale: 1,
     capsuleCrop: { x: 4, y: 43, w: 93, h: 14 },
-    capsuleStretch: { left: 34, right: 86 },
+    capsuleStretch: { left: 11, right: 86 },
+    capsuleEdge: 0,
     textColor: '#eef3f7',
+    textStrokeEnabled: false,
+    textStrokeWidth: 2,
+    textStrokeColor: '#050505',
     fontSize: 22,
     fontFamily: 'Microsoft YaHei, Inter, system-ui, sans-serif',
     avatarSize: 70,
@@ -234,6 +240,9 @@ export function normalizeComboImageStyle(value: Partial<ComboImageStyle> | null 
     imageBlockHeight: clampNumber(value?.imageBlockHeight, 16, 500, hasIndependentImageSize ? fallback.imageBlockHeight : legacyImageBlockHeight),
     capsuleImageScale: 1,
     overallScale: clampNumber(value?.overallScale, 0.25, 4, fallback.overallScale),
+    textStrokeEnabled: Boolean(value?.textStrokeEnabled),
+    textStrokeWidth: clampNumber(value?.textStrokeWidth, 0, 12, fallback.textStrokeWidth),
+    textStrokeColor: typeof value?.textStrokeColor === 'string' && /^#[0-9a-f]{6}$/i.test(value.textStrokeColor) ? value.textStrokeColor : fallback.textStrokeColor,
     fontSize: clampNumber(value?.fontSize, 12, 72, fallback.fontSize),
     fontFamily: typeof value?.fontFamily === 'string' && value.fontFamily.trim() ? value.fontFamily.trim() : fallback.fontFamily,
     avatarSize: clampNumber(value?.avatarSize, 16, 240, fallback.avatarSize),
@@ -260,6 +269,7 @@ export function normalizeComboImageStyle(value: Partial<ComboImageStyle> | null 
     backgroundCrop: normalizeRectPercent(value?.backgroundCrop, fullRectPercent()),
     capsuleCrop,
     capsuleStretch: normalizeStretchPercent(value?.capsuleStretch ?? fallback.capsuleStretch),
+    capsuleEdge: clampNumber(value?.capsuleEdge, 0, 100, fallback.capsuleEdge),
     contentLabels: normalizeContentLabels(value?.contentLabels)
   };
 }
@@ -509,8 +519,19 @@ export function effectiveCapsuleImageFields(style: ComboImageStyle, roleStyle?: 
     width: useRoleCapsule ? roleStyle?.capsuleImageWidth : style.capsuleImageWidth,
     height: useRoleCapsule ? roleStyle?.capsuleImageHeight : style.capsuleImageHeight,
     crop: useRoleCapsule ? roleStyle?.capsuleCrop : style.capsuleCrop,
-    stretch: useRoleCapsule ? roleStyle?.capsuleStretch : style.capsuleStretch
+    stretch: useRoleCapsule ? roleStyle?.capsuleStretch : style.capsuleStretch,
+    edge: useRoleCapsule ? (roleStyle?.capsuleEdge ?? 0) : style.capsuleEdge
   };
+}
+
+export function capsuleEdgeSourceRange(naturalHeightInput: number, cropYInput: number, cropHeightInput: number, edgePercentInput: number): { y: number; height: number } {
+  const naturalHeight = Math.max(1, naturalHeightInput);
+  const cropHeight = Math.min(naturalHeight, Math.max(1, cropHeightInput));
+  const cropY = Math.min(naturalHeight - cropHeight, Math.max(0, cropYInput));
+  const edgePercent = Number.isFinite(edgePercentInput) ? Math.min(100, Math.max(0, edgePercentInput)) : 0;
+  const height = Math.min(naturalHeight, cropHeight + naturalHeight * edgePercent / 100);
+  const centeredY = cropY - (height - cropHeight) / 2;
+  return { y: Math.min(naturalHeight - height, Math.max(0, centeredY)), height };
 }
 
 export function comboImageItemSize(style: ComboImageStyle, roleStyle?: RoleStyle): { width: number; height: number } {
@@ -568,6 +589,7 @@ export function defaultComboContentLabelForMoveId(moveId: string): string | unde
   if (moveId === 'dodge_hold') return 'S';
   if (moveId === 'jump') return 'j';
   if (moveId === 'jump_hold') return 'J';
+  if (moveId === 'finisher') return 'f';
   if (moveId === 'empty_action') return 'w';
   if (moveId === 'switch_1') return 'i';
   if (moveId === 'switch_2') return 'ii';
@@ -588,16 +610,28 @@ export function iconSourceForId(iconId: string | undefined, mappings = DEFAULT_I
 
 export function comboTextParts(value: string, convertIcons: boolean, mappings = DEFAULT_ICON_MAPPINGS): ComboContentPart[] {
   const text = String(value || '');
-  if (!convertIcons || !text) return text ? [{ kind: 'text', value: text }] : [];
+  if (!text) return [];
   const parts: ComboContentPart[] = [];
   let buffer = '';
   let index = 0;
-  const triggers = mappings.flatMap((mapping) => mapping.triggers.filter(Boolean).map((trigger) => ({ trigger, mapping }))).sort((left, right) => right.trigger.length - left.trigger.length);
+  const triggers = convertIcons
+    ? mappings.flatMap((mapping) => mapping.triggers.filter(Boolean).map((trigger) => ({ trigger, mapping }))).sort((left, right) => right.trigger.length - left.trigger.length)
+    : [];
   const pushText = () => {
     if (buffer) parts.push({ kind: 'text', value: buffer });
     buffer = '';
   };
   while (index < text.length) {
+    if (text[index] === '[') {
+      const closingIndex = text.indexOf(']', index + 1);
+      if (closingIndex >= 0) {
+        pushText();
+        const literalText = text.slice(index + 1, closingIndex);
+        if (literalText) parts.push({ kind: 'text', value: literalText });
+        index = closingIndex + 1;
+        continue;
+      }
+    }
     const match = triggers.find(({ trigger }) => text.startsWith(trigger, index));
     if (match) {
       pushText();
@@ -642,6 +676,7 @@ function normalizeStoredBasePresets(value: unknown): ComboImageStyle['basePreset
       imageHeight: clampOptionalNumber(entry.imageHeight, 1, 5000),
       crop: entry.crop ? normalizeRectPercent(entry.crop, fullRectPercent()) : undefined,
       stretch: entry.stretch ? normalizeStretchPercent(entry.stretch) : undefined,
+      edge: clampNumber(entry.edge, 0, 100, 0),
       user: entry.user !== false
     }];
   });
@@ -729,6 +764,7 @@ function normalizeRoleStyle(fallback: RoleStyle, value: Partial<RoleStyle> | und
     capsuleImageHeight: capsuleImage ? clampOptionalNumber(value?.capsuleImageHeight, 1, 5000) : undefined,
     capsuleCrop: capsuleImage && value?.capsuleCrop ? normalizeRectPercent(value.capsuleCrop, fullRectPercent()) : undefined,
     capsuleStretch: capsuleImage && value?.capsuleStretch ? normalizeStretchPercent(value.capsuleStretch) : undefined,
+    capsuleEdge: capsuleImage ? clampNumber(value?.capsuleEdge, 0, 100, 0) : undefined,
     iconMappings: Array.isArray(value?.iconMappings) ? normalizeIconMappings(value.iconMappings) : undefined
   };
 }

@@ -83,8 +83,8 @@ const KEY_MAPPING_MIN_WIDTH: u32 = 160;
 const KEY_MAPPING_MIN_HEIGHT: u32 = 120;
 const KEY_MAPPING_MAX_WIDTH: u32 = 2400;
 const KEY_MAPPING_MAX_HEIGHT: u32 = 2000;
-const RECORDING_INDICATOR_SIZE: f64 = 48.0;
-const RECORDING_INDICATOR_MARGIN: f64 = 18.0;
+const RECORDING_INDICATOR_SIZE: f64 = 18.0;
+const RECORDING_INDICATOR_MARGIN: f64 = 2.0;
 const REMOTE_CHARACTER_AVATAR_API: &str = "https://wuwa-hpyg-tool.200503.xyz/api/v1/icons/character";
 
 #[tauri::command]
@@ -226,12 +226,12 @@ fn apply_recording_indicator_state(
     let scale = monitor.scale_factor().max(0.5);
     let physical_window_size = (RECORDING_INDICATOR_SIZE * scale).round() as i32;
     let margin = (RECORDING_INDICATOR_MARGIN * scale).round() as i32;
-    let work_area = monitor.work_area();
-    let left = work_area.position.x + margin;
-    let right = work_area.position.x + work_area.size.width as i32 - physical_window_size - margin;
-    let top = work_area.position.y + margin;
-    let bottom =
-        work_area.position.y + work_area.size.height as i32 - physical_window_size - margin;
+    let monitor_position = monitor.position();
+    let monitor_size = monitor.size();
+    let left = monitor_position.x + margin;
+    let right = monitor_position.x + monitor_size.width as i32 - physical_window_size - margin;
+    let top = monitor_position.y + margin;
+    let bottom = monitor_position.y + monitor_size.height as i32 - physical_window_size - margin;
     let (x, y) = match corner {
         "top-left" => (left, top),
         "top-right" => (right, top),
@@ -815,7 +815,7 @@ async fn export_video_with_overlay(
             .arg("-map_metadata").arg("0")
             .arg("-c:v").arg("libx264")
             .arg("-preset").arg("medium")
-            .arg("-crf").arg("16")
+            .arg("-crf").arg("12")
             .arg("-pix_fmt").arg("yuv420p")
             .arg("-colorspace").arg("bt709")
             .arg("-color_primaries").arg("bt709")
@@ -1019,6 +1019,18 @@ fn find_ffmpeg(app: &AppHandle) -> Option<PathBuf> {
             return Some(bundled);
         }
     }
+    if let Ok(executable) = std::env::current_exe() {
+        if let Some(directory) = executable.parent() {
+            for bundled in [
+                directory.join("ffmpeg.exe"),
+                directory.join("resources").join("ffmpeg.exe"),
+            ] {
+                if bundled.is_file() {
+                    return Some(bundled);
+                }
+            }
+        }
+    }
     let local = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("resources")
         .join("ffmpeg.exe");
@@ -1098,11 +1110,22 @@ mod winhook {
     const WM_RBUTTONUP: u32 = 0x0205;
     const WM_MBUTTONDOWN: u32 = 0x0207;
     const WM_MBUTTONUP: u32 = 0x0208;
+    const WM_XBUTTONDOWN: u32 = 0x020B;
+    const WM_XBUTTONUP: u32 = 0x020C;
 
     #[repr(C)]
     struct KbdLlHookStruct {
         vk_code: u32,
         scan_code: u32,
+        flags: u32,
+        time: u32,
+        dw_extra_info: usize,
+    }
+
+    #[repr(C)]
+    struct MsllHookStruct {
+        pt: Point,
+        mouse_data: u32,
         flags: u32,
         time: u32,
         dw_extra_info: usize,
@@ -1215,6 +1238,8 @@ mod winhook {
             (0x01, "MouseLeft"),
             (0x02, "MouseRight"),
             (0x04, "MouseMiddle"),
+            (0x05, "Mouse3"),
+            (0x06, "Mouse4"),
             (0x08, "Backspace"),
             (0x09, "Tab"),
             (0x0D, "Enter"),
@@ -1279,6 +1304,20 @@ mod winhook {
                 WM_RBUTTONUP => Some(("mouseup", "MouseRight")),
                 WM_MBUTTONDOWN => Some(("mousedown", "MouseMiddle")),
                 WM_MBUTTONUP => Some(("mouseup", "MouseMiddle")),
+                WM_XBUTTONDOWN => {
+                    match ((*(lparam as *const MsllHookStruct)).mouse_data >> 16) & 0xFFFF {
+                        1 => Some(("mousedown", "Mouse3")),
+                        2 => Some(("mousedown", "Mouse4")),
+                        _ => None,
+                    }
+                }
+                WM_XBUTTONUP => {
+                    match ((*(lparam as *const MsllHookStruct)).mouse_data >> 16) & 0xFFFF {
+                        1 => Some(("mouseup", "Mouse3")),
+                        2 => Some(("mouseup", "Mouse4")),
+                        _ => None,
+                    }
+                }
                 _ => None,
             };
 
