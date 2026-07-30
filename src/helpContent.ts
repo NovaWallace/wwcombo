@@ -45,6 +45,7 @@ export type HelpContent = {
   exampleLabel: string;
   firstRunTitle: string;
   firstRunDescription: string;
+  firstRunFreeWarning: string;
   openHelp: string;
   continueWithoutHelp: string;
   articles: Record<HelpTab, HelpArticle>;
@@ -64,6 +65,7 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
     exampleLabel: '示例',
     firstRunTitle: '第一次使用鸣潮训练场？',
     firstRunDescription: '建议先花一分钟查看帮助。教程会说明 JSON 导入、全局捕获、管理员运行、练习模式与攻略制作流程。',
+    firstRunFreeWarning: '本软件完全免费。如果你在任何平台付费购买，说明你被骗了，请立即申请退款。',
     openHelp: '查看帮助',
     continueWithoutHelp: '先继续',
     articles: {
@@ -340,6 +342,18 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
         summary: '记录公开版本和当前开发版的重要变化。',
         groups: [
           {
+            title: '当前开发版 · 2026-07-31',
+            items: [
+              '“悬浮”改名为“连段图置顶”，使用黄色背景、黑色文字和眼睛图标；移动按钮改为十字移动图标。修正连段图跨越屏幕上下半区、提示箭头自动换边时，底图边缘被窗口裁剪的问题。全局捕获未开启时，左侧按钮上方会持续显示轻微移动的黄色指示三角。',
+              '设置新增全局自定义图标。可逐个上传或恢复图标，覆盖键鼠、手柄和外观中的同名图标，并随 .wwkeys.json 按键设置一起导入导出。',
+              '录制新增切人保护：已经处于目标角色时，再次按该角色的切人键不会生成无效切人块；下一个可记录切人必须切向其他角色。',
+              '录制页新增“文字轴识别”。支持按当前角色中文名或首字简称确定角色，以字母和中文动作词生成招式块，大写生成长按；支持启动轴、循环轴、变奏、延奏、处决、跳跃、闪避和前走，并按解放 3 秒、切人 0.5 秒、其他动作 1 秒生成默认时长。',
+              '分割快捷键 C 在已有选择时会按鼠标所在时间直接切开所选块，没有选择时仍进入连续分割模式。多选组会保持到点击组外块；双击组内块可退出多选并只选择该块。',
+              '时间轴复制内容改为普通编辑器与视频编辑器共享，修复切换界面或组件重新挂载后 Ctrl+C / Ctrl+V 偶发失效。',
+              '首次离开主界面的引导弹窗新增醒目防骗提示：软件完全免费，任何平台付费购买均应立即申请退款。'
+            ]
+          },
+          {
             title: 'v0.3.0 · 2026-07-30',
             items: [
               '新增内置四语言帮助、练习者与攻略作者教程、详细功能说明，以及首次使用引导。',
@@ -397,6 +411,7 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
     exampleLabel: 'Example',
     firstRunTitle: 'New to Wuthering Waves Trainer?',
     firstRunDescription: 'Take a minute to read the help. It covers JSON import, Global Input Capture, administrator mode, practice modes, and guide creation.',
+    firstRunFreeWarning: 'This software is completely free. If you paid for it on any platform, you were scammed. Request a refund immediately.',
     openHelp: 'View Help',
     continueWithoutHelp: 'Continue',
     articles: {
@@ -673,6 +688,18 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
         summary: 'Important changes in public releases and the current development build.',
         groups: [
           {
+            title: 'Current Development Build · 2026-07-31',
+            items: [
+              'Renamed Always on Top to Keep Combo Overlay on Top with a yellow background, black text, and an eye icon. The Move control now uses a four-way move icon. Fixed block artwork being clipped when the overlay crosses between the upper and lower halves of the screen and the prompt arrow changes sides. While Global Input Capture is off, a gently animated yellow triangle points to its sidebar button.',
+              'Added global custom icons in Settings. Icons can be uploaded or restored individually, override matching keyboard, gamepad, and appearance icons, and travel with .wwkeys.json input-settings import and export.',
+              'Added recording switch protection. Pressing the switch key for the character already on field no longer creates an invalid switch block; the next recorded switch must target another character.',
+              'Added Text Axis Import to Record mode. It matches current Chinese character names or first-character abbreviations, creates actions from letters and Chinese action terms, treats uppercase as hold input, recognizes startup and loop axes, Intro, Outro, Finisher, Jump, Dodge, and Move Forward, and assigns default durations of 3 seconds for Liberation, 0.5 seconds for switches, and 1 second for other actions.',
+              'C now splits selected blocks at the current pointer time, while still entering continuous Split mode when nothing is selected. A multiselection remains active until an unselected block is clicked; double-clicking a member collapses the group to that block.',
+              'Shared the timeline clipboard between the normal and video editors, fixing intermittent Ctrl+C / Ctrl+V failures after switching views or remounting the editor.',
+              'Added a prominent first-run anti-scam warning: the software is completely free, and users who paid on any platform should request a refund immediately.'
+            ]
+          },
+          {
             title: 'v0.3.0 · 2026-07-30',
             items: [
               'Added built-in help in four languages, learner and guide-author workflows, a detailed reference, and a first-run prompt.',
@@ -730,6 +757,7 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
     exampleLabel: '例',
     firstRunTitle: '鳴潮トレーナーを初めて使いますか？',
     firstRunDescription: 'まず1分ほどヘルプをご覧ください。JSONの読み込み、グローバル入力監視、管理者実行、練習モード、攻略制作の流れを説明します。',
+    firstRunFreeWarning: '本ソフトは完全無料です。どこかのプラットフォームで購入した場合は詐欺です。直ちに返金を申請してください。',
     openHelp: 'ヘルプを見る',
     continueWithoutHelp: '先に進む',
     articles: {
@@ -919,6 +947,18 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
         summary: '公開版と現在の開発版における主な変更です。',
         groups: [
           {
+            title: '現在の開発版 · 2026-07-31',
+            items: [
+              '「常に最前面」を「連段図を最前面に固定」へ変更し、黄色背景、黒文字、目のアイコンを使用しました。移動は4方向アイコンになり、画面の上下をまたいで矢印の向きが変わる際にブロック背景が切れる問題を修正しました。グローバル入力監視が無効な間は、サイドバーのボタンを示す黄色の三角形が軽く動き続けます。',
+              '設定に全体カスタムアイコンを追加しました。個別に画像をアップロード／復元でき、キーボード、ゲームパッド、外観の同名アイコンを上書きします。.wwkeys.json の入力設定にも含まれます。',
+              '録画のキャラクター切替保護を追加しました。現在のキャラクターと同じ切替キーを押しても無効な切替ブロックを記録せず、次の切替は別キャラクターだけを対象にします。',
+              '録画に「文字軸の読み取り」を追加しました。現在の中国語キャラクター名または先頭文字、英字と中国語アクション語、大文字の長押し、開始軸／ループ軸、変奏、終奏、フィニッシャー、ジャンプ、回避、前進を認識します。既定時間は共鳴解放3秒、切替0.5秒、その他1秒です。',
+              '選択がある場合、Cはマウス位置で選択ブロックを直接分割します。未選択時は従来どおり連続分割モードです。複数選択はグループ外をクリックするまで維持され、グループ内をダブルクリックするとそのブロックだけを選択します。',
+              '通常編集と動画編集でタイムラインのクリップボードを共有し、画面切替や再マウント後に Ctrl+C／Ctrl+V が失敗する問題を修正しました。',
+              '初回案内に、本ソフトは完全無料であり、有料購入した場合は直ちに返金申請するよう促す詐欺防止警告を追加しました。'
+            ]
+          },
+          {
             title: 'v0.3.0 · 2026-07-30',
             items: [
               '4言語の内蔵ヘルプ、練習者／攻略作者向け手順、詳細リファレンス、初回案内を追加しました。',
@@ -962,6 +1002,7 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
     exampleLabel: '예시',
     firstRunTitle: '명조 트레이너를 처음 사용하시나요?',
     firstRunDescription: '먼저 1분 정도 도움말을 확인해 보세요. JSON 가져오기, 전역 입력 캡처, 관리자 실행, 연습 모드와 공략 제작 과정을 설명합니다.',
+    firstRunFreeWarning: '이 소프트웨어는 완전히 무료입니다. 어떤 플랫폼에서든 돈을 내고 구매했다면 사기를 당한 것이므로 즉시 환불을 요청하세요.',
     openHelp: '도움말 보기',
     continueWithoutHelp: '계속하기',
     articles: {
@@ -1150,6 +1191,18 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
         title: '업데이트 기록',
         summary: '공개 버전과 현재 개발 빌드의 주요 변경 사항입니다.',
         groups: [
+          {
+            title: '현재 개발 빌드 · 2026-07-31',
+            items: [
+              '“항상 위”를 “콤보 오버레이 항상 위”로 바꾸고 노란 배경, 검은색 글자와 눈 아이콘을 적용했습니다. 이동은 4방향 아이콘으로 변경했으며 화면 상하를 넘을 때 안내 화살표 방향이 바뀌면서 블록 배경이 잘리던 문제를 수정했습니다. 전역 입력 감지가 꺼져 있으면 사이드바 버튼을 가리키는 노란 삼각형이 계속 가볍게 움직입니다.',
+              '설정에 전역 사용자 아이콘을 추가했습니다. 아이콘별로 업로드하거나 복원할 수 있고 키보드, 게임패드와 외형의 같은 아이콘을 덮어씁니다. .wwkeys.json 입력 설정 가져오기/내보내기에도 포함됩니다.',
+              '녹화 캐릭터 전환 보호를 추가했습니다. 현재 캐릭터와 같은 전환 키를 다시 눌러도 무효 전환 블록을 기록하지 않으며 다음 전환은 다른 캐릭터만 대상으로 합니다.',
+              '녹화에 문자 축 인식을 추가했습니다. 현재 중국어 캐릭터 이름 또는 첫 글자 약칭, 영문자와 중국어 동작어, 대문자 길게 누르기, 시작 축/루프 축, 변주, 반주, 피니셔, 점프, 회피와 앞으로 이동을 인식합니다. 기본 시간은 공명 해방 3초, 전환 0.5초, 나머지 1초입니다.',
+              '선택한 블록이 있으면 C가 현재 마우스 시간에서 바로 분할하고 선택이 없으면 연속 분할 모드로 들어갑니다. 다중 선택은 그룹 밖 블록을 누를 때까지 유지되며 그룹 안 블록을 두 번 누르면 해당 블록만 선택합니다.',
+              '일반 편집기와 영상 편집기가 타임라인 클립보드를 공유하도록 해 화면 전환이나 재마운트 후 Ctrl+C/Ctrl+V가 간헐적으로 실패하던 문제를 수정했습니다.',
+              '첫 실행 안내에 이 소프트웨어는 완전히 무료이며 유료로 구매했다면 즉시 환불을 요청해야 한다는 사기 방지 경고를 추가했습니다.'
+            ]
+          },
           {
             title: 'v0.3.0 · 2026-07-30',
             items: [

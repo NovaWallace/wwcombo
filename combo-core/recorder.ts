@@ -87,6 +87,10 @@ export class ComboRecorder {
       return this.snapshot(event.time);
     }
 
+    if (nextSlot && nextSlot === this.currentCharacterSlot) {
+      return this.snapshot(event.time);
+    }
+
     const relativeTime = Math.max(0, event.time - this.startedAt);
     const unitTimeEvent = { ...event, time: relativeTime };
 

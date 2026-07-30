@@ -6,8 +6,7 @@ html, body, #overlay-root { margin: 0; width: 100%; height: 100%; background: rg
 .overlay-shell.next-indicator-below { padding-bottom: 28px; }
 .overlay-shell.next-indicator-left { padding-left: 34px; }
 .overlay-shell.next-indicator-right { padding-right: 34px; }
-.overlay-shell.horizontal.next-indicator-above { padding-top: 44px; }
-.overlay-shell.horizontal.next-indicator-below { padding-bottom: 44px; }
+.overlay-shell.horizontal.next-indicator-above, .overlay-shell.horizontal.next-indicator-below { padding-top: 44px; padding-bottom: 44px; }
 .overlay-shell.vertical { display: block; padding-left: 58px; padding-right: 42px; }
 .overlay-shell.vertical.next-indicator-left { padding-left: 58px; padding-right: 48px; }
 .overlay-shell.vertical.next-indicator-right { padding-left: 72px; padding-right: 42px; }

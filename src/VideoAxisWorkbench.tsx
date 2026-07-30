@@ -459,19 +459,79 @@ function scaleChartBetweenZoomFrames(chart: ComboChart, rangeStart: number, rang
   };
 }
 
-function readVideoMetadata(name: string, url: string): Promise<VideoMeta> {
+type VideoText = (chinese: string, english: string) => string;
+
+function readVideoMetadata(name: string, url: string, text: VideoText): Promise<VideoMeta> {
   return new Promise((resolve, reject) => {
     const video = document.createElement('video');
     video.preload = 'metadata';
     video.muted = true;
-    video.onloadedmetadata = () => resolve({
-      width: video.videoWidth || 1920,
-      height: video.videoHeight || 1080,
-      durationMs: Number.isFinite(video.duration) ? Math.round(video.duration * 1000) : 0,
-      name
-    });
-    video.onerror = () => reject(new Error('视频元数据读取失败'));
+    const cleanup = () => {
+      video.onloadedmetadata = null;
+      video.onerror = null;
+      video.removeAttribute('src');
+      video.load();
+    };
+    video.onloadedmetadata = () => {
+      const meta = {
+        width: video.videoWidth || 1920,
+        height: video.videoHeight || 1080,
+        durationMs: Number.isFinite(video.duration) ? Math.round(video.duration * 1000) : 0,
+        name
+      };
+      cleanup();
+      resolve(meta);
+    };
+    video.onerror = () => {
+      cleanup();
+      reject(new Error(text('视频元数据读取失败', 'Unable to read video metadata')));
+    };
     video.src = url;
+    video.load();
+  });
+}
+
+function videoMediaError(video: HTMLVideoElement, text: VideoText): string | null {
+  switch (video.error?.code) {
+    case 1:
+      return text('视频加载已中止', 'Video loading was aborted');
+    case 2:
+      return text('视频读取时发生网络或本地文件访问错误', 'A network or local file access error occurred while reading the video');
+    case 3:
+      return text('视频无法解码，请确认编码格式受系统支持', 'The video could not be decoded. Check that the codec is supported by the system');
+    case 4:
+      return text('视频格式或编码不受支持', 'The video format or codec is not supported');
+    default:
+      return video.error ? text('视频播放失败', 'Unable to play video') : null;
+  }
+}
+
+function waitForVideoReady(video: HTMLVideoElement, text: VideoText, timeoutMs = 5000): Promise<void> {
+  if (video.error) return Promise.reject(new Error(videoMediaError(video, text) ?? text('视频播放失败', 'Unable to play video')));
+  if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const cleanup = () => {
+      window.clearTimeout(timeout);
+      video.removeEventListener('loadeddata', onReady);
+      video.removeEventListener('canplay', onReady);
+      video.removeEventListener('error', onError);
+    };
+    const onReady = () => {
+      cleanup();
+      resolve();
+    };
+    const onError = () => {
+      cleanup();
+      reject(new Error(videoMediaError(video, text) ?? text('视频播放失败', 'Unable to play video')));
+    };
+    const timeout = window.setTimeout(() => {
+      cleanup();
+      reject(new Error(text('视频加载超时，请重新导入后再试', 'Video loading timed out. Re-import the video and try again')));
+    }, timeoutMs);
+    video.addEventListener('loadeddata', onReady, { once: true });
+    video.addEventListener('canplay', onReady, { once: true });
+    video.addEventListener('error', onError, { once: true });
+    if (video.networkState === HTMLMediaElement.NETWORK_EMPTY) video.load();
   });
 }
 
@@ -1732,6 +1792,14 @@ export function VideoAxisWorkbench({ open, desktop, chart, comboImageStyle, time
   }, [videoUrl]);
 
   useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !videoUrl) return;
+    video.pause();
+    setIsPlaying(false);
+    video.load();
+  }, [videoUrl]);
+
+  useEffect(() => {
     if (videoRef.current) videoRef.current.playbackRate = playbackRate;
   }, [playbackRate, videoUrl]);
 
@@ -1774,11 +1842,16 @@ export function VideoAxisWorkbench({ open, desktop, chart, comboImageStyle, time
     const nextUrl = URL.createObjectURL(file);
     if (objectVideoUrlRef.current) URL.revokeObjectURL(objectVideoUrlRef.current);
     objectVideoUrlRef.current = nextUrl;
+    videoRef.current?.pause();
     setVideoSourcePath(null);
+    setTrimStartMs(0);
+    setTrimEndMs(0);
+    setPlaybackMs(0);
+    setIsPlaying(false);
     setVideoUrl(nextUrl);
     setImportMessage(text('正在读取视频信息...', 'Reading video information...'));
     try {
-      const meta = await readVideoMetadata(file.name, nextUrl);
+      const meta = await readVideoMetadata(file.name, nextUrl, text);
       setVideoMeta(meta);
       setTrimStartMs(0);
       setTrimEndMs(meta.durationMs);
@@ -1813,11 +1886,16 @@ export function VideoAxisWorkbench({ open, desktop, chart, comboImageStyle, time
       URL.revokeObjectURL(objectVideoUrlRef.current);
       objectVideoUrlRef.current = null;
     }
+    videoRef.current?.pause();
     setVideoSourcePath(picked.path);
+    setTrimStartMs(0);
+    setTrimEndMs(0);
+    setPlaybackMs(0);
+    setIsPlaying(false);
     setVideoUrl(picked.url);
     setImportMessage(text('正在读取视频信息...', 'Reading video information...'));
     try {
-      const meta = await readVideoMetadata(picked.name, picked.url);
+      const meta = await readVideoMetadata(picked.name, picked.url, text);
       setVideoMeta(meta);
       setTrimStartMs(0);
       setTrimEndMs(meta.durationMs);
@@ -1833,13 +1911,22 @@ export function VideoAxisWorkbench({ open, desktop, chart, comboImageStyle, time
     const video = videoRef.current;
     if (!videoUrl || !video) return;
     if (video.paused) {
-      const sourceTimeMs = video.currentTime * 1000;
-      if (playbackMs >= playbackDurationMs - 16 || sourceTimeMs < trimStartMs || sourceTimeMs >= trimEndMs - 16) {
-        await seekVideo(video, trimStartMs / 1000);
-        setPlaybackMs(0);
+      try {
+        await waitForVideoReady(video, text);
+        const sourceTimeMs = video.currentTime * 1000;
+        const hasTrimRange = trimEndMs > trimStartMs;
+        if (hasTrimRange && (playbackMs >= playbackDurationMs - 16 || sourceTimeMs < trimStartMs || sourceTimeMs >= trimEndMs - 16)) {
+          await seekVideo(video, trimStartMs / 1000);
+          setPlaybackMs(0);
+        }
+        await video.play();
+      } catch (error) {
+        video.pause();
+        setIsPlaying(false);
+        const message = error instanceof Error ? error.message : text('视频播放失败', 'Unable to Play Video');
+        setImportMessage(message);
+        showVideoToast(message);
       }
-      await video.play();
-      setIsPlaying(true);
     } else {
       video.pause();
       setIsPlaying(false);
@@ -1901,9 +1988,13 @@ export function VideoAxisWorkbench({ open, desktop, chart, comboImageStyle, time
   }
 
   function saveTrimDraft() {
-    const absolutePlaybackMs = trimStartMs + playbackMs;
-    applyTrimRange(trimDraftStartMs, trimDraftEndMs, absolutePlaybackMs - trimDraftStartMs);
+    const start = trimDraftStartMs;
+    const end = trimDraftEndMs;
+    videoRef.current?.pause();
+    setIsPlaying(false);
+    applyTrimRange(start, end, 0);
     closeTrimDialog();
+    showVideoToast(text(`已应用裁剪：${formatMs(end - start)}`, `Trim applied: ${formatMs(end - start)}`));
   }
 
   function commitTrimDraftStart(seconds: number) {
@@ -2357,7 +2448,7 @@ export function VideoAxisWorkbench({ open, desktop, chart, comboImageStyle, time
       <div className={`video-workbench-main ${timelineCollapsed ? 'timeline-collapsed' : ''}`} style={workbenchMainStyle}>
         <section className="video-preview-panel">
           <div className="video-info-row">
-            <div><FileVideo size={17} /><strong>{videoMeta.name === DEFAULT_VIDEO_META.name ? text('未导入视频', 'No Video Imported') : videoMeta.name}</strong><span>{videoMeta.width}x{videoMeta.height}</span><span>{formatMs(videoMeta.durationMs || renderTotal)}</span></div>
+            <div><FileVideo size={17} /><strong>{videoMeta.name === DEFAULT_VIDEO_META.name ? text('未导入视频', 'No Video Imported') : videoMeta.name}</strong><span>{videoMeta.width}x{videoMeta.height}</span><span title={trimStartMs > 0 || trimEndMs < videoMeta.durationMs ? text(`源视频 ${formatMs(videoMeta.durationMs)}`, `Source ${formatMs(videoMeta.durationMs)}`) : undefined}>{trimStartMs > 0 || trimEndMs < videoMeta.durationMs ? text(`裁后 ${formatMs(trimDurationMs)}`, `Trimmed ${formatMs(trimDurationMs)}`) : formatMs(videoMeta.durationMs || renderTotal)}</span></div>
             <span>{importMessage}</span>
           </div>
           <div ref={stageShellRef} className="video-stage-shell">
@@ -2374,7 +2465,7 @@ export function VideoAxisWorkbench({ open, desktop, chart, comboImageStyle, time
               onPointerCancel={endPreviewPan}
             >
               <div className="video-stage-content" style={previewTransformStyle}>
-                {videoUrl ? <video ref={videoRef} src={videoUrl} playsInline onLoadedMetadata={(event) => { event.currentTarget.currentTime = trimStartMs / 1000; }} onPlay={() => setIsPlaying(true)} onPause={() => setIsPlaying(false)} onEnded={() => { setPlaybackMs(trimDurationMs); setIsPlaying(false); }} /> : <div className="video-empty"><FileVideo size={38} /><strong>{text('导入实战视频', 'Import Gameplay Video') }</strong><span>{text('视频不会写入项目文件，只在当前会话中引用。', 'The video is referenced only for this session and is not stored in the project.') }</span></div>}
+                {videoUrl ? <video ref={videoRef} src={videoUrl} preload="auto" playsInline onLoadedMetadata={(event) => { event.currentTarget.currentTime = trimStartMs / 1000; }} onPlay={() => setIsPlaying(true)} onPause={() => setIsPlaying(false)} onError={(event) => { const message = videoMediaError(event.currentTarget, text); if (message) { setIsPlaying(false); setImportMessage(message); } }} onEnded={() => { setPlaybackMs(trimDurationMs); setIsPlaying(false); }} /> : <div className="video-empty"><FileVideo size={38} /><strong>{text('导入实战视频', 'Import Gameplay Video') }</strong><span>{text('视频不会写入项目文件，只在当前会话中引用。', 'The video is referenced only for this session and is not stored in the project.') }</span></div>}
                 <div className={`video-combo-layer-box synced ${layerTransformMode ? 'transform-active' : ''}`} style={{ left: `${layerBounds.x}%`, top: `${layerBounds.y}%`, width: `${layerBounds.width}%`, height: `${layerBounds.height}%` }} title={layerTransformMode ? text('拖动移动整个连段图层', 'Drag to move the entire combo layer') : text('位置和尺寸来自连段图外观设置', 'Position and size come from the combo appearance settings')} onPointerDown={beginLayerMoveDrag} onPointerMove={moveLayerMoveDrag} onPointerUp={endLayerMoveDrag} onPointerCancel={endLayerMoveDrag}>
                   <div className="video-combo-layer-viewport">
                     <div className="video-combo-layer-content" style={layerContentStyle}>

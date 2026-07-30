@@ -72,7 +72,7 @@ export const DEFAULT_SHORTCUT_SETTINGS: ShortcutSettings = {
 
 export const SHORTCUT_DEFINITIONS: readonly ShortcutDefinition[] = [
   { id: 'timelineDelete', group: 'timeline', chinese: '删除选择 / 删除模式', english: 'Delete Selection / Delete Mode' },
-  { id: 'timelineSplit', group: 'timeline', chinese: '分割模式', english: 'Split Mode' },
+  { id: 'timelineSplit', group: 'timeline', chinese: '分割选择 / 分割模式', english: 'Split Selection / Split Mode' },
   { id: 'timelineMerge', group: 'timeline', chinese: '合并选中块', english: 'Merge Selected Blocks' },
   { id: 'timelineStartAdd', group: 'timeline', chinese: '进入添加模式', english: 'Enter Add Mode' },
   { id: 'timelineTogglePeriod', group: 'timeline', chinese: '切换时段放置', english: 'Toggle Period Placement' },

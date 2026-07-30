@@ -302,3 +302,15 @@ export function withKeyboardMouseIconMappings(style: ComboImageStyle, bindings: 
   });
   return { ...style, iconMappings: adaptKeyboardMouseMappings(style.iconMappings, bindings), roleStyles };
 }
+
+export function withCustomIconSources(style: ComboImageStyle, sources: Record<string, string>): ComboImageStyle {
+  if (!Object.keys(sources).length) return style;
+  const applySources = (mappings: ComboImageStyle['iconMappings'] | undefined) => mappings?.map((mapping) => sources[mapping.id] ? { ...mapping, src: sources[mapping.id] } : mapping);
+  const roleStyles = { ...style.roleStyles };
+  ([1, 2, 3] as const).forEach((slot) => {
+    const role = style.roleStyles[slot];
+    const iconMappings = applySources(role.iconMappings);
+    roleStyles[slot] = iconMappings ? { ...role, iconMappings } : role;
+  });
+  return { ...style, iconMappings: applySources(style.iconMappings) ?? style.iconMappings, roleStyles };
+}
