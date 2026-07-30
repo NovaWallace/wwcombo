@@ -17,7 +17,7 @@
 
 ## 二、moveId 字典（最终可生成，必须属于此集合）
 
-来源 `combo-core/defaults.ts`。**仓库原生 18 个 + 本 skill 追加 1 个自定义**：
+来源 `combo-core/defaults.ts`（与 `DEFAULT_MOVES` / `DEFAULT_BINDINGS` 对齐），并追加本 skill 自定义的 move（见末尾 ⭐）。**转换器实际产出集合如下**：
 
 | moveId | 含义 | 默认按键 | 备注 |
 |--------|------|----------|------|
@@ -34,6 +34,7 @@
 | dodge | 闪避 | Shift / 鼠标右键 | |
 | dodge_hold | 长按闪避 | Shift长按 | |
 | jump | 跳跃 | 空格 | |
+| jump_hold | 长按跳跃 | 空格长按 | |
 | switch_1 / switch_2 / switch_3 | 切人 1/2/3 | 1/2/3 | 本规则不生成（见边界项） |
 | **move** ⭐自定义 | 移动/走位 | 无 | 自由步 `free:true`，练习跳过判定 |
 
@@ -53,7 +54,7 @@
 | Q长按 / 长按Q | echo_hold | |
 | R / 大招 / 共鸣解放 | liberation | |
 | R长按 | liberation_hold | |
-| 闪避 / 平闪 / 空中闪避* | dodge_hold | 仓库只有长按闪避，纯闪避归 dodge_hold |
+| 闪避 / 平闪 / 空中闪避 | dodge | ；长按闪避→`dodge_hold` |
 | 跳 / 跳跃 | jump | 罕见 |
 | F / 处决技 | **忽略** | 见边界项 |
 | W / 方向键 / 走位 / 往前一步 | **move（free 步）** | 见边界项 |
@@ -136,7 +137,7 @@
     "steps": [ ComboStep, ... ],
     "periods": [ { id, kind: "startup_axis"|"loop_axis", label, startMs, endMs }, ... ]
   },
-  "moves": [ MoveDefinition, ... ],   // 含上面 19 项
+  "moves": [ MoveDefinition, ... ],   // 含上面 18 项
   "bindings": [ { moveId, inputs:[{code,label}] }, ... ]
 }
 ```

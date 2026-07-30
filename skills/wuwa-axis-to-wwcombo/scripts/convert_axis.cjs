@@ -33,9 +33,11 @@ const MOVES = [
   { id: 'echo', label: '声骸', color: '#b983ff', independent: false, priority: 55, advancesStep: true },
   { id: 'echo_hold', label: '长按声骸', color: '#c9a0ff', independent: false, priority: 56, advancesStep: true },
   { id: 'liberation', label: '共鸣解放', color: '#ff6b6b', independent: false, priority: 70, advancesStep: true },
+  { id: 'liberation_hold', label: '长按共鸣解放', color: '#ff8e8e', independent: false, priority: 71, advancesStep: true },
   { id: 'dodge', label: '闪避', color: '#f8961e', independent: false, priority: 50, advancesStep: true },
   { id: 'dodge_hold', label: '长按闪避', color: '#ffad4a', independent: false, priority: 51, advancesStep: true },
   { id: 'jump', label: '跳跃', color: '#90be6d', independent: false, priority: 40, advancesStep: true },
+  { id: 'jump_hold', label: '长按跳跃', color: '#a7d68a', independent: false, priority: 41, advancesStep: true },
   { id: 'switch_1', label: '1', color: '#43aa8b', independent: false, priority: 65, advancesStep: true },
   { id: 'switch_2', label: '2', color: '#4d908e', independent: false, priority: 65, advancesStep: true },
   { id: 'switch_3', label: '3', color: '#577590', independent: false, priority: 65, advancesStep: true },
@@ -48,8 +50,8 @@ const moveById = Object.fromEntries(MOVES.map(m => [m.id, m]));
 const DEFAULT_BINDINGS = {
   start_challenge: 'KeyF', stop_recording: 'Escape', basic_attack: 'MouseLeft',
   heavy_attack: 'MouseLeftHold', skill: 'KeyE', skill_hold: 'KeyEHold', echo: 'KeyQ',
-  echo_hold: 'KeyQHold', liberation: 'KeyR', dodge: 'ShiftLeft', dodge_hold: 'ShiftLeftHold',
-  jump: 'Space', switch_1: 'Digit1', switch_2: 'Digit2', switch_3: 'Digit3',
+  echo_hold: 'KeyQHold',   liberation: 'KeyR', liberation_hold: 'KeyRHold', dodge: 'ShiftLeft', dodge_hold: 'ShiftLeftHold',
+  jump: 'Space', jump_hold: 'SpaceHold', switch_1: 'Digit1', switch_2: 'Digit2', switch_3: 'Digit3',
 };
 function buildBindings() {
   return MOVES.map(m => ({
