@@ -1047,8 +1047,12 @@ fn find_ffmpeg(app: &AppHandle) -> Option<PathBuf> {
 }
 
 fn emit_input(event_type: &str, code: String) {
-    let is_pressed = event_type == "keydown" || event_type == "mousedown";
-    let is_released = event_type == "keyup" || event_type == "mouseup";
+    let is_pressed = event_type == "keydown"
+        || event_type == "mousedown"
+        || event_type == "gamepadbuttondown";
+    let is_released = event_type == "keyup"
+        || event_type == "mouseup"
+        || event_type == "gamepadbuttonup";
     if !is_pressed && !is_released {
         return;
     }
@@ -1087,8 +1091,11 @@ fn current_time_ms() -> f64 {
 #[cfg(windows)]
 mod winhook {
     use super::{emit_input, INPUT_HOOK_STARTED, INPUT_HOOK_STATUS};
+    use std::collections::HashSet;
+    use std::ffi::c_void;
     use std::io;
     use std::sync::atomic::Ordering;
+    use std::sync::OnceLock;
 
     type Hhook = isize;
     type Hinstance = isize;
@@ -1096,7 +1103,9 @@ mod winhook {
     type Wparam = usize;
     type Lparam = isize;
     type Lresult = isize;
+    type Hmodule = isize;
     type HookProc = unsafe extern "system" fn(i32, Wparam, Lparam) -> Lresult;
+    type XInputGetStateFn = unsafe extern "system" fn(u32, *mut XInputState) -> u32;
 
     const WH_KEYBOARD_LL: i32 = 13;
     const WH_MOUSE_LL: i32 = 14;
@@ -1113,6 +1122,41 @@ mod winhook {
     const WM_MBUTTONUP: u32 = 0x0208;
     const WM_XBUTTONDOWN: u32 = 0x020B;
     const WM_XBUTTONUP: u32 = 0x020C;
+    const ERROR_SUCCESS: u32 = 0;
+    const XINPUT_GAMEPAD_DPAD_UP: u16 = 0x0001;
+    const XINPUT_GAMEPAD_DPAD_DOWN: u16 = 0x0002;
+    const XINPUT_GAMEPAD_DPAD_LEFT: u16 = 0x0004;
+    const XINPUT_GAMEPAD_DPAD_RIGHT: u16 = 0x0008;
+    const XINPUT_GAMEPAD_START: u16 = 0x0010;
+    const XINPUT_GAMEPAD_BACK: u16 = 0x0020;
+    const XINPUT_GAMEPAD_LEFT_THUMB: u16 = 0x0040;
+    const XINPUT_GAMEPAD_RIGHT_THUMB: u16 = 0x0080;
+    const XINPUT_GAMEPAD_LEFT_SHOULDER: u16 = 0x0100;
+    const XINPUT_GAMEPAD_RIGHT_SHOULDER: u16 = 0x0200;
+    const XINPUT_GAMEPAD_A: u16 = 0x1000;
+    const XINPUT_GAMEPAD_B: u16 = 0x2000;
+    const XINPUT_GAMEPAD_X: u16 = 0x4000;
+    const XINPUT_GAMEPAD_Y: u16 = 0x8000;
+    const XINPUT_TRIGGER_THRESHOLD: u8 = 128;
+    const GAMEPAD_COMBO_MODIFIER: &str = "GamepadLB";
+    const GAMEPAD_CODE_ORDER: [&str; 16] = [
+        "GamepadA",
+        "GamepadB",
+        "GamepadX",
+        "GamepadY",
+        "GamepadLB",
+        "GamepadRB",
+        "GamepadLT",
+        "GamepadRT",
+        "GamepadView",
+        "GamepadMenu",
+        "GamepadLeftStick",
+        "GamepadRightStick",
+        "GamepadDPadUp",
+        "GamepadDPadDown",
+        "GamepadDPadLeft",
+        "GamepadDPadRight",
+    ];
 
     #[repr(C)]
     struct KbdLlHookStruct {
@@ -1130,6 +1174,25 @@ mod winhook {
         flags: u32,
         time: u32,
         dw_extra_info: usize,
+    }
+
+    #[repr(C)]
+    #[derive(Default, Copy, Clone)]
+    struct XInputGamepad {
+        buttons: u16,
+        left_trigger: u8,
+        right_trigger: u8,
+        left_thumb_x: i16,
+        left_thumb_y: i16,
+        right_thumb_x: i16,
+        right_thumb_y: i16,
+    }
+
+    #[repr(C)]
+    #[derive(Default, Copy, Clone)]
+    struct XInputState {
+        packet_number: u32,
+        gamepad: XInputGamepad,
     }
 
     #[repr(C)]
@@ -1170,6 +1233,12 @@ mod winhook {
         fn GetAsyncKeyState(v_key: i32) -> i16;
     }
 
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn LoadLibraryW(file_name: *const u16) -> Hmodule;
+        fn GetProcAddress(module: Hmodule, procedure_name: *const u8) -> *const c_void;
+    }
+
     pub fn start() -> Result<(), String> {
         start_polling_fallback()?;
 
@@ -1190,7 +1259,8 @@ mod winhook {
                     return;
                 }
 
-                *INPUT_HOOK_STATUS.lock() = String::from("windows hooks installed; polling fallback active");
+                *INPUT_HOOK_STATUS.lock() =
+                    String::from("windows hooks installed; keyboard, mouse and XInput polling active");
 
                 let mut msg = Msg::default();
                 while GetMessageW(&mut msg, 0, 0, 0) > 0 {
@@ -1212,6 +1282,7 @@ mod winhook {
             .spawn(|| unsafe {
                 let keys = polled_keys();
                 let mut previous = vec![false; keys.len()];
+                let mut previous_gamepad = HashSet::new();
                 loop {
                     for (index, (vk, code)) in keys.iter().enumerate() {
                         let pressed = (GetAsyncKeyState(*vk) as u16 & 0x8000) != 0;
@@ -1227,11 +1298,131 @@ mod winhook {
                             emit_input(event_type, String::from(*code));
                         }
                     }
+                    let current_gamepad = read_xinput_codes();
+                    for (event_type, code) in gamepad_transitions(&previous_gamepad, &current_gamepad) {
+                        emit_input(event_type, code);
+                    }
+                    previous_gamepad = current_gamepad;
                     std::thread::sleep(std::time::Duration::from_millis(4));
                 }
             })
             .map_err(|error| error.to_string())?;
         Ok(())
+    }
+
+    unsafe fn read_xinput_codes() -> HashSet<&'static str> {
+        let mut codes = HashSet::new();
+        let Some(get_state) = xinput_get_state() else {
+            return codes;
+        };
+        for user_index in 0..4 {
+            let mut state = XInputState::default();
+            if get_state(user_index, &mut state) == ERROR_SUCCESS {
+                codes.extend(xinput_gamepad_codes(&state.gamepad));
+            }
+        }
+        codes
+    }
+
+    fn xinput_get_state() -> Option<XInputGetStateFn> {
+        static GET_STATE: OnceLock<Option<XInputGetStateFn>> = OnceLock::new();
+        *GET_STATE.get_or_init(|| unsafe {
+            for library_name in ["xinput1_4.dll", "xinput1_3.dll", "xinput9_1_0.dll"] {
+                let wide_name = library_name
+                    .encode_utf16()
+                    .chain(std::iter::once(0))
+                    .collect::<Vec<_>>();
+                let module = LoadLibraryW(wide_name.as_ptr());
+                if module == 0 {
+                    continue;
+                }
+                let address = GetProcAddress(module, b"XInputGetState\0".as_ptr());
+                if !address.is_null() {
+                    return Some(std::mem::transmute::<*const c_void, XInputGetStateFn>(address));
+                }
+            }
+            None
+        })
+    }
+
+    fn xinput_gamepad_codes(gamepad: &XInputGamepad) -> HashSet<&'static str> {
+        let mut codes = HashSet::new();
+        let button_codes = [
+            (XINPUT_GAMEPAD_A, "GamepadA"),
+            (XINPUT_GAMEPAD_B, "GamepadB"),
+            (XINPUT_GAMEPAD_X, "GamepadX"),
+            (XINPUT_GAMEPAD_Y, "GamepadY"),
+            (XINPUT_GAMEPAD_LEFT_SHOULDER, "GamepadLB"),
+            (XINPUT_GAMEPAD_RIGHT_SHOULDER, "GamepadRB"),
+            (XINPUT_GAMEPAD_BACK, "GamepadView"),
+            (XINPUT_GAMEPAD_START, "GamepadMenu"),
+            (XINPUT_GAMEPAD_LEFT_THUMB, "GamepadLeftStick"),
+            (XINPUT_GAMEPAD_RIGHT_THUMB, "GamepadRightStick"),
+            (XINPUT_GAMEPAD_DPAD_UP, "GamepadDPadUp"),
+            (XINPUT_GAMEPAD_DPAD_DOWN, "GamepadDPadDown"),
+            (XINPUT_GAMEPAD_DPAD_LEFT, "GamepadDPadLeft"),
+            (XINPUT_GAMEPAD_DPAD_RIGHT, "GamepadDPadRight"),
+        ];
+        for (mask, code) in button_codes {
+            if gamepad.buttons & mask != 0 {
+                codes.insert(code);
+            }
+        }
+        if gamepad.left_trigger >= XINPUT_TRIGGER_THRESHOLD {
+            codes.insert("GamepadLT");
+        }
+        if gamepad.right_trigger >= XINPUT_TRIGGER_THRESHOLD {
+            codes.insert("GamepadRT");
+        }
+        codes
+    }
+
+    fn gamepad_transitions(
+        previous: &HashSet<&'static str>,
+        current: &HashSet<&'static str>,
+    ) -> Vec<(&'static str, String)> {
+        let mut events = Vec::new();
+
+        if previous.contains(GAMEPAD_COMBO_MODIFIER)
+            && !current.contains(GAMEPAD_COMBO_MODIFIER)
+        {
+            for code in GAMEPAD_CODE_ORDER {
+                if code != GAMEPAD_COMBO_MODIFIER
+                    && previous.contains(code)
+                    && current.contains(code)
+                {
+                    events.push(("gamepadbuttonup", format!("{GAMEPAD_COMBO_MODIFIER}+{code}")));
+                }
+            }
+        }
+
+        for code in GAMEPAD_CODE_ORDER {
+            if previous.contains(code) && !current.contains(code) {
+                let emitted_code = if code != GAMEPAD_COMBO_MODIFIER
+                    && previous.contains(GAMEPAD_COMBO_MODIFIER)
+                {
+                    format!("{GAMEPAD_COMBO_MODIFIER}+{code}")
+                } else {
+                    String::from(code)
+                };
+                events.push(("gamepadbuttonup", emitted_code));
+            }
+        }
+
+        for code in GAMEPAD_CODE_ORDER {
+            if current.contains(code) && !previous.contains(code) {
+                let emitted_code = if code != GAMEPAD_COMBO_MODIFIER
+                    && current.contains(GAMEPAD_COMBO_MODIFIER)
+                {
+                    format!("{GAMEPAD_COMBO_MODIFIER}+{code}")
+                } else {
+                    String::from(code)
+                };
+                events.push(("gamepadbuttondown", emitted_code));
+            }
+        }
+
+        events
     }
 
     fn polled_keys() -> Vec<(i32, &'static str)> {
@@ -1356,6 +1547,54 @@ mod winhook {
             0xA4 => String::from("AltLeft"),
             0xA5 => String::from("AltRight"),
             other => format!("VK{}", other),
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn maps_xinput_buttons_and_triggers_to_existing_binding_codes() {
+            let gamepad = XInputGamepad {
+                buttons: XINPUT_GAMEPAD_A
+                    | XINPUT_GAMEPAD_Y
+                    | XINPUT_GAMEPAD_LEFT_SHOULDER
+                    | XINPUT_GAMEPAD_DPAD_RIGHT,
+                left_trigger: XINPUT_TRIGGER_THRESHOLD,
+                right_trigger: XINPUT_TRIGGER_THRESHOLD - 1,
+                ..XInputGamepad::default()
+            };
+
+            let codes = xinput_gamepad_codes(&gamepad);
+            assert!(codes.contains("GamepadA"));
+            assert!(codes.contains("GamepadY"));
+            assert!(codes.contains("GamepadLB"));
+            assert!(codes.contains("GamepadLT"));
+            assert!(codes.contains("GamepadDPadRight"));
+            assert!(!codes.contains("GamepadRT"));
+        }
+
+        #[test]
+        fn emits_modifier_combos_like_the_browser_gamepad_fallback() {
+            let previous = HashSet::new();
+            let current = HashSet::from([GAMEPAD_COMBO_MODIFIER, "GamepadX"]);
+            assert_eq!(
+                gamepad_transitions(&previous, &current),
+                vec![
+                    ("gamepadbuttondown", String::from("GamepadLB+GamepadX")),
+                    ("gamepadbuttondown", String::from("GamepadLB")),
+                ]
+            );
+
+            let released_modifier = HashSet::from(["GamepadX"]);
+            assert_eq!(
+                gamepad_transitions(&current, &released_modifier),
+                vec![
+                    ("gamepadbuttonup", String::from("GamepadLB+GamepadX")),
+                    ("gamepadbuttonup", String::from("GamepadLB")),
+                ]
+            );
         }
     }
 }

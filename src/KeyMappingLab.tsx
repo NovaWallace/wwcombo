@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
-import { Eye, EyeOff, Image as ImageIcon, Keyboard, Layers, Move, Plus, RotateCcw, Save, Settings, Trash2, Upload, X } from 'lucide-react';
+import { Image as ImageIcon, Keyboard, Layers, Move, Plus, RotateCcw, Save, Settings, Trash2, Upload, X } from 'lucide-react';
 import type { KeyBinding } from '../combo-core/types';
 import { normalizeInputCode } from '../combo-core/input';
 import { createDesktopBridge } from './desktopBridge';
@@ -592,7 +592,7 @@ export function KeyMappingLab({ inputSignal, inputMode, bindings, onRequestGloba
         <div className="panel-title experiment-subtitle">
           <div><h2>{text('按键映射', 'Key Mapping') }</h2><p>{text(`跟随总设置键位。当前为${inputMode === 'gamepad' ? '手柄' : '键鼠'}模式，有动作关联的图片会直接响应总设置绑定。`, `Uses the main bindings. Current mode: ${inputMode === 'gamepad' ? 'Gamepad' : 'Keyboard & Mouse'}. Action-linked images respond to those bindings.`) }</p></div>
           <div className="keymap-toolbar">
-            <button className="icon-button" onClick={toggleVisible} title={text('置顶显示', 'Always on Top') }>{visible ? <EyeOff size={18} /> : <Eye size={18} />}</button>
+            <button onClick={toggleVisible}>{text('悬浮', 'Always on Top') }</button>
             <button className={moveMode ? 'active' : ''} onClick={toggleMoveMode}><Move size={16} />{text('移动', 'Move') }</button>
             <button onClick={() => setPresetOpen(true)}><Save size={16} />{text('预设', 'Presets') }</button>
             <button onClick={() => setSettingsOpen(true)}><Settings size={16} />{text('设置', 'Settings') }</button>

@@ -220,6 +220,8 @@ const DEFAULT_FREE_FIRE_DURATION = 15_000;
 const DEFAULT_AXIS_DURATION = 25_000;
 const AXIS_PLACEMENT_WINDOW = 30_000;
 const HEAVY_ATTACK_HOLD_MS = 200;
+const STANDARD_HOLD_MS = 300;
+const GAMEPAD_HOLD_MS = 500;
 const GAMEPAD_BUTTON_CODES = ['GamepadA', 'GamepadB', 'GamepadX', 'GamepadY', 'GamepadLB', 'GamepadRB', 'GamepadLT', 'GamepadRT', 'GamepadView', 'GamepadMenu', 'GamepadLeftStick', 'GamepadRightStick', 'GamepadDPadUp', 'GamepadDPadDown', 'GamepadDPadLeft', 'GamepadDPadRight'];
 const GAMEPAD_COMBO_MODIFIER = 'GamepadLB';
 const DEFAULT_EXPORT_DIRECTORY = '';
@@ -1139,22 +1141,23 @@ function bindingCodesForMove(bindings: KeyBinding[], moveId: string): string[] {
   return bindings.find((binding) => binding.moveId === moveId)?.inputs.map((input) => normalizeInputCode(input.code)) ?? [];
  }
 
-function holdBindingPairs(bindings: KeyBinding[]): Map<string, string> {
-  const pairs = new Map<string, string>();
+function holdBindingPairs(bindings: KeyBinding[]): Map<string, { holdCode: string; thresholdMs: number  }> {
+  const pairs = new Map<string, { holdCode: string; thresholdMs: number  }>();
   const movePairs = [
-    ['basic_attack', 'heavy_attack'],
-    ['skill', 'skill_hold'],
-    ['echo', 'echo_hold'],
-    ['liberation', 'liberation_hold'],
-    ['dodge', 'dodge_hold'],
-    ['jump', 'jump_hold']
+    ['basic_attack', 'heavy_attack', HEAVY_ATTACK_HOLD_MS],
+    ['skill', 'skill_hold', STANDARD_HOLD_MS],
+    ['echo', 'echo_hold', STANDARD_HOLD_MS],
+    ['liberation', 'liberation_hold', STANDARD_HOLD_MS],
+    ['dodge', 'dodge_hold', STANDARD_HOLD_MS],
+    ['jump', 'jump_hold', STANDARD_HOLD_MS]
   ] as const;
-  for (const [sourceMoveId, holdMoveId] of movePairs) {
+  for (const [sourceMoveId, holdMoveId, thresholdMs] of movePairs) {
     const sourceCodes = bindingCodesForMove(bindings, sourceMoveId);
     const holdCodes = bindingCodesForMove(bindings, holdMoveId);
     sourceCodes.forEach((sourceCode, index) => {
       const matchingHoldCode = holdCodes.find((holdCode) => holdCode === `${sourceCode}Hold`) ?? holdCodes[index] ?? holdCodes[0];
-      if (sourceCode && matchingHoldCode) pairs.set(sourceCode, matchingHoldCode);
+      const sourceThresholdMs = sourceCode.split('+').some((part) => part.startsWith('Gamepad')) ? GAMEPAD_HOLD_MS : thresholdMs;
+      if (sourceCode && matchingHoldCode) pairs.set(sourceCode, { holdCode: matchingHoldCode, thresholdMs: sourceThresholdMs  });
     });
   }
   return pairs;
@@ -1322,7 +1325,7 @@ export default function App() {
   const practiceRef = useRef<PracticeSession | null>(null);
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const avatarInputRefs = useRef<Record<number, HTMLInputElement | null>>({ });
-  const holdPressRef = useRef(new Map<string, { pressEvent: TrainerLikeInputEvent; holdCode: string; timer: number | null; holdTriggered: boolean  }>());
+  const holdPressRef = useRef(new Map<string, { pressEvent: TrainerLikeInputEvent; holdCode: string; thresholdMs: number; timer: number | null; holdTriggered: boolean  }>());
   const shareDialogOpenRef = useRef(Boolean(shareDraft));
   const resetPracticeProgressOnStopRef = useRef(resetPracticeProgressOnStop);
   const practiceInputSuppressedUntilRef = useRef(0);
@@ -1772,12 +1775,12 @@ export default function App() {
     setKeyMappingInputSignal(normalizedEvent);
     if (isPressEvent(event)) setKeyMappingPressedCodes((current) => current.includes(normalizedCode) ? current : [...current, normalizedCode]);
     if (isReleaseEvent(event)) setKeyMappingPressedCodes((current) => current.filter((item) => item !== normalizedCode && !item.split('+').includes(normalizedCode)));
-    const holdCode = holdBindings.get(normalizedCode);
-    if (holdCode) {
+    const holdBinding = holdBindings.get(normalizedCode);
+    if (holdBinding) {
       if (isPressEvent(event)) {
         if (holdPressRef.current.has(normalizedCode)) return;
         const pressEvent = { ...event, code: normalizedCode  };
-        const hold = { pressEvent, holdCode, timer: null as number | null, holdTriggered: false  };
+        const hold = { pressEvent, ...holdBinding, timer: null as number | null, holdTriggered: false  };
         holdPressRef.current.set(normalizedCode, hold);
         if (page === 'practice' || page === 'record') {
           hold.timer = window.setTimeout(() => {
@@ -1785,13 +1788,13 @@ export default function App() {
             if (!current || current.holdTriggered) return;
             if (page === 'record' && !recorderRef.current.isRecording) return;
             current.holdTriggered = true;
-            const holdStartTime = current.pressEvent.time + HEAVY_ATTACK_HOLD_MS;
+            const holdStartTime = current.pressEvent.time + current.thresholdMs;
             if (page === 'record') {
               setSnapshot(recorderRef.current.convertHold({ sourceCode: normalizedCode, holdCode: current.holdCode, pressTime: current.pressEvent.time, holdStartTime, releaseTime: holdStartTime }));
             } else {
               routeTrainerInput({ ...current.pressEvent, code: current.holdCode, time: holdStartTime });
             }
-           }, HEAVY_ATTACK_HOLD_MS);
+           }, hold.thresholdMs);
          } else {
           routeTrainerInput(pressEvent);
          }
@@ -1804,15 +1807,15 @@ export default function App() {
         if (hold.timer !== null) window.clearTimeout(hold.timer);
         const heldMs = Math.max(0, event.time - hold.pressEvent.time, performance.now() - hold.pressEvent.time);
         if (page === 'record' && recorderRef.current.isRecording) {
-          const holdStartTime = hold.pressEvent.time + HEAVY_ATTACK_HOLD_MS;
+          const holdStartTime = hold.pressEvent.time + hold.thresholdMs;
           const next = hold.holdTriggered
             ? recorderRef.current.extendPress(hold.holdCode, holdStartTime, event.time)
-            : heldMs >= HEAVY_ATTACK_HOLD_MS
-            ? recorderRef.current.convertHold({ sourceCode: normalizedCode, holdCode: hold.holdCode, pressTime: hold.pressEvent.time, holdStartTime: hold.pressEvent.time + HEAVY_ATTACK_HOLD_MS, releaseTime: event.time  })
+            : heldMs >= hold.thresholdMs
+            ? recorderRef.current.convertHold({ sourceCode: normalizedCode, holdCode: hold.holdCode, pressTime: hold.pressEvent.time, holdStartTime, releaseTime: event.time  })
             : recorderRef.current.finishPress(normalizedCode, hold.pressEvent.time, event.time);
           setSnapshot(next);
          } else if (page === 'practice' && !hold.holdTriggered) {
-          routeTrainerInput(heldMs >= HEAVY_ATTACK_HOLD_MS ? { ...hold.pressEvent, code: hold.holdCode, time: hold.pressEvent.time + HEAVY_ATTACK_HOLD_MS  } : hold.pressEvent);
+          routeTrainerInput(heldMs >= hold.thresholdMs ? { ...hold.pressEvent, code: hold.holdCode, time: hold.pressEvent.time + hold.thresholdMs  } : hold.pressEvent);
          }
         return;
        }
@@ -2468,7 +2471,7 @@ export default function App() {
             <div className="panel practice-main-panel">
               <div className="panel-title practice-panel-title"><div><h2>{text('练习模式', 'Practice Mode') }</h2><p>{text('F 开始，Esc 结束；演示按时间展示流程，推进按正确输入前进。', 'Press F to start and Esc to stop. Demo follows time; Advance progresses on correct input.') }</p></div><div className="practice-title-actions"><PracticeRoleOrderPicker order={practiceRoleOrder  } style={comboImageStyle } disabled={snapshot.isRecording || practice.status === 'armed' || practice.status === 'running' } onReorder={reorderPracticeRoles } /><div className="segmented"><button className={practicePreset === 'simple' ? 'active' : '' } onClick={() => setPracticePreset('simple') }>{text('演示', 'Demo') }</button><button className={practicePreset === 'lenient' ? 'active' : '' } onClick={() => setPracticePreset('lenient') }>{text('推进', 'Advance') }</button><button className={practicePreset === 'strict' ? 'active' : '' } onClick={() => setPracticePreset('strict') }>{text('挑战', 'Challenge') }</button></div></div></div>
               {practiceChart ? <ComboImagePreview chart={practiceChart } practice={practice  } style={activeRenderComboImageStyle } layout="horizontal" bounds={overlaySettings } mergedHighlightMode={practicePreset === 'lenient' ? 'input' : 'time' } /> : <EmptyState text={text('暂无连段谱。', 'No combo chart available.') } /> }
-              <div className="record-actions"><button className="primary" onClick={startPractice } disabled={practice.status === 'running' || practice.status === 'armed' }><Play size={18 } />{text('开始 F', 'Start F') }</button><button onClick={stopPractice }><Square size={18 } />{text('结束 Esc', 'Stop Esc') }</button><button className="icon-button" onClick={toggleOverlay }>{overlayVisible ? <EyeOff size={18 } /> : <Eye size={18 } /> }</button><label className="checkline axis-gate-toggle"><input type="checkbox" checked={axisGateEnabled } onChange={(event) => setAxisGateEnabled(event.target.checked) } />{text('轴首招启动', 'Start at First Action of Axis') }</label><label className="checkline"><input type="checkbox" checked={resetPracticeProgressOnStop } onChange={(event) => setResetPracticeProgressOnStop(event.target.checked) } />{text('复位', 'Reset') }</label></div>
+              <div className="record-actions"><button className="primary" onClick={startPractice } disabled={practice.status === 'running' || practice.status === 'armed' }><Play size={18 } />{text('开始 F', 'Start F') }</button><button onClick={stopPractice }><Square size={18 } />{text('结束 Esc', 'Stop Esc') }</button><button onClick={toggleOverlay }>{text('悬浮', 'Always on Top') }</button><label className="checkline axis-gate-toggle"><input type="checkbox" checked={axisGateEnabled } onChange={(event) => setAxisGateEnabled(event.target.checked) } />{text('轴首招启动', 'Start at First Action of Axis') }</label><label className="checkline"><input type="checkbox" checked={resetPracticeProgressOnStop } onChange={(event) => setResetPracticeProgressOnStop(event.target.checked) } />{text('复位', 'Reset') }</label></div>
               <div className="practice-feedback-row">{practice.feedback[0] ? <div className={`feedback ${practice.feedback[0].level }` }>{practice.feedback[0].message }</div> : <div className="feedback info">{text('等待输入提示', 'Waiting for input') }</div> }</div>
               {practiceChart && practice.errorStepIds.length > 0 && <PracticeErrorSummary chart={practiceChart } practice={practice } /> }
             </div>
@@ -2481,7 +2484,7 @@ export default function App() {
           <section className="appearance-page-layout">
             <header className="topbar appearance-preview-bar"><ComboImagePreview chart={practiceChart } practice={practice  } style={activeRenderComboImageStyle } layout="horizontal" bounds={overlaySettings } manualHorizontalScroll /></header>
             <div className="panel appearance-page-panel">
-              <div className="panel-title"><div><h2>{text('连段图外观', 'Combo Overlay Appearance') }</h2><p>{text('这里显示的效果会同步到全局置顶连段图。', 'Changes here are applied to the always-on-top combo overlay.') }</p></div><div className="overlay-settings-panel inline-overlay-controls"><div className="segmented"><button className={overlaySettings.layout === 'horizontal' ? 'active' : '' } onClick={() => void setOverlayLayout('horizontal') }>{text('横排', 'Horizontal') }</button><button className={overlaySettings.layout === 'vertical' ? 'active' : '' } onClick={() => void setOverlayLayout('vertical') }>{text('竖排', 'Vertical') }</button><button className={overlaySettings.layout === 'waterfall' ? 'active' : '' } onClick={() => void setOverlayLayout('waterfall') }>{text('瀑布', 'Waterfall') }</button></div><button className={overlayMoveMode ? 'active' : '' } onClick={toggleOverlayMoveMode }>{text('移动', 'Move') }</button><button onClick={resetOverlayBounds }>{text('复位', 'Reset') }</button><button className="icon-button" onClick={toggleOverlay }>{overlayVisible ? <EyeOff size={18 } /> : <Eye size={18 } /> }</button></div></div>
+              <div className="panel-title"><div><h2>{text('连段图外观', 'Combo Overlay Appearance') }</h2><p>{text('这里显示的效果会同步到全局置顶连段图。', 'Changes here are applied to the always-on-top combo overlay.') }</p></div><div className="overlay-settings-panel inline-overlay-controls"><div className="segmented"><button className={overlaySettings.layout === 'horizontal' ? 'active' : '' } onClick={() => void setOverlayLayout('horizontal') }>{text('横排', 'Horizontal') }</button><button className={overlaySettings.layout === 'vertical' ? 'active' : '' } onClick={() => void setOverlayLayout('vertical') }>{text('竖排', 'Vertical') }</button><button className={overlaySettings.layout === 'waterfall' ? 'active' : '' } onClick={() => void setOverlayLayout('waterfall') }>{text('瀑布', 'Waterfall') }</button></div><button className={overlayMoveMode ? 'active' : '' } onClick={toggleOverlayMoveMode }>{text('移动', 'Move') }</button><button onClick={resetOverlayBounds }>{text('复位', 'Reset') }</button><button onClick={toggleOverlay }>{text('悬浮', 'Always on Top') }</button></div></div>
               <SimpleAppearanceEditor style={appearanceComboImageStyle } avatarPresets={defaultAvatars } basePresets={defaultBasePresets } teamPresets={teamPresets } roleBaseFollowsAvatar={roleBaseFollowsAvatar } onRoleBaseFollowsAvatarChange={setRoleBaseFollowsAvatar } onApplyAvatarPreset={applySharedAvatarPreset } onTeamPresetsChange={setTeamPresets } onChange={updateAppearanceComboImageStyle } onRoleChange={updateAppearanceRoleStyle } onPickAvatar={(slot, file) => void pickSharedAvatar(slot, file) } avatarInputRefs={avatarInputRefs } blockSettingsReplacement={overlaySettings.layout === 'waterfall' ? <RhythmBlockSettings settings={rhythmUiSettings } onChange={updateRhythmUiSettings } /> : null } />
             </div>
           </section>
