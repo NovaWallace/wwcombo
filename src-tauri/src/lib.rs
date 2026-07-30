@@ -85,7 +85,8 @@ const KEY_MAPPING_MAX_WIDTH: u32 = 2400;
 const KEY_MAPPING_MAX_HEIGHT: u32 = 2000;
 const RECORDING_INDICATOR_SIZE: f64 = 18.0;
 const RECORDING_INDICATOR_MARGIN: f64 = 2.0;
-const REMOTE_CHARACTER_AVATAR_API: &str = "https://wuwa-hpyg-tool.200503.xyz/api/v1/icons/character";
+const REMOTE_CHARACTER_AVATAR_API: &str =
+    "https://wuwa-hpyg-tool.200503.xyz/api/v1/batch-icons/character";
 
 #[tauri::command]
 async fn fetch_remote_character_avatars() -> Result<serde_json::Value, String> {

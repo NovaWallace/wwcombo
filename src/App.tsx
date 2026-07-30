@@ -199,16 +199,22 @@ const DEFAULT_RHYTHM_UI: RhythmUiSettings = { width: 1739, height: 240, scale: 1
 const VERTICAL_STYLE_DEFAULTS: Partial<ComboImageStyle> = { blockMode: 'image', capsuleShape: 'capsule', imageBlockWidth: 200, imageBlockHeight: 55, capsuleWidthMode: 'auto', capsuleHeight: 80, capsuleGap: 95, fontSize: 22, avatarSize: 70, avatarOffsetX: -20, avatarOffsetY: 0, scrollAnchor: 'center', fadeEnabled: false, fadeRange: 30, convertIcons: true, prePromptEnabled: true, mergeSameRoleSteps: true, mergeSameRoleLimit: 6  };
 const WATERFALL_STYLE_DEFAULTS: Partial<ComboImageStyle> = { blockMode: 'image', capsuleShape: 'rect', imageBlockWidth: 400, imageBlockHeight: 55, capsuleWidthMode: 'fixed', capsuleWidth: 78, capsuleHeight: 34, capsuleGap: 6, fontSize: 20, avatarSize: 58, avatarOffsetX: 0, avatarOffsetY: 0, scrollAnchor: 'center', fadeEnabled: false, fadeRange: 2, convertIcons: true, prePromptEnabled: true, mergeSameRoleSteps: false, mergeSameRoleLimit: 6  };
 const LOCAL_STORAGE_SOFT_LIMIT = 4_200_000;
-const REMOTE_CHARACTER_AVATAR_API = 'https://wuwa-hpyg-tool.200503.xyz/api/v1/icons/character';
+const REMOTE_CHARACTER_AVATAR_API = 'https://wuwa-hpyg-tool.200503.xyz/api/v1/batch-icons/character';
 const REMOTE_AVATAR_DB_NAME = 'ww-combo-remote-avatar-cache-v1';
 const REMOTE_AVATAR_STORE = 'avatars';
 const REMOTE_AVATAR_MANIFEST_KEY = 'ww-combo-remote-avatar-manifest-v1';
 const REMOTE_AVATAR_PLACEHOLDER = '/remote-avatar-placeholder.webp';
-const REMOTE_PROJECT_ASSET_API = import.meta.env.VITE_PROJECT_ASSET_API || 'https://nova.fb520.site/api/project-assets/v1/manifest.json';
+const DEFAULT_PROJECT_ASSET_API = import.meta.env.DEV
+  ? 'http://127.0.0.1:9884/api/project-assets/v1/manifest.json'
+  : 'https://nova.fb520.site/api/project-assets/v1/manifest.json';
+const CONFIGURED_PROJECT_ASSET_API = String(import.meta.env.VITE_PROJECT_ASSET_API || '').trim().replace(/[\s'"‘’]+$/g, '');
+const REMOTE_PROJECT_ASSET_API = /^https?:\/\//i.test(CONFIGURED_PROJECT_ASSET_API) ? CONFIGURED_PROJECT_ASSET_API : DEFAULT_PROJECT_ASSET_API;
 const REMOTE_PROJECT_ASSET_DB_NAME = 'ww-combo-project-asset-cache-v1';
 const REMOTE_PROJECT_ASSET_STORE = 'images';
 const REMOTE_PROJECT_ASSET_MANIFEST_KEY = 'ww-combo-project-asset-manifest-v1';
 const REMOTE_APP_RELEASE_API = new URL('app-release.json', REMOTE_PROJECT_ASSET_API).toString();
+const PROJECT_ASSET_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+const APP_RELEASE_REFRESH_INTERVAL_MS = 15 * 60 * 1000;
 const DRAFT_MOVE_ID = '__draft__';
 const DEFAULT_FREE_FIRE_DURATION = 15_000;
 const DEFAULT_AXIS_DURATION = 25_000;
@@ -332,8 +338,12 @@ function normalizeProjectAssetManifest(value: unknown): ProjectAssetManifest | n
   if (!record || record.schemaVersion !== 1 || !Array.isArray(record.characters)) return null;
   const characters = record.characters.flatMap((item) => {
     if (!item || typeof item !== 'object' || typeof item.id !== 'string') return [];
-    const names = item.names && typeof item.names === 'object' ? item.names : {};
-    const chinese = typeof names['zh-CN'] === 'string' ? normalizeCharacterName(names['zh-CN']) : '';
+    const sourceNames = item.names && typeof item.names === 'object' ? item.names : {};
+    const names = Object.fromEntries((['zh-CN', 'en-US', 'ja-JP', 'ko-KR'] as AppLanguage[]).map((language) => [
+      language,
+      typeof sourceNames[language] === 'string' ? sourceNames[language]!.trim().slice(0, 80) : ''
+    ])) as Record<AppLanguage, string>;
+    const chinese = normalizeCharacterName(names['zh-CN']);
     if (!chinese) return [];
     const basePreset = item.basePreset && typeof item.basePreset === 'object' ? item.basePreset : null;
     return [{ id: item.id.trim(), names: { ...names, 'zh-CN': chinese  }, basePreset  }];
@@ -432,11 +442,15 @@ function travelerFormKey(name: string): string | null {
  }
 
 function normalizeRemoteAvatarList(value: unknown): DefaultAvatarEntry[] {
-  if (!Array.isArray(value)) return [];
+  const source = Array.isArray(value)
+    ? value
+    : value && typeof value === 'object'
+      ? Object.entries(value)
+      : [];
   const travelerGroups = new Map<string, DefaultAvatarEntry[]>();
   const regularItems: DefaultAvatarEntry[] = [];
   const seen = new Set<string>();
-  value.forEach((item) => {
+  source.forEach((item) => {
     if (!Array.isArray(item) || typeof item[0] !== 'string') return;
     const name = normalizeCharacterName(item[0]);
     const remoteSrc = typeof item[1] === 'string' ? item[1].trim() : '';
@@ -506,6 +520,7 @@ async function fetchRemoteAvatarPresets(): Promise<DefaultAvatarEntry[]> {
     payload = await response.json();
   }
   const remoteItems = normalizeRemoteAvatarList(payload);
+  if (!remoteItems.length) return [];
   try {
     localStorage.setItem(REMOTE_AVATAR_MANIFEST_KEY, JSON.stringify(remoteItems.map((item) => ({ name: item.name, src: item.src  }))));
    } catch {
@@ -586,34 +601,35 @@ async function hydrateProjectBasePresets(manifest: ProjectAssetManifest, bundled
   return hydrated.filter((preset): preset is DefaultBasePresetEntry => Boolean(preset));
  }
 
-async function loadCachedProjectAssets(bundled: DefaultBasePresetEntry[]): Promise<{ manifest: ProjectAssetManifest; presets: DefaultBasePresetEntry[]  } | null> {
+function loadCachedProjectAssetManifest(): ProjectAssetManifest | null {
   try {
-    const manifest = normalizeProjectAssetManifest(JSON.parse(localStorage.getItem(REMOTE_PROJECT_ASSET_MANIFEST_KEY) ?? 'null'));
-    if (!manifest) return null;
-    return { manifest, presets: await hydrateProjectBasePresets(manifest, bundled, false)  };
+    return normalizeProjectAssetManifest(JSON.parse(localStorage.getItem(REMOTE_PROJECT_ASSET_MANIFEST_KEY) ?? 'null'));
    } catch {
     return null;
    }
  }
 
-async function fetchProjectAssets(bundled: DefaultBasePresetEntry[]): Promise<{ manifest: ProjectAssetManifest; presets: DefaultBasePresetEntry[]  } | null> {
+async function fetchProjectAssetManifest(): Promise<ProjectAssetManifest | null> {
   const response = await fetch(REMOTE_PROJECT_ASSET_API, { cache: 'no-cache'  });
   if (!response.ok) return null;
   const manifest = normalizeProjectAssetManifest(await response.json());
   if (!manifest) return null;
   try {
     localStorage.setItem(REMOTE_PROJECT_ASSET_MANIFEST_KEY, JSON.stringify(manifest));
-   } catch {
+  } catch {
     // IndexedDB still keeps downloaded images when localStorage is unavailable.
    }
-  return { manifest, presets: await hydrateProjectBasePresets(manifest, bundled, true)  };
+  return manifest;
  }
 
 function normalizeAppRelease(value: unknown): AppReleaseManifest | null {
   const record = value as Partial<AppReleaseManifest> | null;
   if (!record || record.schemaVersion !== 1 || typeof record.version !== 'string' || !/^\d+\.\d+\.\d+$/.test(record.version)) return null;
-  const download = record.download && typeof record.download.url === 'string' && record.download.url.trim()
-    ? { ...record.download, url: assetUrl(record.download.url, REMOTE_APP_RELEASE_API)  }
+  const resolvedDownloadUrl = record.download && typeof record.download.url === 'string' && record.download.url.trim()
+    ? assetUrl(record.download.url, REMOTE_APP_RELEASE_API)
+    : '';
+  const download = record.download && /^https?:\/\//i.test(resolvedDownloadUrl)
+    ? { ...record.download, url: resolvedDownloadUrl  }
     : null;
   return {
     schemaVersion: 1,
@@ -1312,6 +1328,7 @@ export default function App() {
   const practiceInputSuppressedUntilRef = useRef(0);
   const recentInputTransitionsRef = useRef(new Map<string, { source: NonNullable<TrainerLikeInputEvent['source']>; receivedAt: number  }>());
   const toastTimerRef = useRef<number | null>(null);
+  const dismissedUpdateVersionRef = useRef<string | null>(null);
   const chartRef = useRef<ComboChart | null>(chart);
   const comboImageStyleRef = useRef(comboImageStyle);
   shareDialogOpenRef.current = Boolean(shareDraft);
@@ -1513,8 +1530,40 @@ export default function App() {
 
   useEffect(() => {
     let cancelled = false;
+    let bundled: DefaultBasePresetEntry[] = [];
+    let appliedRevision = 0;
+    let appliedUpdatedAt = '';
+    let lastRefreshAt = 0;
+    let refreshInFlight: Promise<void> | null = null;
+
+    const applyManifest = async (manifest: ProjectAssetManifest, downloadImages: boolean) => {
+      if (cancelled) return;
+      setRemoteCharacterNames(manifest.characters);
+      appliedRevision = manifest.revision;
+      appliedUpdatedAt = manifest.updatedAt;
+      const presets = await hydrateProjectBasePresets(manifest, bundled, downloadImages);
+      if (!cancelled) setDefaultBasePresets(mergeDefaultBasePresets(bundled, presets));
+     };
+
+    const refresh = (force = false) => {
+      const now = Date.now();
+      if (!force && now - lastRefreshAt < PROJECT_ASSET_REFRESH_INTERVAL_MS) return refreshInFlight ?? Promise.resolve();
+      if (refreshInFlight) return refreshInFlight;
+      lastRefreshAt = now;
+      refreshInFlight = (async () => {
+        try {
+          const manifest = await fetchProjectAssetManifest();
+          if (!manifest || cancelled) return;
+          if (!force && manifest.revision === appliedRevision && manifest.updatedAt === appliedUpdatedAt) return;
+          await applyManifest(manifest, true);
+         } catch {
+          // Bundled assets and the last complete cache remain available offline.
+         }
+       })().finally(() => { refreshInFlight = null;  });
+      return refreshInFlight;
+     };
+
     const load = async () => {
-      let bundled: DefaultBasePresetEntry[] = [];
       try {
         const response = await fetch(assetUrl('/combo-assets/base-presets/index.json'));
         bundled = normalizeBasePresets(response.ok ? await response.json() : { items: []  });
@@ -1522,23 +1571,19 @@ export default function App() {
         bundled = [];
        }
       if (!cancelled) setDefaultBasePresets(sortBasePresets(bundled));
-      const cached = await loadCachedProjectAssets(bundled);
-      if (!cancelled && cached) {
-        setRemoteCharacterNames(cached.manifest.characters);
-        setDefaultBasePresets(mergeDefaultBasePresets(bundled, cached.presets));
-       }
-      try {
-        const remote = await fetchProjectAssets(bundled);
-        if (!cancelled && remote) {
-          setRemoteCharacterNames(remote.manifest.characters);
-          setDefaultBasePresets(mergeDefaultBasePresets(bundled, remote.presets));
-         }
-       } catch {
-        // The bundled and last cached presets remain fully usable offline.
-       }
+      const cached = loadCachedProjectAssetManifest();
+      if (cached) await applyManifest(cached, false);
+      await refresh(true);
      };
+    const refreshOnFocus = () => void refresh();
+    const refreshTimer = window.setInterval(() => void refresh(), PROJECT_ASSET_REFRESH_INTERVAL_MS);
+    window.addEventListener('focus', refreshOnFocus);
     void load();
-    return () => { cancelled = true;  };
+    return () => {
+      cancelled = true;
+      window.clearInterval(refreshTimer);
+      window.removeEventListener('focus', refreshOnFocus);
+     };
    }, []);
 
   useEffect(() => {
@@ -1547,14 +1592,34 @@ export default function App() {
 
   useEffect(() => {
     let cancelled = false;
-    fetch(REMOTE_APP_RELEASE_API, { cache: 'no-cache'  })
-      .then((response) => response.ok ? response.json() : null)
-      .then((value: unknown) => {
-        const release = normalizeAppRelease(value);
-        if (!cancelled && release?.download && compareVersions(release.version, __APP_VERSION__) > 0) setAvailableUpdate(release);
-       })
-      .catch(() => undefined);
-    return () => { cancelled = true;  };
+    let lastRefreshAt = 0;
+    let refreshInFlight = false;
+    const refresh = async (force = false) => {
+      const now = Date.now();
+      if (refreshInFlight || (!force && now - lastRefreshAt < APP_RELEASE_REFRESH_INTERVAL_MS)) return;
+      refreshInFlight = true;
+      lastRefreshAt = now;
+      try {
+        const response = await fetch(REMOTE_APP_RELEASE_API, { cache: 'no-cache'  });
+        const release = normalizeAppRelease(response.ok ? await response.json() : null);
+        if (!cancelled && release && compareVersions(release.version, __APP_VERSION__) > 0 && dismissedUpdateVersionRef.current !== release.version) {
+          setAvailableUpdate(release);
+         }
+       } catch {
+        // Version checks are optional and must never block the application.
+       } finally {
+        refreshInFlight = false;
+       }
+     };
+    const refreshOnFocus = () => void refresh();
+    const refreshTimer = window.setInterval(() => void refresh(), APP_RELEASE_REFRESH_INTERVAL_MS);
+    window.addEventListener('focus', refreshOnFocus);
+    void refresh(true);
+    return () => {
+      cancelled = true;
+      window.clearInterval(refreshTimer);
+      window.removeEventListener('focus', refreshOnFocus);
+     };
    }, []);
 
   useEffect(() => {
@@ -2328,10 +2393,10 @@ export default function App() {
     <div className={`app-shell ${appearanceMode === 'night' ? 'theme-night' : '' } ${appearanceMode === 'day' ? 'theme-day' : '' } ${appearanceMode === 'night2' ? 'theme-night2' : '' } ${page === 'experiment' && experimentPage === 'axis' ? 'axis-game-open' : '' }` }>
       {toastMessage && <div className="app-toast" role="status">{toastMessage}</div>}
       {availableUpdate && <section className="app-update-notice" aria-label={text('客户端更新', 'Client Update') }>
-        <div className="app-update-heading"><div><span>{text('发现新版本', 'New version available') }</span><strong>{availableUpdate.title || `WW Combo Trainer ${availableUpdate.version }`}</strong></div><button type="button" title={text('稍后提醒', 'Remind me later') } aria-label={text('关闭更新提示', 'Close update notice') } onClick={() => setAvailableUpdate(null) }><X size={17 } /></button></div>
+        <div className="app-update-heading"><div><span>{text('发现新版本', 'New version available') }</span><strong>{availableUpdate.title || `WW Combo Trainer ${availableUpdate.version }`}</strong></div><button type="button" title={text('稍后提醒', 'Remind me later') } aria-label={text('关闭更新提示', 'Close update notice') } onClick={() => { dismissedUpdateVersionRef.current = availableUpdate.version; setAvailableUpdate(null);  } }><X size={17 } /></button></div>
         <p className="app-update-version">v{__APP_VERSION__ } <span>→</span> v{availableUpdate.version }</p>
         {availableUpdate.notes && <p className="app-update-notes">{availableUpdate.notes }</p>}
-        <a href={availableUpdate.download!.url } download={availableUpdate.download!.fileName } target="_blank" rel="noopener noreferrer"><Download size={17 } />{text('下载新版本', 'Download Update') }</a>
+        {availableUpdate.download && <a href={availableUpdate.download.url } download={availableUpdate.download.fileName } target="_blank" rel="noopener noreferrer"><Download size={17 } />{text('下载新版本', 'Download Update') }</a>}
       </section>}
         <aside className="sidebar">
           <button className={`brand ${page === 'home' ? 'home-active' : '' }` } type="button" aria-label={text('返回主界面', 'Back to Home') } title={text('返回主界面', 'Back to Home') } onClick={() => setPage('home') }><div className="brand-mark"><img src="/app-icon-avatar.png" alt="" /></div><div><h1>{text('鸣潮训练场', 'Wuthering Waves Trainer') }</h1><span>Combo Trainer</span></div></button>
