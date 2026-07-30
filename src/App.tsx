@@ -1783,6 +1783,7 @@ export default function App() {
         const hold = { pressEvent, ...holdBinding, timer: null as number | null, holdTriggered: false  };
         holdPressRef.current.set(normalizedCode, hold);
         if (page === 'practice' || page === 'record') {
+          if (page === 'record') routeTrainerInput(pressEvent);
           hold.timer = window.setTimeout(() => {
             const current = holdPressRef.current.get(normalizedCode);
             if (!current || current.holdTriggered) return;
