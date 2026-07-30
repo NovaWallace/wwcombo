@@ -1,15 +1,15 @@
 ---
 name: wuwa-axis-to-wwcombo
-description: This skill converts Wuthering Waves (鸣潮) community text-based combo axes into valid wwcombo chart JSON. Use it when the user pastes or shares a highly unstructured Chinese text axis (e.g. "秧E，穗a234E下落a，千aEa3…变奏千QRE…EZREFW（方向键，往前走一步）EZ") and wants it turned into an importable wwcombo .wwcombo.json file, or asks to "convert a 鸣潮 axis / 轮椅轴 / 连招文字轴 into JSON". The skill parses the axis into a structured intermediate representation via LLM, then runs a bundled Node script to emit a legal wwcombo-chart (version 3) JSON.
+description: This skill converts Wuthering Waves community text-based combo axes into valid wwcombo chart JSON. Use it when the user pastes or shares a highly unstructured Chinese text axis (e.g. "秧E，穗a234E下落a，千aEa3…变奏千QRE…EZREFW（方向键，往前走一步）EZ") and wants it turned into an importable wwcombo .wwcombo.json file, or asks to "convert a 鸣潮 axis / 轮椅轴 / 连招文字轴 into JSON". The skill parses the axis into a structured intermediate representation via LLM, then runs a bundled Node script to emit a legal wwcombo-chart (version 3) JSON.
 ---
 
 # 鸣潮文字轴 → wwcombo JSON 转换器
 
 ## Overview
 
-把社区里流传的鸣潮连段"文字轴"（B 站 / 库街区）转换成 wwcombo 连段训练器能直接导入的 chart JSON。
+把鸣潮文字轴转换成 wwcombo 连段训练器能直接导入的 chart JSON。
 
-文字轴高度非结构化（角色前缀连写、无分隔缩写串、中文括号注释、`a234` 段数表示、`变奏X` 切人），必须先由 LLM 理解成结构化"中间表示"，再用 `scripts/convert_axis.cjs` 生成合法 JSON 并校验。
+文字轴高度非结构化，必须先由 LLM 理解成结构化"中间表示"，再用 `scripts/convert_axis.cjs` 生成合法 JSON 并校验。
 
 ## Workflow
 
@@ -33,7 +33,7 @@ node scripts/convert_axis.cjs <intermediate.json> <output.json>
 脚本生成合法 `wwcombo-chart` JSON，并打印步数与 moveId 分布。
 
 ### Step 4 — 交付
-把生成的 `.wwcombo.json` 交给用户（可直接在 wwcombo 内导入）。
+把生成的 `.wwcombo.json` 交给用户。
 
 ## 关键规则（详见 references/schema.md）
 - 处决技(F)：**忽略**，不生成步。
