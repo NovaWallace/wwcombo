@@ -219,7 +219,7 @@ const DRAFT_MOVE_ID = '__draft__';
 const DEFAULT_FREE_FIRE_DURATION = 15_000;
 const DEFAULT_AXIS_DURATION = 25_000;
 const AXIS_PLACEMENT_WINDOW = 30_000;
-const HEAVY_ATTACK_HOLD_MS = 300;
+const HEAVY_ATTACK_HOLD_MS = 200;
 const GAMEPAD_BUTTON_CODES = ['GamepadA', 'GamepadB', 'GamepadX', 'GamepadY', 'GamepadLB', 'GamepadRB', 'GamepadLT', 'GamepadRT', 'GamepadView', 'GamepadMenu', 'GamepadLeftStick', 'GamepadRightStick', 'GamepadDPadUp', 'GamepadDPadDown', 'GamepadDPadLeft', 'GamepadDPadRight'];
 const GAMEPAD_COMBO_MODIFIER = 'GamepadLB';
 const DEFAULT_EXPORT_DIRECTORY = '';
@@ -1779,12 +1779,18 @@ export default function App() {
         const pressEvent = { ...event, code: normalizedCode  };
         const hold = { pressEvent, holdCode, timer: null as number | null, holdTriggered: false  };
         holdPressRef.current.set(normalizedCode, hold);
-        if (page === 'practice') {
+        if (page === 'practice' || page === 'record') {
           hold.timer = window.setTimeout(() => {
             const current = holdPressRef.current.get(normalizedCode);
             if (!current || current.holdTriggered) return;
+            if (page === 'record' && !recorderRef.current.isRecording) return;
             current.holdTriggered = true;
-            routeTrainerInput({ ...current.pressEvent, code: current.holdCode, time: current.pressEvent.time + HEAVY_ATTACK_HOLD_MS  });
+            const holdStartTime = current.pressEvent.time + HEAVY_ATTACK_HOLD_MS;
+            if (page === 'record') {
+              setSnapshot(recorderRef.current.convertHold({ sourceCode: normalizedCode, holdCode: current.holdCode, pressTime: current.pressEvent.time, holdStartTime, releaseTime: holdStartTime }));
+            } else {
+              routeTrainerInput({ ...current.pressEvent, code: current.holdCode, time: holdStartTime });
+            }
            }, HEAVY_ATTACK_HOLD_MS);
          } else {
           routeTrainerInput(pressEvent);
@@ -1796,9 +1802,12 @@ export default function App() {
         if (!hold) return;
         holdPressRef.current.delete(normalizedCode);
         if (hold.timer !== null) window.clearTimeout(hold.timer);
-        const heldMs = Math.max(0, event.time - hold.pressEvent.time);
+        const heldMs = Math.max(0, event.time - hold.pressEvent.time, performance.now() - hold.pressEvent.time);
         if (page === 'record' && recorderRef.current.isRecording) {
-          const next = heldMs >= HEAVY_ATTACK_HOLD_MS
+          const holdStartTime = hold.pressEvent.time + HEAVY_ATTACK_HOLD_MS;
+          const next = hold.holdTriggered
+            ? recorderRef.current.extendPress(hold.holdCode, holdStartTime, event.time)
+            : heldMs >= HEAVY_ATTACK_HOLD_MS
             ? recorderRef.current.convertHold({ sourceCode: normalizedCode, holdCode: hold.holdCode, pressTime: hold.pressEvent.time, holdStartTime: hold.pressEvent.time + HEAVY_ATTACK_HOLD_MS, releaseTime: event.time  })
             : recorderRef.current.finishPress(normalizedCode, hold.pressEvent.time, event.time);
           setSnapshot(next);
