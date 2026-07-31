@@ -562,10 +562,12 @@ export function comboImageBackgroundSource(style: ComboImageStyle): string | und
 }
 
 function comboTextDisplayUnits(value: string, convertIcons: boolean, mappings = DEFAULT_ICON_MAPPINGS): number {
-  return comboTextParts(value, convertIcons, mappings).reduce((sum, part) => {
+  const parts = comboTextParts(value, convertIcons, mappings);
+  const contentUnits = parts.reduce((sum, part) => {
     if (part.kind === 'icon') return sum + 1.62 * part.iconScale;
     return sum + Array.from(part.value).reduce((inner, char) => inner + (/[^\x00-\xff]/.test(char) ? 1 : 0.62), 0);
   }, 0);
+  return contentUnits + Math.max(0, parts.length - 1) * 0.18;
 }
 
 

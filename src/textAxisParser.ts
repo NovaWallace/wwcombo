@@ -1,6 +1,11 @@
 import type { CharacterSlot, ComboChart, ComboPeriod, ComboStep, MoveDefinition } from '../combo-core';
 
-export const TEXT_AXIS_EXAMPLE = '启动轴：达 eqraa，爱a，露ra，爱ae，达aa，露aaa，达aae，爱aa，露a，达ar，爱 变奏 a，露e，达aaa，爱a，露跳eeq，爱 变奏r1efaaqezr';
+export const TEXT_AXIS_EXAMPLE = '启动轴：\n达 eqraa 爱 a 露 ra 爱 ae 达 aa 露 aaa 达 aae 爱 aa 露 a 达 ar 爱 变奏 a 露 e 达 aaa 爱 a 露 跳eeq 爱 变奏 r1efaaqezr';
+export const TEXT_AXIS_EXAMPLE_EN = 'Startup Axis:\n1 eqraa 2 a 3 ra 2 ae 1 aa 3 aaa 1 aae 2 aa 3 a 1 ar 2 Intro a 3 e 1 aaa 2 a 3 Jumpeeq 2 Intro r1efaaqezr Outro';
+
+export function textAxisExampleForLanguage(language: string): string {
+  return language === 'zh-CN' ? TEXT_AXIS_EXAMPLE : TEXT_AXIS_EXAMPLE_EN;
+}
 
 export type TextAxisCharacter = {
   slot: CharacterSlot;
@@ -27,6 +32,24 @@ type LoopMarker = { stepIndex: number };
 type PendingSwitch = { slot: CharacterSlot; intro: boolean };
 
 const PHRASE_ACTIONS: Array<[string, string, string?]> = [
+  ['hold resonance liberation', 'liberation_hold'],
+  ['hold liberation', 'liberation_hold'],
+  ['resonance liberation', 'liberation'],
+  ['hold basic attack', 'heavy_attack'],
+  ['hold heavy attack', 'heavy_attack'],
+  ['hold dodge', 'dodge_hold'],
+  ['hold jump', 'jump_hold'],
+  ['hold echo', 'echo_hold'],
+  ['hold skill', 'skill_hold'],
+  ['move forward', 'empty_action', 'w'],
+  ['basic attack', 'basic_attack'],
+  ['heavy attack', 'heavy_attack'],
+  ['liberation', 'liberation'],
+  ['finisher', 'empty_action', 'f'],
+  ['dodge', 'dodge'],
+  ['jump', 'jump'],
+  ['echo', 'echo'],
+  ['skill', 'skill'],
   ['长按共鸣解放', 'liberation_hold'],
   ['长按解放', 'liberation_hold'],
   ['共鸣解放', 'liberation'],
@@ -71,6 +94,17 @@ const LETTER_ACTIONS: Record<string, [string, string?]> = {
   F: ['empty_action', 'f'],
   w: ['empty_action', 'w'],
   W: ['empty_action', 'w']
+};
+
+const HOLD_LETTER_ACTIONS: Record<string, string> = {
+  a: 'heavy_attack',
+  z: 'heavy_attack',
+  e: 'skill_hold',
+  q: 'echo_hold',
+  r: 'liberation_hold',
+  s: 'dodge_hold',
+  d: 'dodge_hold',
+  j: 'jump_hold'
 };
 
 function firstChineseCharacter(value: string): string {
@@ -145,7 +179,7 @@ export function parseTextAxis(source: string, options: TextAxisParserOptions): T
     }
     const fallback = /^switch_[123]$/u.test(step.moveId)
       ? switchContent(Number(step.moveId.slice(-1)) as CharacterSlot, false)
-      : defaultContentForMove(step.moveId);
+      : defaultTextAxisCodeForMove(step.moveId);
     contentLabels[step.id] = `${contentLabels[step.id] ?? fallback ?? '' }${suffix }`;
   };
 
@@ -230,6 +264,12 @@ export function parseTextAxis(source: string, options: TextAxisParserOptions): T
       consume(separator[0].length);
       continue;
     }
+    const startupAxisMatch = /^(?:startup|start)\s+axis/iu.exec(rest);
+    if (startupAxisMatch) {
+      startupMarkerSeen = true;
+      consume(startupAxisMatch[0].length);
+      continue;
+    }
     if (rest.startsWith('启动轴')) {
       startupMarkerSeen = true;
       consume(3);
@@ -240,7 +280,7 @@ export function parseTextAxis(source: string, options: TextAxisParserOptions): T
       consume(2);
       continue;
     }
-    const loopMatch = /^循环轴(?:\d+)?/u.exec(rest) ?? /^循环/u.exec(rest);
+    const loopMatch = /^loop\s+axis(?:\s*\d+)?/iu.exec(rest) ?? /^循环轴(?:\d+)?/u.exec(rest) ?? /^循环/u.exec(rest);
     if (loopMatch) {
       flushSwitch();
       loopMarkers.push({ stepIndex: steps.length });
@@ -253,24 +293,36 @@ export function parseTextAxis(source: string, options: TextAxisParserOptions): T
       consume(alias.value.length);
       continue;
     }
-    if (rest.startsWith('变奏')) {
+    const introMatch = /^intro\b/iu.exec(rest);
+    if (introMatch || rest.startsWith('变奏')) {
       if (!markPendingSwitchIntro()) {
         if (steps[steps.length - 1]?.moveId.startsWith('switch_')) appendContent('b');
         else nextSwitchIntro = true;
       }
-      consume(2);
+      consume(introMatch?.[0].length ?? 2);
       continue;
     }
-    if (rest.startsWith('延奏')) {
+    const outroMatch = /^outro\b/iu.exec(rest);
+    if (outroMatch || rest.startsWith('延奏')) {
       appendContent('y');
-      consume(2);
+      consume(outroMatch?.[0].length ?? 2);
       continue;
     }
-    const phraseAction = PHRASE_ACTIONS.find(([phrase]) => rest.startsWith(phrase));
+    const loweredRest = rest.toLocaleLowerCase();
+    const phraseAction = PHRASE_ACTIONS.find(([phrase]) => loweredRest.startsWith(phrase.toLocaleLowerCase()));
     if (phraseAction) {
       addAction(phraseAction[1], phraseAction[2]);
       consume(phraseAction[0].length);
       continue;
+    }
+    const holdLetterMatch = /^(?:长|hold\s*\+?\s*)([A-Za-z])/iu.exec(rest);
+    if (holdLetterMatch) {
+      const moveId = HOLD_LETTER_ACTIONS[holdLetterMatch[1].toLowerCase()];
+      if (moveId) {
+        addAction(moveId);
+        consume(holdLetterMatch[0].length);
+        continue;
+      }
     }
     const switchMatch = /^(iiib|iib|ib|iii|ii|i|[123]b?)/iu.exec(rest);
     if (switchMatch) {
@@ -341,7 +393,7 @@ export function parseTextAxis(source: string, options: TextAxisParserOptions): T
   return { chart, contentLabels, startingCharacterSlot: finalStartingSlot, warnings: [...warnings] };
 }
 
-function defaultContentForMove(moveId: string): string | undefined {
+export function defaultTextAxisCodeForMove(moveId: string): string | undefined {
   if (moveId === 'basic_attack') return 'a';
   if (moveId === 'heavy_attack') return 'A';
   if (moveId === 'skill') return 'e';

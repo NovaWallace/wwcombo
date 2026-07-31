@@ -342,15 +342,22 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
         summary: '记录公开版本和当前开发版的重要变化。',
         groups: [
           {
-            title: '当前开发版 · 2026-07-31',
+            title: 'v0.5.0 · 2026-07-31',
             items: [
+              '桌面版现在会在启动时默认尝试开启全局捕获；用户仍可从左侧栏手动关闭。编辑时间轴、填写分享信息、使用视频编辑或调整外观时，只暂停招式动作进入录制与练习判定，时间轴自身的 Delete、C、V、Ctrl+C、Ctrl+V 等快捷键保持可用。',
+              '文字轴长按语法新增“长+字母”，例如“长e”和大写 E 都会生成长按技能，原有大写写法继续兼容。',
+              '打通时间轴与文字轴：打开文字轴识别时，当前时间轴会按招式块边界转换为可编辑文字；未修改时间文本时保留原招式 ID、时长、轨道、预热和后摇。新增“时间 / 内容”切换，可直接在同一批招式边界上编辑显示内容。',
+              '时间轴和外观内容编辑统一为可实体化默认值：淡色映射码点击后成为可编辑文字；内容清空后离开输入框会自动恢复该招式的默认内容，避免生成空文字招式块。',
+              '优化练习页左侧区域：移除顶部横向预览，新增遵循社区网页轴图标准的完整连段轴图，默认展示启动轴与首个循环轴并自动换行，同时直接复用本体当前的头像、裁剪、底图、图标、字体和描边设置。挑战模式的错位操作会标记到对应招式；软件位于后台时只暂存错误，返回窗口后再以红色底块显示。',
               '“悬浮”改名为“连段图置顶”，使用黄色背景、黑色文字和眼睛图标；移动按钮改为十字移动图标。修正连段图跨越屏幕上下半区、提示箭头自动换边时，底图边缘被窗口裁剪的问题。全局捕获未开启时，左侧按钮上方会持续显示轻微移动的黄色指示三角。',
               '设置新增全局自定义图标。可逐个上传或恢复图标，覆盖键鼠、手柄和外观中的同名图标，并随 .wwkeys.json 按键设置一起导入导出。',
               '录制新增切人保护：已经处于目标角色时，再次按该角色的切人键不会生成无效切人块；下一个可记录切人必须切向其他角色。',
               '录制页新增“文字轴识别”。支持按当前角色中文名或首字简称确定角色，以字母和中文动作词生成招式块，大写生成长按；支持启动轴、循环轴、变奏、延奏、处决、跳跃、闪避和前走，并按解放 3 秒、切人 0.5 秒、其他动作 1 秒生成默认时长。',
               '分割快捷键 C 在已有选择时会按鼠标所在时间直接切开所选块，没有选择时仍进入连续分割模式。多选组会保持到点击组外块；双击组内块可退出多选并只选择该块。',
               '时间轴复制内容改为普通编辑器与视频编辑器共享，修复切换界面或组件重新挂载后 Ctrl+C / Ctrl+V 偶发失效。',
-              '首次离开主界面的引导弹窗新增醒目防骗提示：软件完全免费，任何平台付费购买均应立即申请退款。'
+              '首次离开主界面的引导弹窗新增醒目防骗提示：软件完全免费，任何平台付费购买均应立即申请退款。',
+              '文字轴时间模式优先使用可读文字映射；外语界面使用英文轴名与动作词，并以 Intro / Outro 表示变奏和延奏。内容模式继续保留 j、s、J、S、f、w 等实际映射码。',
+              '练习页完整轴图不再读取最大合并数量，而是按可用宽度持续排版并自动换行；同时修正头像、图标、文字和底图宽度估算，减少纵向间距并避免内容超出底图。'
             ]
           },
           {
@@ -688,15 +695,22 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
         summary: 'Important changes in public releases and the current development build.',
         groups: [
           {
-            title: 'Current Development Build · 2026-07-31',
+            title: 'v0.5.0 · 2026-07-31',
             items: [
+              'The desktop app now attempts to enable Global Input Capture on launch by default; it can still be disabled manually from the sidebar. While editing the timeline, filling share metadata, using Video Tools, or adjusting Appearance, action capture is paused before it can reach recording or practice judgment, while timeline shortcuts such as Delete, C, V, Ctrl+C, and Ctrl+V remain available.',
+              'Text Axis hold syntax now accepts Hold + letter, so Hold e and uppercase E both create hold Skill while the original uppercase syntax remains compatible.',
+              'Connected the timeline and Text Axis Import. Opening the dialog converts the current timeline into editable text marked by action boundaries. If timing text is left unchanged, original action IDs, durations, lanes, warm-up, and recovery are preserved. A Time / Content switch edits timing syntax or display content on the same block boundaries.',
+              'Timeline and Appearance content editors now materialize defaults consistently. A muted mapping code becomes editable text when clicked, and leaving an empty field restores that action’s default content so empty-label action blocks cannot be created.',
+              'Redesigned the left side of Practice mode: removed the compact top preview and added a full combo-axis view based on the community web standard. It shows the startup axis and first loop axis with automatic wrapping while reusing the current avatars, crops, backgrounds, icons, font, and text outline. Challenge errors are attached to their action blocks; errors made while the app is in the background are held and shown with red backing only after the window regains focus.',
               'Renamed Always on Top to Keep Combo Overlay on Top with a yellow background, black text, and an eye icon. The Move control now uses a four-way move icon. Fixed block artwork being clipped when the overlay crosses between the upper and lower halves of the screen and the prompt arrow changes sides. While Global Input Capture is off, a gently animated yellow triangle points to its sidebar button.',
               'Added global custom icons in Settings. Icons can be uploaded or restored individually, override matching keyboard, gamepad, and appearance icons, and travel with .wwkeys.json input-settings import and export.',
               'Added recording switch protection. Pressing the switch key for the character already on field no longer creates an invalid switch block; the next recorded switch must target another character.',
               'Added Text Axis Import to Record mode. It matches current Chinese character names or first-character abbreviations, creates actions from letters and Chinese action terms, treats uppercase as hold input, recognizes startup and loop axes, Intro, Outro, Finisher, Jump, Dodge, and Move Forward, and assigns default durations of 3 seconds for Liberation, 0.5 seconds for switches, and 1 second for other actions.',
               'C now splits selected blocks at the current pointer time, while still entering continuous Split mode when nothing is selected. A multiselection remains active until an unselected block is clicked; double-clicking a member collapses the group to that block.',
               'Shared the timeline clipboard between the normal and video editors, fixing intermittent Ctrl+C / Ctrl+V failures after switching views or remounting the editor.',
-              'Added a prominent first-run anti-scam warning: the software is completely free, and users who paid on any platform should request a refund immediately.'
+              'Added a prominent first-run anti-scam warning: the software is completely free, and users who paid on any platform should request a refund immediately.',
+              'Text Axis Time mode now uses English axis/action terms in non-Chinese interfaces, including Intro / Outro, Jump, Dodge, Hold Jump, Hold Dodge, Finisher, and Move Forward. Content mode continues to expose the actual j, s, J, S, f, and w mapping codes.',
+              'The full Practice axis ignores the maximum merge count and keeps packing actions by available width before wrapping. Avatar, icon, text, and background width estimates were corrected, vertical spacing was reduced, and content no longer overflows its block artwork.'
             ]
           },
           {
@@ -947,15 +961,22 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
         summary: '公開版と現在の開発版における主な変更です。',
         groups: [
           {
-            title: '現在の開発版 · 2026-07-31',
+            title: 'v0.5.0 · 2026-07-31',
             items: [
+              'デスクトップ版は起動時にグローバル入力監視を既定で有効化するよう試みます。サイドバーから手動で無効化することもできます。タイムライン編集中、共有情報入力中、動画編集または外観調整中は、録画や練習判定へ届くアクション入力だけを停止し、Delete、C、V、Ctrl+C、Ctrl+Vなどタイムライン固有のショートカットは維持します。',
+              '文字軸の長押し記法に「長＋文字」を追加しました。「長e」と大文字Eはいずれもスキル長押しを生成し、従来の大文字記法も引き続き利用できます。',
+              'タイムラインと文字軸を接続しました。文字軸を開くと現在のタイムラインをアクション境界付きの編集可能な文字として表示します。時間テキストを変更しなければ、元のID、時間、レーン、予熱、後隙を保持します。「時間／内容」で同じブロック境界のまま時間記法と表示内容を編集できます。',
+              'タイムラインと外観の内容編集を統一しました。薄い既定マッピングコードをクリックすると編集可能な実体文字になり、空欄のまま離れると既定内容へ戻るため、空文字のアクションブロックは作成されません。',
+              '練習画面の左側を再構成しました。上部の小型プレビューを削除し、コミュニティWeb版の軸図基準に沿った全体軸図を追加しました。開始軸と最初のループ軸を自動改行で表示し、現在のアバター、切り抜き、背景、アイコン、フォント、文字縁取りをそのまま使用します。チャレンジのエラーは該当アクションに記録され、アプリがバックグラウンドの間は保留し、ウィンドウへ戻った時点で赤い背景として表示します。',
               '「常に最前面」を「連段図を最前面に固定」へ変更し、黄色背景、黒文字、目のアイコンを使用しました。移動は4方向アイコンになり、画面の上下をまたいで矢印の向きが変わる際にブロック背景が切れる問題を修正しました。グローバル入力監視が無効な間は、サイドバーのボタンを示す黄色の三角形が軽く動き続けます。',
               '設定に全体カスタムアイコンを追加しました。個別に画像をアップロード／復元でき、キーボード、ゲームパッド、外観の同名アイコンを上書きします。.wwkeys.json の入力設定にも含まれます。',
               '録画のキャラクター切替保護を追加しました。現在のキャラクターと同じ切替キーを押しても無効な切替ブロックを記録せず、次の切替は別キャラクターだけを対象にします。',
               '録画に「文字軸の読み取り」を追加しました。現在の中国語キャラクター名または先頭文字、英字と中国語アクション語、大文字の長押し、開始軸／ループ軸、変奏、終奏、フィニッシャー、ジャンプ、回避、前進を認識します。既定時間は共鳴解放3秒、切替0.5秒、その他1秒です。',
               '選択がある場合、Cはマウス位置で選択ブロックを直接分割します。未選択時は従来どおり連続分割モードです。複数選択はグループ外をクリックするまで維持され、グループ内をダブルクリックするとそのブロックだけを選択します。',
               '通常編集と動画編集でタイムラインのクリップボードを共有し、画面切替や再マウント後に Ctrl+C／Ctrl+V が失敗する問題を修正しました。',
-              '初回案内に、本ソフトは完全無料であり、有料購入した場合は直ちに返金申請するよう促す詐欺防止警告を追加しました。'
+              '初回案内に、本ソフトは完全無料であり、有料購入した場合は直ちに返金申請するよう促す詐欺防止警告を追加しました。',
+              '中国語以外の文字軸時間モードは英語の軸名とアクション語を使用し、変奏／終奏を Intro / Outro と表示します。内容モードでは j、s、J、S、f、w の実マッピングコードを維持します。',
+              '練習画面の全体軸は最大結合数を使用せず、利用可能な幅へ詰めてから自動改行します。アバター、アイコン、文字、背景幅の計算を修正し、縦間隔を縮め、内容が背景からはみ出す問題を解消しました。'
             ]
           },
           {
@@ -1192,15 +1213,22 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
         summary: '공개 버전과 현재 개발 빌드의 주요 변경 사항입니다.',
         groups: [
           {
-            title: '현재 개발 빌드 · 2026-07-31',
+            title: 'v0.5.0 · 2026-07-31',
             items: [
+              '데스크톱 앱은 시작할 때 전역 입력 감지를 기본으로 켜도록 시도합니다. 사이드바에서 수동으로 끌 수도 있습니다. 타임라인 편집, 공유 정보 입력, 영상 편집 또는 외형 조정 중에는 녹화와 연습 판정으로 들어가는 동작 입력만 일시 중지하며 Delete, C, V, Ctrl+C, Ctrl+V 같은 타임라인 단축키는 계속 사용할 수 있습니다.',
+              '문자 축 길게 누르기 문법에 “길게+문자”를 추가했습니다. “길게 e”와 대문자 E는 모두 스킬 길게 누르기를 만들며 기존 대문자 문법도 계속 호환됩니다.',
+              '타임라인과 문자 축을 연결했습니다. 문자 축을 열면 현재 타임라인이 동작 경계가 표시된 편집 가능한 문자로 나타납니다. 시간 문구를 바꾸지 않으면 기존 동작 ID, 시간, 레인, 준비와 후딜을 유지합니다. “시간 / 내용” 전환으로 같은 블록 경계에서 시간 문법과 표시 내용을 편집할 수 있습니다.',
+              '타임라인과 외형의 내용 편집 방식을 통일했습니다. 옅은 기본 매핑 코드를 누르면 편집 가능한 실제 문자로 바뀌고, 빈 상태로 포커스를 벗어나면 기본 내용이 복원되어 빈 문자 동작 블록이 만들어지지 않습니다.',
+              '연습 화면 왼쪽 영역을 다시 구성했습니다. 위쪽의 작은 미리보기를 제거하고 커뮤니티 웹 축 도표 기준을 따르는 전체 연계 축 도표를 추가했습니다. 시작 축과 첫 번째 순환 축을 자동 줄바꿈으로 표시하며 현재 아바타, 자르기, 배경, 아이콘, 글꼴과 문자 외곽선 설정을 그대로 사용합니다. 도전 모드 오류는 해당 동작에 기록되고, 앱이 백그라운드에 있을 때는 보류했다가 창으로 돌아온 뒤 빨간 배경으로 표시합니다.',
               '“항상 위”를 “콤보 오버레이 항상 위”로 바꾸고 노란 배경, 검은색 글자와 눈 아이콘을 적용했습니다. 이동은 4방향 아이콘으로 변경했으며 화면 상하를 넘을 때 안내 화살표 방향이 바뀌면서 블록 배경이 잘리던 문제를 수정했습니다. 전역 입력 감지가 꺼져 있으면 사이드바 버튼을 가리키는 노란 삼각형이 계속 가볍게 움직입니다.',
               '설정에 전역 사용자 아이콘을 추가했습니다. 아이콘별로 업로드하거나 복원할 수 있고 키보드, 게임패드와 외형의 같은 아이콘을 덮어씁니다. .wwkeys.json 입력 설정 가져오기/내보내기에도 포함됩니다.',
               '녹화 캐릭터 전환 보호를 추가했습니다. 현재 캐릭터와 같은 전환 키를 다시 눌러도 무효 전환 블록을 기록하지 않으며 다음 전환은 다른 캐릭터만 대상으로 합니다.',
               '녹화에 문자 축 인식을 추가했습니다. 현재 중국어 캐릭터 이름 또는 첫 글자 약칭, 영문자와 중국어 동작어, 대문자 길게 누르기, 시작 축/루프 축, 변주, 반주, 피니셔, 점프, 회피와 앞으로 이동을 인식합니다. 기본 시간은 공명 해방 3초, 전환 0.5초, 나머지 1초입니다.',
               '선택한 블록이 있으면 C가 현재 마우스 시간에서 바로 분할하고 선택이 없으면 연속 분할 모드로 들어갑니다. 다중 선택은 그룹 밖 블록을 누를 때까지 유지되며 그룹 안 블록을 두 번 누르면 해당 블록만 선택합니다.',
               '일반 편집기와 영상 편집기가 타임라인 클립보드를 공유하도록 해 화면 전환이나 재마운트 후 Ctrl+C/Ctrl+V가 간헐적으로 실패하던 문제를 수정했습니다.',
-              '첫 실행 안내에 이 소프트웨어는 완전히 무료이며 유료로 구매했다면 즉시 환불을 요청해야 한다는 사기 방지 경고를 추가했습니다.'
+              '첫 실행 안내에 이 소프트웨어는 완전히 무료이며 유료로 구매했다면 즉시 환불을 요청해야 한다는 사기 방지 경고를 추가했습니다.',
+              '중국어가 아닌 문자 축 시간 모드는 영어 축/동작 용어를 사용하고 변주/반주를 Intro / Outro로 표시합니다. 내용 모드는 j, s, J, S, f, w 실제 매핑 코드를 유지합니다.',
+              '전체 연습 축은 최대 병합 수를 무시하고 사용 가능한 폭에 맞춰 배치한 뒤 자동 줄바꿈합니다. 아바타, 아이콘, 글자와 배경 폭 계산을 수정하고 세로 간격을 줄여 내용이 배경 밖으로 넘치지 않게 했습니다.'
             ]
           },
           {

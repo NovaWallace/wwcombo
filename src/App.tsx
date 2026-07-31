@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState  } from 'react';
-import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactNode  } from 'react';
+import type { CSSProperties, FocusEvent as ReactFocusEvent, InputHTMLAttributes, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactNode  } from 'react';
 import { createPortal  } from 'react-dom';
 import { Activity, ArrowLeft, BookOpen, Bug, Check, ChevronLeft, ChevronRight, Download, Eye, EyeOff, FileText, FileVideo, FlaskConical, FolderOpen, Gamepad2, GraduationCap, GripVertical, History, Keyboard, Layers, Moon, Music2, Move, Palette, Pause, Pencil, Plus, Play, Repeat2, RotateCcw, Save, Scissors, Settings, Share2, Square, Stamp, Sun, Target, Trash2, Upload, X  } from 'lucide-react';
 import {
@@ -64,8 +64,10 @@ import { ENGLISH_MOVE_LABELS, localizedDefaultMoveLabel, localizedMovePrompt  } 
 import { NumericDraftInput  } from './NumericDraftInput';
 import { DEFAULT_SHORTCUT_SETTINGS, SHORTCUT_DEFINITIONS, TIMELINE_PLACEMENT_SHORTCUT_MOVES, normalizeShortcutSettings, shortcutChordFromKeyboardEvent, shortcutDisplayLabel, shortcutMatches, shortcutMatchesCode  } from './shortcutSettings';
 import type { ShortcutAction, ShortcutSettings  } from './shortcutSettings';
-import { parseTextAxis, TEXT_AXIS_EXAMPLE  } from './textAxisParser';
+import { parseTextAxis, textAxisExampleForLanguage  } from './textAxisParser';
 import type { TextAxisCharacter, TextAxisParseResult  } from './textAxisParser';
+import { serializeTextAxis, textAxisResultFromChart  } from './textAxisModel';
+import type { TextAxisDisplaySegment  } from './textAxisModel';
 import './styles.css';
 
 type Page = 'home' | 'record' | 'practice' | 'appearance' | 'experiment' | 'settings';
@@ -1342,6 +1344,7 @@ export default function App() {
   const [globalInputStatus, setGlobalInputStatus] = useState(() => localizedMessage('窗口内监听', 'In-window input'));
   const [practicePreset, setPracticePreset] = useState<PracticePreset>('simple');
   const [practice, setPractice] = useState<PracticeSnapshot>(createEmptyPractice);
+  const [practiceAxisErrorStepIds, setPracticeAxisErrorStepIds] = useState<string[]>([]);
   const [axisGateEnabled, setAxisGateEnabled] = useState(saved.axisGateEnabled);
   const [resetPracticeProgressOnStop, setResetPracticeProgressOnStop] = useState(saved.resetPracticeProgressOnStop);
   const [exportDirectory, setExportDirectory] = useState(saved.exportDirectory);
@@ -1389,12 +1392,18 @@ export default function App() {
   const shareDialogOpenRef = useRef(Boolean(shareDraft));
   const resetPracticeProgressOnStopRef = useRef(resetPracticeProgressOnStop);
   const practiceInputSuppressedUntilRef = useRef(0);
+  const trainerCaptureSuspendSourcesRef = useRef(new Set<'timeline-pointer' | 'timeline-focus'>());
+  const trainerCaptureContextRef = useRef({ page, shareDialogOpen: Boolean(shareDraft), textAxisImportOpen, quickInputOpen, videoWorkbenchOpen  });
+  const globalInputAutoStartAttemptedRef = useRef(false);
+  const pendingPracticeAxisErrorStepIdsRef = useRef(new Set<string>());
+  const practiceAxisWindowFocusedRef = useRef(typeof document === 'undefined' ? true : document.visibilityState === 'visible' && document.hasFocus());
   const recentInputTransitionsRef = useRef(new Map<string, { source: NonNullable<TrainerLikeInputEvent['source']>; receivedAt: number  }>());
   const toastTimerRef = useRef<number | null>(null);
   const dismissedUpdateVersionRef = useRef<string | null>(null);
   const chartRef = useRef<ComboChart | null>(chart);
   const comboImageStyleRef = useRef(comboImageStyle);
   shareDialogOpenRef.current = Boolean(shareDraft);
+  trainerCaptureContextRef.current = { page, shareDialogOpen: Boolean(shareDraft), textAxisImportOpen, quickInputOpen, videoWorkbenchOpen  };
   resetPracticeProgressOnStopRef.current = resetPracticeProgressOnStop;
 
   const practiceChart = useMemo(() => sortChartForPractice(chart), [chart]);
@@ -1481,6 +1490,60 @@ export default function App() {
     practiceRef.current = new PracticeSession(practiceChart, moves, runtimeBindings, practiceSettings);
     setPractice(createEmptyPractice());
    }, [practiceChart, moves, runtimeBindings, practiceSettings]);
+
+  useEffect(() => {
+    const flushPendingErrors = () => {
+      const pending = [...pendingPracticeAxisErrorStepIdsRef.current];
+      if (!pending.length) return;
+      pendingPracticeAxisErrorStepIdsRef.current.clear();
+      setPracticeAxisErrorStepIds((current) => [...new Set([...current, ...pending])]);
+     };
+    const handleWindowFocus = () => {
+      practiceAxisWindowFocusedRef.current = true;
+      flushPendingErrors();
+     };
+    const markWindowBackgrounded = () => {
+      practiceAxisWindowFocusedRef.current = false;
+     };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== 'visible' || !document.hasFocus()) {
+        markWindowBackgrounded();
+        return;
+       }
+      practiceAxisWindowFocusedRef.current = true;
+      flushPendingErrors();
+     };
+    window.addEventListener('focus', handleWindowFocus);
+    window.addEventListener('blur', markWindowBackgrounded);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      window.removeEventListener('focus', handleWindowFocus);
+      window.removeEventListener('blur', markWindowBackgrounded);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+     };
+   }, []);
+
+  useEffect(() => {
+    pendingPracticeAxisErrorStepIdsRef.current.clear();
+    setPracticeAxisErrorStepIds([]);
+   }, [practiceChart?.id, practicePreset]);
+
+  useEffect(() => {
+    if (practicePreset !== 'strict') return;
+    if (!practice.errorStepIds.length) {
+      if (practice.status === 'armed' || practice.status === 'running') {
+        pendingPracticeAxisErrorStepIdsRef.current.clear();
+        setPracticeAxisErrorStepIds([]);
+       }
+      return;
+     }
+    const visibleIds = new Set(practiceAxisErrorStepIds);
+    const newIds = practice.errorStepIds.filter((stepId) => !visibleIds.has(stepId) && !pendingPracticeAxisErrorStepIdsRef.current.has(stepId));
+    if (!newIds.length) return;
+    const focused = practiceAxisWindowFocusedRef.current && document.visibilityState === 'visible' && document.hasFocus();
+    if (focused) setPracticeAxisErrorStepIds((current) => [...new Set([...current, ...newIds])]);
+    else newIds.forEach((stepId) => pendingPracticeAxisErrorStepIdsRef.current.add(stepId));
+   }, [practice.errorStepIds, practice.status, practicePreset, practiceAxisErrorStepIds]);
 
   useEffect(() => {
     if (page === 'practice' && shareDraft) clearBasicAttackHoldState();
@@ -1723,6 +1786,10 @@ export default function App() {
       if (event.type === 'keydown' && event.repeat) return;
       if (page === 'practice' && shareDialogOpenRef.current) return;
       const target = event.target as HTMLElement | null;
+      if (target?.closest('[data-trainer-capture-suspend="true"]')) {
+        clearBasicAttackHoldState();
+        return;
+       }
       if (page === 'practice' && target?.closest('[data-practice-input-block="true"]')) {
         practiceInputSuppressedUntilRef.current = performance.now() + 250;
         return;
@@ -1746,6 +1813,10 @@ export default function App() {
     };
     const handleMouse = (event: MouseEvent) => {
       const target = event.target as HTMLElement | null;
+      if (target?.closest('[data-trainer-capture-suspend="true"]')) {
+        clearBasicAttackHoldState();
+        return;
+       }
       if (page === 'practice' && isPracticeUiControl(target)) {
         practiceInputSuppressedUntilRef.current = performance.now() + 250;
         clearBasicAttackHoldState();
@@ -1832,6 +1903,10 @@ export default function App() {
     if (previousTransition && previousTransition.source !== source && receivedAt - previousTransition.receivedAt < 50) return;
     recentInputTransitionsRef.current.set(transitionKey, { source, receivedAt  });
     const normalizedEvent = { ...event, code: normalizedCode, id: crypto.randomUUID() };
+    if (isTrainerActionCaptureSuspended()) {
+      if (source === 'gamepad' && isPressEvent(event) && trainerCaptureContextRef.current.page === 'record') setTimelinePlacementInputSignal(normalizedEvent);
+      return;
+     }
     setKeyMappingInputSignal(normalizedEvent);
     if (isPressEvent(event)) setKeyMappingPressedCodes((current) => current.includes(normalizedCode) ? current : [...current, normalizedCode]);
     if (isReleaseEvent(event)) setKeyMappingPressedCodes((current) => current.filter((item) => item !== normalizedCode && !item.split('+').includes(normalizedCode)));
@@ -1940,7 +2015,7 @@ export default function App() {
     return () => window.clearInterval(timer);
    }, [practice.status]);
 
-  async function startGlobalInput() {
+  async function startGlobalInput(automatic = false) {
     if (!desktop) {
       setGlobalInputStatus(localizedMessage('网页模式：仅窗口聚焦可监听', 'Web mode: input is available while this window is focused'));
       setGlobalInputEnabled(false);
@@ -1952,6 +2027,7 @@ export default function App() {
       const enabled = Boolean(result.ok && status?.started);
       setGlobalInputEnabled(enabled);
       setGlobalInputStatus(enabled ? localizedMessage('全局监听已开启', 'Global input enabled') : localizedMessage(`全局监听不可用：${result.reason ?? status?.status ?? '未知原因' }`, `Global input unavailable: ${result.reason ?? status?.status ?? 'unknown reason' }`));
+      if (automatic && enabled) setDebugMessage(localizedMessage('全局捕获已默认开启；编辑时间轴、填写分享信息和调整外观时会自动暂停招式捕获。', 'Global Input Capture is enabled by default. Action capture pauses automatically while editing the timeline, share details, or appearance.'));
      } catch (error) {
       setGlobalInputEnabled(false);
       setGlobalInputStatus(localizedMessage(`全局监听启动失败：${error instanceof Error ? error.message : String(error) }`, `Global input failed to start: ${error instanceof Error ? error.message : String(error) }`));
@@ -1962,6 +2038,40 @@ export default function App() {
     setGlobalInputEnabled(false);
     setGlobalInputStatus(localizedMessage('全局监听已关闭，保留窗口内监听', 'Global input disabled; in-window input remains active'));
     await desktop?.stopGlobalInput();
+   }
+
+  useEffect(() => {
+    if (globalInputAutoStartAttemptedRef.current) return;
+    globalInputAutoStartAttemptedRef.current = true;
+    void startGlobalInput(true);
+   }, [desktop]);
+
+  useEffect(() => {
+    if (page !== 'record') trainerCaptureSuspendSourcesRef.current.clear();
+   }, [page]);
+
+  function isTrainerActionCaptureSuspended(): boolean {
+    const context = trainerCaptureContextRef.current;
+    const activeElement = document.activeElement as HTMLElement | null;
+    const editorDomActive = Boolean(activeElement?.closest('[data-trainer-capture-suspend="true"]') || document.querySelector('[data-trainer-capture-suspend="true"]:hover'));
+    return context.page === 'appearance'
+      || context.shareDialogOpen
+      || context.textAxisImportOpen
+      || context.quickInputOpen
+      || context.videoWorkbenchOpen
+      || editorDomActive
+      || trainerCaptureSuspendSourcesRef.current.size > 0;
+   }
+
+  function setTimelineCaptureSuspended(source: 'timeline-pointer' | 'timeline-focus', suspended: boolean) {
+    if (suspended) trainerCaptureSuspendSourcesRef.current.add(source);
+    else trainerCaptureSuspendSourcesRef.current.delete(source);
+    if (suspended) clearBasicAttackHoldState();
+   }
+
+  function handleTimelineCaptureBlur(event: ReactFocusEvent<HTMLElement>) {
+    if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+    setTimelineCaptureSuspended('timeline-focus', false);
    }
 
   function overwriteChartWithRecording() {
@@ -2539,7 +2649,7 @@ export default function App() {
               <div className={`debug-status ${debugSnapshot?.units.length ? 'on' : '' }` }>{highlightMessageTerm(text(debugMessage.chinese, debugMessage.english), text('全局捕获', 'Global Input Capture')) }</div>
             </div>
 
-            <div className="panel combo-editor-panel combo-editor-panel-v2">
+            <div className="panel combo-editor-panel combo-editor-panel-v2" data-trainer-capture-suspend="true" onPointerEnter={() => setTimelineCaptureSuspended('timeline-pointer', true) } onPointerLeave={() => setTimelineCaptureSuspended('timeline-pointer', false) } onFocusCapture={() => setTimelineCaptureSuspended('timeline-focus', true) } onBlurCapture={handleTimelineCaptureBlur }>
               <div className="panel-title combo-editor-title-v2">
                 <div><h2>{text('连段谱编辑', 'Combo Chart Editor') }</h2><p>{text('时间轴用于调整操作时机；内容模式用于编辑连段图显示文字。', 'Use the timeline to adjust timing and Content mode to edit labels.') }</p></div>
                 <div className="editor-title-actions editor-title-actions-v2">
@@ -2558,12 +2668,13 @@ export default function App() {
 
         {page === 'practice' && (
           <section className="practice-layout">
-            <div className="panel practice-main-panel">
-              <div className="panel-title practice-panel-title"><div><h2>{text('练习模式', 'Practice Mode') }</h2><p>{text('F 开始，Esc 结束；演示按时间展示流程，推进按正确输入前进。', 'Press F to start and Esc to stop. Demo follows time; Advance progresses on correct input.') }</p></div><div className="practice-title-actions"><PracticeRoleOrderPicker order={practiceRoleOrder  } style={comboImageStyle } disabled={snapshot.isRecording || practice.status === 'armed' || practice.status === 'running' } onReorder={reorderPracticeRoles } /><div className="segmented"><button className={practicePreset === 'simple' ? 'active' : '' } onClick={() => setPracticePreset('simple') }>{text('演示', 'Demo') }</button><button className={practicePreset === 'lenient' ? 'active' : '' } onClick={() => setPracticePreset('lenient') }>{text('推进', 'Advance') }</button><button className={practicePreset === 'strict' ? 'active' : '' } onClick={() => setPracticePreset('strict') }>{text('挑战', 'Challenge') }</button></div></div></div>
-              {practiceChart ? <ComboImagePreview chart={practiceChart } practice={practice  } style={activeRenderComboImageStyle } layout="horizontal" bounds={overlaySettings } mergedHighlightMode={practicePreset === 'lenient' ? 'input' : 'time' } /> : <EmptyState text={text('暂无连段谱。', 'No combo chart available.') } /> }
-              <div className="record-actions"><button className="primary" onClick={startPractice } disabled={practice.status === 'running' || practice.status === 'armed' }><Play size={18 } />{text('开始 F', 'Start F') }</button><button onClick={stopPractice }><Square size={18 } />{text('结束 Esc', 'Stop Esc') }</button><button className="overlay-topmost-button" onClick={toggleOverlay }><Eye size={17 } />{text('连段图置顶', 'Keep Combo Overlay on Top') }</button><label className="checkline axis-gate-toggle"><input type="checkbox" checked={axisGateEnabled } onChange={(event) => setAxisGateEnabled(event.target.checked) } />{text('轴首招启动', 'Start at First Action of Axis') }</label><label className="checkline"><input type="checkbox" checked={resetPracticeProgressOnStop } onChange={(event) => setResetPracticeProgressOnStop(event.target.checked) } />{text('复位', 'Reset') }</label></div>
-              <div className="practice-feedback-row">{practice.feedback[0] ? <div className={`feedback ${practice.feedback[0].level }` }>{practice.feedback[0].message }</div> : <div className="feedback info">{text('等待输入提示', 'Waiting for input') }</div> }</div>
-              {practiceChart && practice.errorStepIds.length > 0 && <PracticeErrorSummary chart={practiceChart } practice={practice } /> }
+            <div className="practice-left-column">
+              <div className="panel practice-main-panel">
+                <div className="panel-title practice-panel-title"><div><h2>{text('练习模式', 'Practice Mode') }</h2><p>{text('F 开始，Esc 结束；演示按时间展示流程，推进按正确输入前进。', 'Press F to start and Esc to stop. Demo follows time; Advance progresses on correct input.') }</p></div><div className="practice-title-actions"><PracticeRoleOrderPicker order={practiceRoleOrder  } style={comboImageStyle } disabled={snapshot.isRecording || practice.status === 'armed' || practice.status === 'running' } onReorder={reorderPracticeRoles } /><div className="segmented"><button className={practicePreset === 'simple' ? 'active' : '' } onClick={() => setPracticePreset('simple') }>{text('演示', 'Demo') }</button><button className={practicePreset === 'lenient' ? 'active' : '' } onClick={() => setPracticePreset('lenient') }>{text('推进', 'Advance') }</button><button className={practicePreset === 'strict' ? 'active' : '' } onClick={() => setPracticePreset('strict') }>{text('挑战', 'Challenge') }</button></div></div></div>
+                <div className="record-actions"><button className="primary" onClick={startPractice } disabled={practice.status === 'running' || practice.status === 'armed' }><Play size={18 } />{text('开始 F', 'Start F') }</button><button onClick={stopPractice }><Square size={18 } />{text('结束 Esc', 'Stop Esc') }</button><button className="overlay-topmost-button" onClick={toggleOverlay }><Eye size={17 } />{text('连段图置顶', 'Keep Combo Overlay on Top') }</button><label className="checkline axis-gate-toggle"><input type="checkbox" checked={axisGateEnabled } onChange={(event) => setAxisGateEnabled(event.target.checked) } />{text('轴首招启动', 'Start at First Action of Axis') }</label><label className="checkline"><input type="checkbox" checked={resetPracticeProgressOnStop } onChange={(event) => setResetPracticeProgressOnStop(event.target.checked) } />{text('复位', 'Reset') }</label></div>
+                <div className="practice-feedback-row">{practice.feedback[0] ? <div className={`feedback ${practice.feedback[0].level }` }>{practice.feedback[0].message }</div> : <div className="feedback info">{text('等待输入提示', 'Waiting for input') }</div> }</div>
+              </div>
+              <PracticeAxisPreview chart={practiceChart } practice={practice } style={activeRenderComboImageStyle } errorStepIds={practicePreset === 'strict' ? practiceAxisErrorStepIds : [] } />
             </div>
             <LibraryPanel chart={chart } library={library } style={comboImageStyle } avatarPresets={defaultAvatars } onSelect={(id) => selectComboChart(library.find((item) => item.id === id) ?? chart) } onEdit={(id) => { const item = library.find((entry) => entry.id === id); if (item) { selectComboChart(item); setPage('record'); setEditorTab('timeline');  }  } } onDelete={deleteLibraryChart } onShare={openShareDialog } onImport={() => importInputRef.current?.click() } />
             <input ref={importInputRef } className="file-input" type="file" accept="application/json,.json" onChange={(event) => void importCharts(event.target.files?.[0] ?? null) } />
@@ -2614,7 +2725,7 @@ export default function App() {
       {quickInputOpen && practiceChart && <QuickInputDialog chart={practiceChart  } style={comboImageStyle } initialValues={quickInputMemory } startStepId={quickInputStartStepId } onApply={applyQuickInput } onClose={() => setQuickInputOpen(false) } /> }
       {shareDraft && chart && <CommunityShareDialog draft={shareDraft } onChange={setShareDraft } onExport={() => void exportSharedChart(shareDraft) } onClose={() => setShareDraft(null) } /> }
       {videoWorkbenchMounted && chart && <VideoAxisWorkbench open={videoWorkbenchOpen } desktop={desktop } chart={chart } comboImageStyle={activeRenderComboImageStyle } timelineContentLabels={comboImageStyle.contentLabels } overlaySettings={overlaySettings } rhythmUiSettings={rhythmUiSettings } shortcutSettings={shortcutSettings } exportDirectory={exportDirectory } ensureExportDirectory={ensureExportDirectory } timelineEditor={<TimelineEditor chart={chart } moves={moves } bindings={activeBindings } shortcutSettings={shortcutSettings } inputSignal={timelinePlacementInputSignal } comboImageStyle={comboImageStyle } clipboardControl={{ value: timelineClipboard, onChange: setTimelineClipboard  }} mode={editorTab } onModeChange={setEditorTab } zoom={editorZoom } onZoomChange={setEditorZoom } onUpdate={updateStep } onInsert={insertSteps } onDelete={deleteSteps } onPeriodsChange={updatePeriods } onContentChange={updateComboImageStyle } onQuickInput={(stepId) => { setQuickInputStartStepId(stepId); setQuickInputOpen(true);  } } onSave={saveCurrentChart } historyControl={{ canUndo: timelineUndoStack.length > 0, canRedo: timelineRedoStack.length > 0, onCaptureHistory: captureTimelineHistory, onUndo: undoTimeline, onRedo: redoTimeline  }} /> } onApplyChart={applyVideoWorkbenchChart } onApplyContentLabels={(contentLabels) => setComboImageStyle((current) => normalizeComboImageStyle({ ...current, contentLabels })) } onClose={() => setVideoWorkbenchOpen(false) } onSave={saveCurrentChart } getDisplaySize={getDisplaySize } /> }
-      {textAxisImportOpen && <TextAxisImportDialog moves={moves } characters={CHARACTER_SLOTS.map((slot) => ({ slot, names: [comboImageStyle.roleStyles[slot].name, localizeCharacterName(comboImageStyle.roleStyles[slot].name, 'zh-CN')]  })) } title={chartTitle || chart?.title || text('文字轴', 'Text Axis') } onApply={applyTextAxisImport } onClose={() => setTextAxisImportOpen(false) } /> }
+      {textAxisImportOpen && <TextAxisImportDialog moves={moves } characters={CHARACTER_SLOTS.map((slot) => ({ slot, names: [localizeDefaultCharacterName(comboImageStyle.roleStyles[slot].name, slot, language), comboImageStyle.roleStyles[slot].name, localizeCharacterName(comboImageStyle.roleStyles[slot].name, 'zh-CN')]  })) } chart={chart } contentLabels={comboImageStyle.contentLabels } startingCharacterSlot={startingCharacterSlot } title={chartTitle || chart?.title || text('文字轴', 'Text Axis') } onApply={applyTextAxisImport } onClose={() => setTextAxisImportOpen(false) } /> }
       {firstRunHelpPromptOpen && <div className="first-run-help-backdrop" role="presentation"><div className="first-run-help-dialog" role="alertdialog" aria-modal="true" aria-labelledby="first-run-help-title"><BookOpen size={28 } /><h3 id="first-run-help-title">{helpContent.firstRunTitle}</h3><p>{helpContent.firstRunDescription}</p><strong className="first-run-free-warning">{helpContent.firstRunFreeWarning}</strong><div><button type="button" onClick={() => setFirstRunHelpPromptOpen(false) }>{helpContent.continueWithoutHelp}</button><button className="primary" type="button" onClick={() => { setFirstRunHelpPromptOpen(false); setSettingsView('help'); setHelpTab('learner'); setPage('settings');  } }>{helpContent.openHelp}</button></div></div></div> }
     </div>
   );
@@ -3162,6 +3273,131 @@ function promptTextForStep(step: ComboStep | null | undefined, language: AppLang
   return defaultPromptTextForStep(step, language, style);
  }
 
+type PracticeAxisPeriod = Pick<ComboPeriod, 'id' | 'kind' | 'label' | 'startMs' | 'endMs' | 'loopIndex'>;
+
+function practiceAxisPeriods(chart: ComboChart): { periods: PracticeAxisPeriod[]; loopCount: number  } {
+  const periods = (chart.periods ?? [])
+    .filter((period): period is ComboPeriod & { kind: 'startup_axis' | 'loop_axis'  } => period.kind === 'startup_axis' || period.kind === 'loop_axis')
+    .sort((left, right) => left.startMs - right.startMs || (left.loopIndex ?? 0) - (right.loopIndex ?? 0) || left.id.localeCompare(right.id));
+  const startup = periods.find((period) => period.kind === 'startup_axis');
+  const loops = periods.filter((period) => period.kind === 'loop_axis');
+  const visible = [startup, loops[0]].filter((period): period is ComboPeriod & { kind: 'startup_axis' | 'loop_axis'  } => Boolean(period));
+  if (visible.length) return { periods: visible, loopCount: loops.length  };
+  const endMs = Math.max(1, ...chart.steps.map((step) => Math.max(step.startMin, step.startMax) + Math.max(step.durationMin, step.durationMax) + (step.recoveryMs ?? 0)));
+  return { periods: [{ id: 'practice-full-axis', kind: 'startup_axis', label: '', startMs: 0, endMs  }], loopCount: 0  };
+ }
+
+function practiceAxisPeriodLabel(period: PracticeAxisPeriod, loopCount: number, text: (chinese: string, english: string) => string): string {
+  const source = period.label.trim();
+  if (period.kind === 'startup_axis') {
+    if (source && !/^启动轴$|^startup axis$/i.test(source)) return source;
+    return text('启动轴', 'Startup Axis');
+   }
+  if (source && !/^循环轴\s*\d*$|^loop axis\s*\d*$/i.test(source)) return source;
+  const suffix = loopCount > 1 ? String(period.loopIndex ?? 1) : '';
+  return suffix ? text(`循环轴 ${suffix }`, `Loop Axis ${suffix }`) : text('循环轴', 'Loop Axis');
+ }
+
+function practiceAxisTimeLabel(milliseconds: number): string {
+  const seconds = Math.max(0, milliseconds) / 1000;
+  return Number.isInteger(seconds) ? String(seconds) : seconds.toFixed(seconds < 10 ? 2 : 1).replace(/0+$/, '').replace(/\.$/, '');
+ }
+
+function PracticeAxisItemContent({ item, mappings, activeStepId, errorStepIds, textStyle  }: { item: ReturnType<typeof chartToComboImageItems>[number]; mappings: ComboImageStyle['iconMappings']; activeStepId?: string; errorStepIds: ReadonlySet<string>; textStyle?: CSSProperties  }) {
+  if (item.mergedParts?.length) {
+    return <strong className="combo-preview-content practice-axis-content" style={textStyle }>{item.mergedParts.map((part) => {
+      const active = part.stepId === activeStepId;
+      const error = errorStepIds.has(part.stepId);
+      return <span key={part.stepId } className={`combo-merged-part ${active ? 'active' : '' } ${error ? 'error' : '' }` }>{comboTextParts(part.displayText, Boolean(part.iconId), mappings).map((piece, index) => piece.kind === 'icon' ? <span key={`${piece.iconId }-${index }` } className="combo-inline-icon-mark" style={{ '--icon-scale': piece.iconScale  } as CSSProperties }><img className="combo-inline-icon" src={piece.src } alt={piece.label } title={piece.label } /></span> : <span key={`text-${index }` }>{piece.value }</span>) }</span>;
+     }) }</strong>;
+  }
+  const parts = comboTextParts(item.displayText, Boolean(item.iconId), mappings);
+  const active = activeStepId === item.step.id;
+  const error = errorStepIds.has(item.step.id);
+  return <strong className="combo-preview-content practice-axis-content" style={textStyle }><span className={`combo-merged-part ${active ? 'active' : '' } ${error ? 'error' : '' }` }>{parts.map((piece, index) => piece.kind === 'icon' ? <span key={`${piece.iconId }-${index }` } className="combo-inline-icon-mark" style={{ '--icon-scale': piece.iconScale  } as CSSProperties }><img className="combo-inline-icon" src={piece.src } alt={piece.label } title={piece.label } /></span> : <span key={`text-${index }` }>{piece.value }</span>) }</span></strong>;
+ }
+
+function PracticeAxisPreview({ chart, practice, style, errorStepIds  }: { chart: ComboChart | null; practice: PracticeSnapshot; style: ComboImageStyle; errorStepIds: string[]  }) {
+  const { text  } = useI18n();
+  const previewRef = useRef<HTMLDivElement | null>(null);
+  const [previewWidth, setPreviewWidth] = useState(900);
+  const errorIds = useMemo(() => new Set(errorStepIds), [errorStepIds]);
+  const axisStyle = useMemo(() => ({
+    ...style,
+    mergeSameRoleSteps: true,
+    mergeSameRoleLimit: Number.MAX_SAFE_INTEGER
+   }), [style]);
+  const activeStepId = chart && (practice.status === 'armed' || practice.status === 'running')
+    ? chart.steps[clamp(practice.currentStepIndex ?? 0, 0, Math.max(0, chart.steps.length - 1))]?.id
+    : undefined;
+
+  useLayoutEffect(() => {
+    const node = previewRef.current;
+    if (!node) return;
+    const update = () => setPreviewWidth(Math.max(240, Math.round(node.clientWidth)));
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(node);
+    return () => observer.disconnect();
+   }, []);
+
+  const axisSections = useMemo(() => {
+    if (!chart) return [];
+    const { periods, loopCount  } = practiceAxisPeriods(chart);
+    return periods.map((period) => {
+      const steps = chart.steps
+        .filter((step) => step.startMin >= period.startMs && step.startMin < period.endMs)
+        .sort((left, right) => left.startMin - right.startMin || left.startMax - right.startMax || left.id.localeCompare(right.id));
+      const periodChart: ComboChart = { ...chart, steps, periods: [period as ComboPeriod]  };
+      const items = chartToComboImageItems(periodChart, axisStyle, 'vertical', { width: Math.max(240, previewWidth - 70), height: 10000  });
+      return { period, loopCount, items  };
+     });
+   }, [axisStyle, chart, previewWidth]);
+
+  return (
+    <section className="panel practice-axis-panel">
+      <div className="practice-axis-panel-head"><div><h3>{text('连段轴图', 'Combo Axis') }</h3><p>{text('按启动轴与首个循环轴自动换行展示', 'Startup and first loop axes, wrapped automatically') }</p></div>{errorIds.size > 0 && <span className="practice-axis-error-count">{text(`${errorIds.size } 处错误`, `${errorIds.size } errors`) }</span> }</div>
+      <div ref={previewRef } className="practice-axis-preview">
+        {!chart && <EmptyState text={text('暂无连段谱。', 'No combo chart available.') } /> }
+        {chart && axisSections.map(({ period, loopCount, items  }) => (
+          <section key={period.id } className="practice-axis-group" style={{ '--axis-color': period.kind === 'startup_axis' ? '#d7ad52' : '#44c8c6'  } as CSSProperties }>
+            <div className="practice-axis-group-head"><strong>{practiceAxisPeriodLabel(period, loopCount, text) }</strong><span>{practiceAxisTimeLabel(period.startMs) }s - {practiceAxisTimeLabel(period.endMs) }s</span></div>
+            <div className="practice-axis-flow">
+              {items.length ? items.map((item) => {
+                const roleStyle = axisStyle.roleStyles[item.characterSlot];
+                const chipSize = comboImageItemSizeForDisplayItem(axisStyle, item, roleStyle);
+                const mappings = effectiveIconMappings(axisStyle, item.characterSlot);
+                const blockColor = axisStyle.blockMode === 'capsule' ? roleStyle.color : 'transparent';
+                const blockImageStyle = capsuleImageStyle(axisStyle, chipSize.width, chipSize.height, roleStyle);
+                const avatarSize = roleStyle.avatarSize ?? axisStyle.avatarSize;
+                const avatarLeft = roleStyle.avatarOffsetX ?? axisStyle.avatarOffsetX;
+                const avatarOffsetY = roleStyle.avatarOffsetY ?? axisStyle.avatarOffsetY;
+                const avatarOverflowLeft = item.showAvatar ? Math.max(0, -avatarLeft) : 0;
+                const avatarOverflowRight = item.showAvatar ? Math.max(0, avatarLeft + avatarSize - chipSize.width) : 0;
+                const avatarOverflowTop = item.showAvatar ? Math.max(0, (avatarSize - chipSize.height) / 2 - avatarOffsetY) : 0;
+                const avatarOverflowBottom = item.showAvatar ? Math.max(0, (avatarSize - chipSize.height) / 2 + avatarOffsetY) : 0;
+                const blockImageProperties = blockImageStyle as CSSProperties & Record<string, string | number | undefined>;
+                const edgeOverflowTop = Number.parseFloat(String(blockImageProperties['--capsule-bg-edge-top-height'] ?? 0)) || 0;
+                const edgeOverflowBottom = Number.parseFloat(String(blockImageProperties['--capsule-bg-edge-bottom-height'] ?? 0)) || 0;
+                const verticalReserveTop = Math.max(avatarOverflowTop, edgeOverflowTop) * 0.5;
+                const verticalReserveBottom = Math.max(avatarOverflowBottom, edgeOverflowBottom) * 0.5;
+                const itemStepIds = item.mergedStepIds?.length ? item.mergedStepIds : [item.step.id];
+                const active = Boolean(activeStepId && itemStepIds.includes(activeStepId));
+                const error = itemStepIds.some((stepId) => errorIds.has(stepId));
+                return <div key={item.step.id } className="practice-axis-item"><div className={`combo-preview-chip practice-axis-action ${axisStyle.blockMode === 'image' ? 'image-block' : '' } ${item.showAvatar ? 'with-avatar' : '' } ${active ? 'active' : '' } ${error ? 'error' : '' }` } title={`${item.displayText } · ${practiceAxisTimeLabel(item.step.startMin) }s` } style={{ width: chipSize.width, maxWidth: '100%', height: chipSize.height, marginLeft: avatarOverflowLeft, marginRight: avatarOverflowRight, marginTop: verticalReserveTop, marginBottom: verticalReserveBottom, color: axisStyle.textColor, fontSize: axisStyle.fontSize, fontFamily: axisStyle.fontFamily, backgroundColor: blockColor, borderRadius: axisStyle.blockMode === 'capsule' && axisStyle.capsuleShape === 'capsule' ? 999 : 4, '--move-color': roleStyle.color, ...blockImageStyle  } as CSSProperties }>
+                  {axisStyle.blockMode === 'image' && <CapsuleBlockBackground /> }
+                  {item.showAvatar && <span className="avatar-slot preview-avatar" style={{ width: avatarSize, height: avatarSize, left: avatarLeft, transform: `translateY(calc(-50% + ${avatarOffsetY }px))`, ...imageCropBackground(roleStyle.avatar, roleStyle.avatarCrop)  } }>{roleStyle.avatar ? null : item.characterSlot }</span> }
+                  <PracticeAxisItemContent item={item } mappings={mappings } activeStepId={activeStepId } errorStepIds={errorIds } textStyle={comboTextStrokeStyle(axisStyle) } />
+                </div><ChevronRight className="practice-axis-arrow" size={18 } aria-hidden="true" /></div>;
+               }) : <span className="practice-axis-empty">{text('该轴暂无操作', 'No actions in this axis') }</span> }
+            </div>
+          </section>
+         )) }
+      </div>
+    </section>
+  );
+ }
+
 function ComboImagePreview({ chart, practice, style, layout, bounds, mergedHighlightMode = 'time', manualHorizontalScroll = false  }: { chart: ComboChart | null; practice: PracticeSnapshot; style: ComboImageStyle; layout: ComboLayout; bounds: OverlaySettings; mergedHighlightMode?: 'time' | 'input'; manualHorizontalScroll?: boolean  }) {
   const { language, text  } = useI18n();
   const previewRef = useRef<HTMLDivElement | null>(null);
@@ -3401,23 +3637,134 @@ function formatTimelineMs(ms: number): string {
   return `${(ms / 1000).toFixed(3).replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1') }s`;
  }
 
-function TextAxisImportDialog({ moves, characters, title, onApply, onClose  }: { moves: MoveDefinition[]; characters: TextAxisCharacter[]; title: string; onApply: (result: TextAxisParseResult) => void; onClose: () => void  }) {
+type MaterializedContentInputProps = InputHTMLAttributes<HTMLInputElement> & Partial<Record<`data-${string }`, string>>;
+
+function MaterializedContentInput({ value, fallback, onDraftChange, onCommit, inputProps  }: { value: string | undefined; fallback: string; onDraftChange: (value: string) => void; onCommit: (value: string) => void; inputProps?: MaterializedContentInputProps  }) {
+  const materialized = Boolean(value?.trim());
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const draftChangeRef = useRef(onDraftChange);
+  const commitRef = useRef(onCommit);
+  draftChangeRef.current = onDraftChange;
+  commitRef.current = onCommit;
+  useEffect(() => {
+    const input = inputRef.current;
+    if (!input) return;
+    const materialize = () => {
+      if (input.value.trim()) return;
+      draftChangeRef.current(fallback);
+      window.requestAnimationFrame(() => input.select());
+    };
+    const commit = () => commitRef.current(input.value.trim() || fallback);
+    const commitBeforeOutsidePointer = (event: PointerEvent) => {
+      if (input.ownerDocument.activeElement !== input || event.target === input) return;
+      commit();
+     };
+    input.addEventListener('focus', materialize);
+    input.addEventListener('blur', commit);
+    input.ownerDocument.addEventListener('pointerdown', commitBeforeOutsidePointer, true);
+    return () => {
+      input.removeEventListener('focus', materialize);
+      input.removeEventListener('blur', commit);
+      input.ownerDocument.removeEventListener('pointerdown', commitBeforeOutsidePointer, true);
+     };
+   }, [fallback]);
+  return <input {...inputProps } ref={inputRef } className={`${inputProps?.className ?? '' } materialized-content-input ${materialized ? 'materialized' : 'preview' }` } value={value ?? '' } placeholder={fallback } onPointerDown={(event) => { inputProps?.onPointerDown?.(event); if (!event.currentTarget.value.trim()) { const input = event.currentTarget; onDraftChange(fallback); window.requestAnimationFrame(() => input.select());  }  } } onChange={(event) => { inputProps?.onChange?.(event); onDraftChange(event.target.value);  } } onKeyDown={(event) => { inputProps?.onKeyDown?.(event); if ((event.key === 'Tab' || event.key === 'Enter') && !event.currentTarget.value.trim()) onCommit(fallback);  } } />;
+ }
+
+function TextAxisImportDialog({ moves, characters, chart, contentLabels, startingCharacterSlot, title, onApply, onClose  }: { moves: MoveDefinition[]; characters: TextAxisCharacter[]; chart: ComboChart | null; contentLabels: Record<string, string>; startingCharacterSlot: CharacterSlot; title: string; onApply: (result: TextAxisParseResult) => void; onClose: () => void  }) {
   const { language, text  } = useI18n();
-  const [source, setSource] = useState(TEXT_AXIS_EXAMPLE);
-  const result = useMemo(() => parseTextAxis(source, { moves, characters, title  }), [characters, moves, source, title]);
+  const initialRef = useRef<{ result: TextAxisParseResult; source: string } | null>(null);
+  if (!initialRef.current) {
+    const example = textAxisExampleForLanguage(language);
+    const result = chart?.steps.length
+      ? textAxisResultFromChart(chart, contentLabels, startingCharacterSlot)
+      : parseTextAxis(example, { moves, characters, title  });
+    initialRef.current = { result, source: chart?.steps.length ? serializeTextAxis(result, characters, language).source : example  };
+   }
+  const [mode, setMode] = useState<'time' | 'content'>('time');
+  const [result, setResult] = useState<TextAxisParseResult>(initialRef.current.result);
+  const [source, setSource] = useState(initialRef.current.source);
+  const [draftContentLabels, setDraftContentLabels] = useState<Record<string, string>>(initialRef.current.result.contentLabels);
+  const [editorRevision, setEditorRevision] = useState(0);
+  const editorRef = useRef<HTMLDivElement | null>(null);
+  const sourceDirtyRef = useRef(false);
+  const effectiveResult = useMemo(() => ({ ...result, contentLabels: draftContentLabels  }), [draftContentLabels, result]);
+  const serialized = useMemo(() => serializeTextAxis(effectiveResult, characters, language), [characters, effectiveResult, language]);
+  const stepById = useMemo(() => new Map(result.chart.steps.map((step) => [step.id, step])), [result.chart.steps]);
+
+  function parseCurrentSource(value: string): TextAxisParseResult {
+    const parsed = parseTextAxis(value, { moves, characters, title  });
+    const canonical = serializeTextAxis(parsed, characters, language).source;
+    setResult(parsed);
+    setDraftContentLabels(parsed.contentLabels);
+    setSource(canonical);
+    sourceDirtyRef.current = false;
+    setEditorRevision((current) => current + 1);
+    return parsed;
+   }
+
+  function commitTimeEditor(): TextAxisParseResult {
+    if (!sourceDirtyRef.current) return { ...result, contentLabels: draftContentLabels  };
+    return parseCurrentSource(editorRef.current?.innerText ?? source);
+   }
+
+  function switchMode(nextMode: 'time' | 'content') {
+    if (nextMode === mode) return;
+    if (mode === 'time') commitTimeEditor();
+    setMode(nextMode);
+   }
+
+  function setDraftContent(stepId: string, value: string) {
+    setDraftContentLabels((current) => ({ ...current, [stepId]: value  }));
+   }
+
+  function commitDraftContent(stepId: string, fallback: string, value: string) {
+    const normalized = maybeConvertTextToIconLabel(value.trim() || fallback, true);
+    setDraftContentLabels((current) => ({ ...current, [stepId]: normalized  }));
+   }
+
+  function renderTimeSegment(segment: TextAxisDisplaySegment) {
+    if (segment.kind === 'linebreak') return <br key={segment.key } />;
+    if (segment.kind === 'separator') return <span key={segment.key } className="text-axis-separator">{segment.text }</span>;
+    if (segment.kind === 'step') return <span key={segment.key } className="text-axis-segment text-axis-step">{segment.text }</span>;
+    return <span key={segment.key } className={`text-axis-segment text-axis-${segment.kind }` }>{segment.text }</span>;
+   }
+
+  function renderContentSegment(segment: TextAxisDisplaySegment) {
+    if (segment.kind === 'linebreak') return <br key={segment.key } />;
+    if (segment.kind === 'separator') return <span key={segment.key } className="text-axis-separator">{segment.text }</span>;
+    if (segment.kind !== 'step' || !segment.stepId) return <span key={segment.key } className={`text-axis-segment text-axis-${segment.kind }` }>{segment.text }</span>;
+    const step = stepById.get(segment.stepId);
+    if (!step) return null;
+    const fallback = defaultComboContentLabelForMoveId(step.moveId) ?? localizedMoveLabel(step, language);
+    const displayLength = Math.max(2, Math.min(24, Array.from(draftContentLabels[step.id]?.trim() || fallback).length + 1));
+    return <span key={segment.key } className="text-axis-segment text-axis-step text-axis-content-token">{segment.spaced ? ' ' : null }<MaterializedContentInput value={draftContentLabels[step.id] } fallback={fallback } onDraftChange={(value) => setDraftContent(step.id, value) } onCommit={(value) => commitDraftContent(step.id, fallback, value) } inputProps={{ 'aria-label': text(`${localizedMoveLabel(step, language) }内容`, `${localizedMoveLabel(step, language) } content`), style: { width: `${displayLength }ch`  }  }} />{segment.spaced ? ' ' : null }</span>;
+   }
+
+  function applyCurrentResult() {
+    const current = mode === 'time' ? commitTimeEditor() : { ...result, contentLabels: draftContentLabels  };
+    const normalizedContentLabels = { ...current.contentLabels  };
+    current.chart.steps.forEach((step) => {
+      const fallback = defaultComboContentLabelForMoveId(step.moveId) ?? localizedMoveLabel(step, language);
+      normalizedContentLabels[step.id] = maybeConvertTextToIconLabel(normalizedContentLabels[step.id]?.trim() || fallback, true);
+     });
+    const next = { ...current, contentLabels: normalizedContentLabels  };
+    onApply(next);
+   }
+
   return (
-    <div className="text-axis-import-backdrop" role="presentation" onMouseDown={onClose}>
+    <div className="text-axis-import-backdrop" data-trainer-capture-suspend="true" role="presentation" onMouseDown={onClose}>
       <section className="text-axis-import-dialog" role="dialog" aria-modal="true" aria-labelledby="text-axis-import-title" onMouseDown={(event) => event.stopPropagation()}>
-        <div className="panel-title"><div><h2 id="text-axis-import-title">{text('文字轴识别', 'Text Axis Import') }</h2><p>{text('角色名会匹配当前三个角色；字母按图标映射生成招式，大写表示长按。', 'Character names match the current three characters. Letters create actions from the icon mapping, and uppercase letters create hold actions.') }</p></div><button className="icon-button" type="button" title={text('关闭', 'Close') } onClick={onClose}><X size={18 } /></button></div>
-        <textarea autoFocus value={source } onChange={(event) => setSource(event.target.value) } aria-label={text('文字轴内容', 'Text Axis Content') } />
+        <div className="panel-title text-axis-import-title"><div><h2 id="text-axis-import-title">{text('文字轴识别', 'Text Axis Import') }</h2><p>{text('角色名匹配当前队伍；大写或“长+字母”表示长按。时间与内容使用相同的招式块边界。', 'Character names match the current team. Uppercase or Hold + letter creates a hold action. Time and Content share the same action-block boundaries.') }</p></div><div className="text-axis-title-actions"><div className="segmented"><button className={mode === 'time' ? 'active' : '' } type="button" onClick={() => switchMode('time') }>{text('时间', 'Time') }</button><button className={mode === 'content' ? 'active' : '' } type="button" onClick={() => switchMode('content') }>{text('内容', 'Content') }</button></div><button className="icon-button" type="button" title={text('关闭', 'Close') } onClick={onClose}><X size={18 } /></button></div></div>
+        {mode === 'time' ? <div key={editorRevision } ref={editorRef } className="text-axis-token-editor" contentEditable suppressContentEditableWarning role="textbox" aria-multiline="true" aria-label={text('文字轴内容', 'Text Axis Content') } onInput={() => { sourceDirtyRef.current = true;  } } onBlur={() => { if (sourceDirtyRef.current) parseCurrentSource(editorRef.current?.innerText ?? source);  } }>{serialized.segments.map(renderTimeSegment) }</div> : <div className="text-axis-token-editor text-axis-content-editor" role="group" aria-label={text('文字轴内容设置', 'Text Axis Content Settings') }>{serialized.segments.map(renderContentSegment) }</div>}
         <div className="text-axis-import-summary">
           <strong>{text(`识别到 ${result.chart.steps.length } 个招式块`, `${result.chart.steps.length } action blocks recognized`) }</strong>
           <span>{text(`首发角色 ${result.startingCharacterSlot }`, `Starting character: slot ${result.startingCharacterSlot }`) }</span>
           <span>{text(`时段 ${result.chart.periods?.length ?? 0 } 个`, `${result.chart.periods?.length ?? 0 } periods`) }</span>
         </div>
         {result.warnings.length > 0 && <div className="text-axis-import-warning">{language === 'zh-CN' ? result.warnings.join('；') : text(`有 ${result.warnings.length } 处内容未完全识别，请检查角色名或输入。`, `${result.warnings.length } parts were not fully recognized. Check the character names or input.`) }</div>}
-        <div className="text-axis-import-help">{text('支持：跳/跳跃、闪/闪避、处决、变奏、延奏、前走；切人可写角色中文名、简称、1/2/3 或 i/ii/iii。共鸣解放默认 3 秒，切人 0.5 秒，其余操作 1 秒。', 'Supports Jump, Dodge, Finisher, Intro, Outro, and Move Forward. Switch with a Chinese character name, abbreviation, 1/2/3, or i/ii/iii. Liberation defaults to 3 seconds, switches to 0.5 seconds, and other actions to 1 second.') }</div>
-        <div className="text-axis-import-actions"><button type="button" onClick={onClose}>{text('取消', 'Cancel') }</button><button className="primary" type="button" disabled={!result.chart.steps.length } onClick={() => onApply(result) }>{text('替换编辑区', 'Replace Editor Chart') }</button></div>
+        <div className="text-axis-import-help">{mode === 'time' ? text('支持：跳/跳跃、闪/闪避、处决、变奏、延奏、前走；长e 与 E 都表示长按技能。切人可写角色名、简称、1/2/3 或 i/ii/iii。共鸣解放默认 3 秒，切人 0.5 秒，其余操作 1 秒。', 'Supports Jump, Dodge, Finisher, Intro, Outro, and Move Forward. Both Hold e and E mean hold Skill. Switch with a character name, abbreviation, 1/2/3, or i/ii/iii. Liberation defaults to 3 seconds, switches to 0.5 seconds, and other actions to 1 second.') : text('淡色文字是当前招式的默认映射码。点击后会转为实体文字并可直接编辑；清空后离开会恢复默认内容。', 'Muted text is the action’s default mapping code. Click to materialize and edit it. Leaving an empty field restores the default content.') }</div>
+        <div className="text-axis-import-actions"><button type="button" onClick={onClose}>{text('取消', 'Cancel') }</button><button className="primary" type="button" disabled={!result.chart.steps.length } onClick={applyCurrentResult }>{text('应用到编辑区', 'Apply to Editor Chart') }</button></div>
       </section>
     </div>
   );
@@ -4006,8 +4353,19 @@ function TimelineEditor({ chart, moves, bindings, shortcutSettings, inputSignal,
     return true;
    }
 
+  function contentFallbackForStep(step: ComboStep): string {
+    return defaultComboContentLabelForMoveId(step.moveId) ?? localizedMoveLabel(step, language);
+   }
+
+  function setContentLabelDraft(stepId: string, value: string) {
+    onContentChange({ contentLabels: { ...comboImageStyle.contentLabels, [stepId]: value  }  });
+   }
+
   function setContentLabel(stepId: string, value: string) {
-    onContentChange({ contentLabels: { ...comboImageStyle.contentLabels, [stepId]: maybeConvertTextToIconLabel(value, comboImageStyle.convertIcons)  }  });
+    const step = chart.steps.find((item) => item.id === stepId);
+    if (!step) return;
+    const normalized = value.trim() || contentFallbackForStep(step);
+    onContentChange({ contentLabels: { ...comboImageStyle.contentLabels, [stepId]: maybeConvertTextToIconLabel(normalized, comboImageStyle.convertIcons)  }  });
    }
 
   function focusStepInput(stepId: string, field: 'content' | 'note') {
@@ -4795,8 +5153,8 @@ function TimelineEditor({ chart, moves, bindings, shortcutSettings, inputSignal,
 
   function renderStepLabel(step: ComboStep) {
     if (mode === 'content') {
-      const defaultLabel = defaultComboContentLabelForMoveId(step.moveId) ?? localizedMoveLabel(step, language);
-      return <label className="timeline-content-label" onPointerDown={(event) => event.stopPropagation() }><input data-step-nav-id={step.id } data-step-nav-field="content" value={comboImageStyle.contentLabels[step.id] ?? '' } placeholder={defaultLabel } onChange={(event) => onContentChange({ contentLabels: { ...comboImageStyle.contentLabels, [step.id]: event.target.value  }  }) } onBlur={(event) => setContentLabel(step.id, event.target.value) } onKeyDown={(event) => handleStepInputNavigation(event, step.id, 'content') } /><span>{defaultLabel }</span></label>;
+      const defaultLabel = contentFallbackForStep(step);
+      return <label className="timeline-content-label" onPointerDown={(event) => event.stopPropagation() }><MaterializedContentInput value={comboImageStyle.contentLabels[step.id] } fallback={defaultLabel } onDraftChange={(value) => setContentLabelDraft(step.id, value) } onCommit={(value) => setContentLabel(step.id, value) } inputProps={{ 'data-step-nav-id': step.id, 'data-step-nav-field': 'content', onKeyDown: (event) => handleStepInputNavigation(event, step.id, 'content')  }} /><span>{defaultLabel }</span></label>;
      }
     return <strong>{localizedMoveLabel(step, language) }</strong>;
    }
@@ -4836,7 +5194,7 @@ function TimelineEditor({ chart, moves, bindings, shortcutSettings, inputSignal,
       {selected && (
         <div className="timeline-editor-inspector">
            <strong style={{ color: selected.color  } }>{selectedSteps.length > 1 ? text(`已选 ${selectedSteps.length } 个`, `${selectedSteps.length } selected`) : localizedMoveLabel(selected, language) }</strong>
-           <label className="timeline-label-wide">{text('招式块文本', 'Block Text') }<input data-step-nav-id={selected.id } data-step-nav-field="content" value={comboImageStyle.contentLabels[selected.id] ?? '' } placeholder={defaultComboContentLabelForMoveId(selected.moveId) ?? localizedMoveLabel(selected, language) } onChange={(event) => setContentLabel(selected.id, event.target.value) } onKeyDown={(event) => handleStepInputNavigation(event, selected.id, 'content') } /></label>
+           <label className="timeline-label-wide">{text('招式块文本', 'Block Text') }<MaterializedContentInput value={comboImageStyle.contentLabels[selected.id] } fallback={contentFallbackForStep(selected) } onDraftChange={(value) => setContentLabelDraft(selected.id, value) } onCommit={(value) => setContentLabel(selected.id, value) } inputProps={{ 'data-step-nav-id': selected.id, 'data-step-nav-field': 'content', onKeyDown: (event) => handleStepInputNavigation(event, selected.id, 'content')  }} /></label>
            <label className="timeline-label-wide">{text('备注', 'Note') }<input data-step-nav-id={selected.id } data-step-nav-field="note" value={selectedSteps.length > 1 ? '' : selected.note ?? '' } placeholder={selectedSteps.length > 1 ? text('批量修改招式提示', 'Edit notes for selected actions') : defaultPromptTextForStep(selected, language, comboImageStyle) } onChange={(event) => selectedSteps.length > 1 ? updateSelectedSteps({ note: event.target.value  }) : onUpdate(selected.id, { note: event.target.value  }) } onKeyDown={(event) => handleStepInputNavigation(event, selected.id, 'note') } /></label>
            <label className="timeline-free-toggle"><input type="checkbox" checked={Boolean(selected.manualFree) } onChange={(event) => selectedSteps.length > 1 ? updateSelectedSteps({ manualFree: event.target.checked  }) : onUpdate(selected.id, { manualFree: event.target.checked  }) } />{text('自由', 'Free') }</label>
          <NumberDraftInput label={text('最早开始 s', 'Earliest Start s') } value={msToSeconds(selected.startMin) } min={0 } integer={false } onCommit={(value) => selectedSteps.length > 1 ? updateSelectedSteps({ startMin: secondsToMs(value)  }) : onUpdate(selected.id, { startMin: secondsToMs(value)  }) } />
@@ -4956,7 +5314,7 @@ function TimelineEditor({ chart, moves, bindings, shortcutSettings, inputSignal,
   );
  }
 function ComboContentEditor({ chart, style, onChange, onQuickInput  }: { chart: ComboChart; style: ComboImageStyle; onChange: (patch: Partial<ComboImageStyle>) => void; onQuickInput: () => void  }) {
-  const { text  } = useI18n();
+  const { language, text  } = useI18n();
   const panelRef = useRef<HTMLDivElement | null>(null);
   const items = chartToComboImageItems(chart, style);
   const total = Math.max(1000, ...chart.steps.map((step) => step.startMin + step.durationMax + 500));
@@ -4965,7 +5323,11 @@ function ComboContentEditor({ chart, style, onChange, onQuickInput  }: { chart: 
     { slot, lane: 'main' as LaneKind, id: `${slot }-main`  },
     { slot, lane: 'independent' as LaneKind, id: `${slot }-independent`  }
   ]));
-  const setLabel = (stepId: string, value: string) => onChange({ contentLabels: { ...style.contentLabels, [stepId]: maybeConvertTextToIconLabel(value, style.convertIcons)  }  });
+  const setLabelDraft = (stepId: string, value: string) => onChange({ contentLabels: { ...style.contentLabels, [stepId]: value  }  });
+  const setLabel = (step: ComboStep, value: string) => {
+    const fallback = defaultComboContentLabelForMoveId(step.moveId) ?? localizedMoveLabel(step, language);
+    onChange({ contentLabels: { ...style.contentLabels, [step.id]: maybeConvertTextToIconLabel(value.trim() || fallback, style.convertIcons)  }  });
+   };
   const laneIndex = (step: ComboStep) => Math.max(0, CHARACTER_SLOTS.indexOf((step.characterSlot ?? 1) as CharacterSlot)) * 2 + (step.lane === 'independent' ? 1 : 0);
   function nearestStep(stepId: string, direction: 'left' | 'right' | 'up' | 'down'): ComboStep | null {
     const current = chart.steps.find((step) => step.id === stepId);
@@ -5016,10 +5378,11 @@ function ComboContentEditor({ chart, style, onChange, onQuickInput  }: { chart: 
                 <div className="content-timeline-track">
                   {items.filter((item) => (item.step.characterSlot ?? 1) === row.slot && item.step.lane === row.lane).map((item) => {
                     const width = Math.max(92, item.step.durationMax * pxPerMs);
-                    const custom = style.contentLabels[item.step.id] ?? '';
+                    const custom = style.contentLabels[item.step.id];
+                    const fallback = defaultComboContentLabelForMoveId(item.step.moveId) ?? localizedMoveLabel(item.step, language);
                     return (
                       <label key={item.step.id } className={`content-timeline-block ${item.isSwitch ? 'is-switch' : '' }`  } style={{ left: item.step.startMin * pxPerMs, width, '--move-color': role.color  } as CSSProperties }>
-                        <input data-content-nav-id={item.step.id } value={custom } placeholder=" " onChange={(event) => onChange({ contentLabels: { ...style.contentLabels, [item.step.id]: event.target.value  }  }) } onBlur={(event) => setLabel(item.step.id, event.target.value) } onKeyDown={(event) => handleContentNavigation(event, item.step.id) } />
+                        <MaterializedContentInput value={custom } fallback={fallback } onDraftChange={(value) => setLabelDraft(item.step.id, value) } onCommit={(value) => setLabel(item.step, value) } inputProps={{ 'data-content-nav-id': item.step.id, onKeyDown: (event) => handleContentNavigation(event, item.step.id)  }} />
                         <span>{item.step.label }</span>
                       </label>
                     );
@@ -5993,17 +6356,6 @@ function HelpPanel({ tab, onTabChange  }: { tab: HelpTab; onTabChange: (value: H
  }
 
 
-function PracticeErrorSummary({ chart, practice  }: { chart: ComboChart; practice: PracticeSnapshot  }) {
-  const { text  } = useI18n();
-  const errorIds = new Set(practice.errorStepIds);
-  if (!chart.steps.length || !practice.errorStepIds.length) return null;
-  return (
-    <div className="practice-error-summary">
-      <strong>{text('错位记录', 'Timing Errors') }</strong>
-      <div>{chart.steps.map((step, index) => <span key={step.id } className={errorIds.has(step.id) ? 'error' : ''  } style={{ '--move-color': step.color  } as CSSProperties }><b>{index + 1 }</b>{step.label }<em>{(step.startMin / 1000).toFixed(2) }s</em></span>) }</div>
-    </div>
-  );
- }
 function LibraryPanel({ chart, library, style, avatarPresets, onSelect, onEdit, onDelete, onShare, onImport  }: { chart: ComboChart | null; library: ComboChart[]; style: ComboImageStyle; avatarPresets: DefaultAvatarEntry[]; onSelect: (id: string) => void; onEdit: (id: string) => void; onDelete: (id: string) => void; onShare: () => void; onImport: () => void  }) {
   const { language, text  } = useI18n();
   const [pendingDelete, setPendingDelete] = useState<ComboChart | null>(null);

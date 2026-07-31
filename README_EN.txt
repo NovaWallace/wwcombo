@@ -4,6 +4,28 @@
 
 WW Combo Trainer is a Windows desktop tool for recording, editing, practicing, and exporting Wuthering Waves combos. It only reads input for recording and judgement; it never sends gameplay input for you. This is an unofficial fan project and is not affiliated with Kuro Games.
 
+## v0.5.0 update (2026-07-31)
+
+- Connected Text Axis to the current timeline and added Time / Content modes. Unchanged timing text preserves action IDs, duration, lanes, warm-up, and recovery.
+- Text Axis accepts uppercase and `Hold + letter` syntax. Non-Chinese interfaces use English axis/action terms, including `Intro` / `Outro`, instead of unnecessary Chinese text.
+- Practice now uses a full combo-axis preview. It shows the Startup Axis and first Loop Axis, packs by available width, and wraps automatically without using Appearance's maximum merge count.
+- Challenge mistakes are attached to their matching preview actions. Errors made while the app is in the background are held and shown with red backing after focus returns.
+- Global Input Capture attempts to start by default. Action capture pauses during timeline, sharing, video, and appearance editing while timeline shortcuts remain active.
+- Settings adds global custom icons carried by `.wwkeys.json` import/export, and recording now rejects redundant switches to the character already on field.
+- Improved multiselect exit behavior, split/merge commands, and the clipboard shared by normal and video timelines, fixing intermittent `Ctrl+C` / `Ctrl+V` failures.
+- Refined avatar, icon, text, and background width measurement in the Practice preview, reduced vertical spacing, and fixed content overflowing its block artwork.
+- Always on Top is now Keep Combo Overlay on Top with a yellow/black eye button; a moving triangle points to Global Input Capture while it is disabled.
+- Added a prominent first-run warning that the software is free and paid copies are fraudulent.
+
+### New shortcuts in v0.5.0
+
+- `Delete`: delete selected blocks; with no selection, enter Continuous Delete mode.
+- `C`: split selected blocks at the pointer time; with no selection, enter Continuous Split mode.
+- `V`: merge selected compatible action blocks.
+- `Ctrl+C` / `Ctrl+V`: copy and paste action blocks using the clipboard shared by normal and video timelines.
+- Add mode `F`: Finisher; `B`: adaptive Intro switch; `Y`: append Outro to selected block content.
+- `Tab`: adaptive switch; `X`: switch between action and period placement; `Shift`: enter Add mode.
+
 ## v0.3.0 update (2026-07-30)
 
 - Added built-in help in four languages, learner and guide-author tutorials, detailed shortcut reference, a full changelog, and first-run guidance.
@@ -20,8 +42,8 @@ WW Combo Trainer is a Windows desktop tool for recording, editing, practicing, a
 
 ## Installation and first setup
 
-1. Download `WW Combo Trainer_*_x64-setup.exe` from GitHub Releases. MSI and portable ZIP packages with a shortcut and FFmpeg are also provided.
-2. Install and launch the application. If Windows shows a source warning, continue only after confirming that the file came from this repository's Release page.
+1. Download `wwcombo-正式版-0.5-Windows-x64.zip` from GitHub Releases and extract it completely.
+2. Launch it with the shortcut beside the `便携版` folder. Keep the shortcut and folder together. If Windows shows a source warning, continue only after confirming that the file came from this repository's Release page.
 3. Open `Settings` and select Chinese, English, Japanese, or Korean.
 4. Switch between `Keyboard & Mouse` and `Gamepad`, then match every action to your in-game controls.
 5. Each action accepts two bindings. For example, Dodge can use both `Shift` and the right mouse button.
@@ -84,15 +106,15 @@ Common icon text: `a` Basic Attack, `z` Heavy Attack, `e/E` Skill/Hold Skill, `q
 ## Practice
 
 1. Open Practice and select a combo.
-2. Choose Demo, Practice, or Challenge.
+2. Choose Demo, Advance, or Challenge.
 3. Use the configured Start and Stop actions.
 
 - `Demo` plays by timeline and requires no input.
-- `Practice` advances after the expected input and is best for learning order.
+- `Advance` advances after the expected input and is best for learning order.
 - `Challenge` uses stricter timing and error judgement.
 - `Character Order` remaps switch targets by dragging portraits. It cannot change while a session is running.
 - `Start at Axis Opener` waits for the first key action when entering a startup or loop axis.
-- `Merge Same Character` combines adjacent display items; Appearance controls the merge limit.
+- `Merge Same Character` combines adjacent display items. The full Practice axis packs by available width and wraps automatically, ignoring the maximum merge count.
 - The yellow eye button shows or hides the always-on-top chart.
 
 ## Appearance
