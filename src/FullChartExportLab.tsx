@@ -665,6 +665,15 @@ export function FullChartExportLab({ chart, library, style, basePresets, onSelec
       setSelectedBlockId('');
       return;
     }
+    // 切图时同步刷新头像
+    setDraftStyle((current) => {
+      const roleStyles = { ...current.roleStyles };
+      ([1, 2, 3] as CharacterSlot[]).forEach((slot) => {
+        const src = sourceStyle.roleStyles[slot];
+        roleStyles[slot] = { ...current.roleStyles[slot], name: src.name, avatar: src.avatar, avatarCrop: src.avatarCrop };
+      });
+      return normalizeComboImageStyle({ ...current, roleStyles });
+    });
     const defaultLoops = defaultVisibleLoopIds(selectedChart);
     setVisibleLoopIds(defaultLoops);
     const next = blocksFromChart(selectedChart, effectiveStyle, language, defaultLoops);
