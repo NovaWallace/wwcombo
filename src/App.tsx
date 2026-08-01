@@ -27,7 +27,7 @@ import {
   normalizeDomMouseEvent
  } from '../combo-core';
 import { normalizeInputCode  } from '../combo-core/input';
-import { createDesktopBridge  } from './desktopBridge';
+import { createDesktopBridge, openExternalUrl  } from './desktopBridge';
 import {
   chartToComboImageItems,
   capsuleEdgeSourceRange,
@@ -2631,6 +2631,15 @@ export default function App() {
     }, 3200);
    }
 
+  async function openUpdateDownload() {
+    if (!updateDownload?.url) return;
+    try {
+      await openExternalUrl(updateDownload.url);
+     } catch {
+      showToast(text('无法打开下载链接，请稍后重试。', 'Could not open the download link. Please try again.'));
+     }
+   }
+
   async function importCharts(file: File | null) {
     if (!file) return;
     const source = await file.text();
@@ -2734,7 +2743,7 @@ export default function App() {
         <div className="app-update-heading"><div><span>{text('发现新版本', 'New version available') }</span><strong>{availableUpdate.title || `WW Combo Trainer ${availableUpdate.version }`}</strong></div><button type="button" title={text('稍后提醒', 'Remind me later') } aria-label={text('关闭更新提示', 'Close update notice') } onClick={() => { dismissedUpdateVersionRef.current = availableUpdate.version; setAvailableUpdate(null);  } }><X size={17 } /></button></div>
         <p className="app-update-version">v{__APP_VERSION__ } <span>→</span> v{availableUpdate.version }</p>
         {availableUpdate.notes && <p className="app-update-notes">{availableUpdate.notes }</p>}
-        {updateDownload && <a href={updateDownload.url } download={updateDownload.fileName } target="_blank" rel="noopener noreferrer"><Download size={17 } />{text('下载新版本', 'Download Update') }</a>}
+        {updateDownload && <button className="app-update-download" type="button" onClick={() => void openUpdateDownload() }><Download size={17 } />{text('打开下载链接', 'Open Download Link') }</button>}
       </section>}
         <aside className="sidebar">
           <button className={`brand ${page === 'home' ? 'home-active' : '' }` } type="button" aria-label={text('返回主界面', 'Back to Home') } title={text('返回主界面', 'Back to Home') } onClick={() => setPage('home') }><div className="brand-mark"><img src="/app-icon-avatar.png" alt="" /></div><div><h1>{text('鸣潮训练场', 'Wuthering Waves Trainer') }</h1><span>Combo Trainer</span></div></button>

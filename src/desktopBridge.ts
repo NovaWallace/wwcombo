@@ -38,6 +38,15 @@ function isTauriRuntime(): boolean {
   return '__TAURI_INTERNALS__' in window;
 }
 
+export async function openExternalUrl(url: string): Promise<void> {
+  if (isTauriRuntime()) {
+    await invoke<void>('plugin:opener|open_url', { url });
+    return;
+  }
+  const opened = window.open(url, '_blank', 'noopener,noreferrer');
+  if (!opened) throw new Error('popup blocked');
+}
+
 function tauriEventTimeToPerformance(time: number): number {
   if (!Number.isFinite(time)) return performance.now();
   const converted = performance.now() + (time - Date.now());

@@ -1331,7 +1331,7 @@ body[data-appearance-mode='night2'] .video-workbench button.active:hover { backg
 .app-update-version { margin: 12px 0 0; color: #aeb7bb; font: 12px Consolas, monospace; }
 .app-update-version span { padding: 0 7px; color: #72d8c5; }
 .app-update-notes { max-height: 112px; overflow: auto; margin: 11px 0 0; color: #c6cccf; font-size: 12px; line-height: 1.65; white-space: pre-line; }
-.app-update-notice > a { min-height: 38px; display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 13px; border: 1px solid #f0474f; border-radius: 3px; background: var(--red); color: #fff; font-size: 13px; font-weight: 900; text-decoration: none; }
+.app-update-download { width: 100%; min-height: 38px; display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 13px; border: 1px solid #f0474f; border-radius: 3px; background: var(--red); color: #fff; font-size: 13px; font-weight: 900; cursor: pointer; }
 .theme-day .app-update-notice { border-color: rgba(20,43,45,.2); border-left-color: var(--red); background: rgba(255,255,255,.98); color: #10201c; box-shadow: 0 20px 54px rgba(24,50,48,.2); }
 .theme-day .app-update-heading button { border-color: rgba(20,43,45,.18); background: #edf1ef; color: #182822; }
 .theme-day .app-update-notes, .theme-day .app-update-version { color: #50625c; }
