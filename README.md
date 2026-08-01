@@ -42,7 +42,7 @@ WW Combo Trainer 是一个用于《鸣潮》连段录制、编辑、练习和图
 
 ## 安装与首次设置
 
-1. 从 GitHub Releases 下载 `wwcombo-正式版-0.6-Windows-x64.zip` 并完整解压。
+1. 从 GitHub Releases 下载 `wwcombo-v0.6-Windows-x64-portable.zip` 并完整解压。
 2. 双击压缩包外层的快捷方式启动。请勿把快捷方式与 `便携版` 文件夹分开；Windows 若显示来源提示，请确认文件来自本仓库 Release 后再继续。
 3. 打开 `设置`，选择界面语言：中文、English、日本語或한국어。
 4. 在 `输入模式` 中切换 `键鼠` 或 `手柄`，检查每个招式的绑定是否和游戏内一致。

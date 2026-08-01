@@ -42,7 +42,7 @@ WW Combo Trainer is a Windows desktop tool for recording, editing, practicing, a
 
 ## Installation and first setup
 
-1. Download `wwcombo-正式版-0.6-Windows-x64.zip` from GitHub Releases and extract it completely.
+1. Download `wwcombo-v0.6-Windows-x64-portable.zip` from GitHub Releases and extract it completely.
 2. Launch it with the shortcut beside the `便携版` folder. Keep the shortcut and folder together. If Windows shows a source warning, continue only after confirming that the file came from this repository's Release page.
 3. Open `Settings` and select Chinese, English, Japanese, or Korean.
 4. Switch between `Keyboard & Mouse` and `Gamepad`, then match every action to your in-game controls.

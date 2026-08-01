@@ -42,7 +42,7 @@ WW Combo Trainer는 명조 콤보를 기록, 편집, 연습하고 이미지나 �
 
 ## 설치 및 초기 설정
 
-1. GitHub Releases에서 `wwcombo-正式版-0.6-Windows-x64.zip`을 받아 완전히 압축 해제합니다.
+1. GitHub Releases에서 `wwcombo-v0.6-Windows-x64-portable.zip`을 받아 완전히 압축 해제합니다.
 2. `便携版` 폴더 옆의 바로가기로 실행하고 둘을 분리하지 마십시오. Windows가 경고하면 이 저장소의 Release에서 받은 파일인지 확인하십시오.
 3. `설정`에서 中文, English, 日本語, 한국어 중 인터페이스 언어를 선택합니다.
 4. `입력 모드`에서 `키보드 및 마우스` 또는 `게임패드`를 선택하고 게임 내 설정과 동일하게 맞춥니다.
