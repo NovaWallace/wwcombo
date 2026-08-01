@@ -396,7 +396,7 @@ function AxisInlineContent({ step, style, mappings }: { step: ComboStep; style: 
   const convertIcons = switchSlotForMoveId(step.moveId) !== null || style.convertIcons;
   const iconText = maybeConvertTextToIconLabel(contentText, convertIcons);
   const parts = comboTextParts(iconText, convertIcons, mappings).filter((part) => part.kind === 'icon');
-  return <strong className="axis-note-content">{parts.map((part, index) => part.kind === 'icon' ? <span key={`${part.iconId}-${index}`} className="axis-icon-mark"><img src={part.src} alt="" title={part.label} /></span> : null)}</strong>;
+  return <strong className="axis-note-content">{parts.map((part, index) => part.kind === 'icon' ? <span key={`${part.iconId}-${index}`} className="axis-icon-mark" style={{ '--icon-width-scale': part.iconWidthScale } as CSSProperties}><img src={part.src} alt="" title={part.label} /></span> : null)}</strong>;
 }
 
 function useAudioMeter(): [AudioMeterState, () => Promise<void>] {

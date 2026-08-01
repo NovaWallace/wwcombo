@@ -93,7 +93,7 @@ export const SHORTCUT_DEFINITIONS: readonly ShortcutDefinition[] = [
   { id: 'timelinePlaceDodgeHoldAlternate', group: 'placement', chinese: '长按闪避（备用）', english: 'Hold Dodge (Alternate)' },
   { id: 'timelinePlaceJump', group: 'placement', chinese: '跳跃', english: 'Jump' },
   { id: 'timelinePlaceJumpHold', group: 'placement', chinese: '长按跳跃', english: 'Hold Jump' },
-  { id: 'timelinePlaceFinisher', group: 'placement', chinese: '处决', english: 'Finisher' },
+  { id: 'timelinePlaceFinisher', group: 'placement', chinese: '处决', english: 'Tunebreak' },
   { id: 'timelinePlaceEmpty', group: 'placement', chinese: '空招式', english: 'Empty Action' },
   { id: 'timelinePlaceIntroSwitch', group: 'placement', chinese: '变奏切人', english: 'Intro Character Switch' },
   { id: 'videoPlayPause', group: 'video', chinese: '播放 / 暂停视频', english: 'Play / Pause Video' },

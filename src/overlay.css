@@ -51,7 +51,7 @@ html, body, #overlay-root { margin: 0; width: 100%; height: 100%; background: rg
 .combo-chip-content { position: relative; z-index: 4; display: inline-flex; align-items: center; justify-content: center; gap: .18em; max-width: 100%; min-width: 0; }
 .combo-chip-content:has(.combo-merged-part) { max-width: none; }
 .combo-merged-part { display: inline-flex; align-items: center; gap: .18em; min-width: 0; }
-.combo-inline-icon-mark { display: inline-grid; place-items: center; width: calc(1.62em * var(--icon-scale, 1)); height: calc(1.62em * var(--icon-scale, 1)); border-radius: .18em; flex: 0 0 auto; background: transparent; }
+.combo-inline-icon-mark { display: inline-grid; place-items: center; width: calc(1.62em * var(--icon-scale, 1) * var(--icon-width-scale, 1)); height: calc(1.62em * var(--icon-scale, 1)); border-radius: .18em; flex: 0 0 auto; background: transparent; }
 .combo-inline-icon-mark.active { position: relative; overflow: visible; z-index: 8; background: rgba(255,224,55,.98); box-shadow: 0 0 0 2px rgba(0,0,0,.92), 0 0 0 3px rgba(255,255,255,.28), 0 0 10px rgba(255,215,0,.45); }
 .combo-merged-part.active { position: relative; overflow: visible; }
 .combo-merged-part.active::before, .combo-merged-part.active::after { content: ''; position: absolute; pointer-events: none; z-index: 9; }
@@ -63,7 +63,7 @@ html, body, #overlay-root { margin: 0; width: 100%; height: 100%; background: rg
 .overlay-shell.next-indicator-left:not(.vertical) .combo-merged-part.active::after { display: none; }
 .overlay-shell.next-indicator-right:not(.vertical) .combo-merged-part.active::before { right: -21px; top: 50%; width: 22px; height: 30px; transform: translateY(-50%); background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 22 30'%3E%3Cpolygon points='19,3 3,15 19,27' fill='%23ffe037' stroke='%23050505' stroke-width='4' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat; }
 .overlay-shell.next-indicator-right:not(.vertical) .combo-merged-part.active::after { display: none; }
-.combo-inline-icon { width: calc(1.45em * var(--icon-scale, 1)); height: calc(1.45em * var(--icon-scale, 1)); object-fit: contain; flex: 0 0 auto; vertical-align: -.26em; pointer-events: none; }
+.combo-inline-icon { width: calc(1.45em * var(--icon-scale, 1) * var(--icon-width-scale, 1)); height: calc(1.45em * var(--icon-scale, 1)); object-fit: contain; flex: 0 0 auto; vertical-align: -.26em; pointer-events: none; }
 .combo-chip-content > span:not(.combo-merged-part):not(.combo-inline-icon-mark), .combo-merged-part > span:not(.combo-inline-icon-mark) { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .combo-chip .combo-chip-content span:not(.combo-inline-icon-mark) { width: auto; height: auto; border-radius: 0; display: inline; place-items: initial; background: transparent; font-size: inherit; flex: 0 1 auto; }
 .combo-chip .combo-chip-content .combo-inline-icon-mark { display: inline-grid; width: calc(1.62em * var(--icon-scale, 1)); height: calc(1.62em * var(--icon-scale, 1)); border-radius: .18em; place-items: center; flex: 0 0 auto; }
@@ -112,8 +112,8 @@ html, body, #overlay-root { margin: 0; width: 100%; height: 100%; background: rg
 .rhythm-overlay-note.judge-miss .rhythm-overlay-judgement-badge { color: #ff9b9b; border-color: rgba(255,71,71,.72); }
 .rhythm-overlay-note-content { display: inline-flex; align-items: center; justify-content: center; gap: .08em; max-width: 100%; overflow: hidden; white-space: nowrap; }
 .rhythm-overlay-note.stacked .rhythm-overlay-note-content { flex-direction: column-reverse; gap: 2px; white-space: normal; }
-.rhythm-overlay-note-content .combo-inline-icon-mark { width: calc(1.78em * var(--icon-scale, 1)); height: calc(1.78em * var(--icon-scale, 1)); }
-.rhythm-overlay-note-content .combo-inline-icon { width: calc(1.6em * var(--icon-scale, 1)); height: calc(1.6em * var(--icon-scale, 1)); }
+.rhythm-overlay-note-content .combo-inline-icon-mark { width: calc(1.78em * var(--icon-scale, 1) * var(--icon-width-scale, 1)); height: calc(1.78em * var(--icon-scale, 1)); }
+.rhythm-overlay-note-content .combo-inline-icon { width: calc(1.6em * var(--icon-scale, 1) * var(--icon-width-scale, 1)); height: calc(1.6em * var(--icon-scale, 1)); }
 .rhythm-overlay-judge { position: absolute; left: 0; right: 0; top: var(--rhythm-judge-y); height: 5px; background: #d50000; box-shadow: 0 0 0 1px rgba(0,0,0,.72), 0 0 12px rgba(213,0,0,.55); }
 .rhythm-overlay-avatars { position: absolute; left: 50%; bottom: 0; width: min(calc(var(--rhythm-role-spacing, 120px) * 2 + 96px), calc(100% - 20px)); transform: translateX(-50%); height: 78px; display: grid; grid-template-columns: repeat(3, minmax(0, 96px)); justify-content: space-between; }
 .rhythm-overlay-avatar-cell { position: relative; display: grid; place-items: center; align-content: center; gap: 2px; color: #fff; font-size: 20px; font-weight: 950; text-shadow: 0 2px 5px rgba(0,0,0,.86); }
@@ -121,8 +121,8 @@ html, body, #overlay-root { margin: 0; width: 100%; height: 100%; background: rg
 .rhythm-overlay-crowded-prompts { position: absolute; left: calc(50% + 34px); bottom: 10px; z-index: 12; display: flex; flex-direction: column-reverse; align-items: flex-start; gap: 4px; pointer-events: none; }
 .rhythm-overlay-crowded-prompt { position: relative; width: 48px; padding: 4px; border: 2px solid var(--rhythm-crowded-color, #ffe037); border-radius: 5px; background: rgba(4,7,9,.9); box-shadow: 0 0 0 1px rgba(0,0,0,.78), 0 4px 14px rgba(0,0,0,.58); pointer-events: none; }
 .rhythm-overlay-crowded-prompt-content { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 100%; }
-.rhythm-overlay-crowded-prompt-content .combo-inline-icon-mark { width: 36px; height: 36px; flex: 0 0 36px; background: rgba(255,255,255,.08); }
-.rhythm-overlay-crowded-prompt-content .combo-inline-icon { width: 33px; height: 33px; }
+.rhythm-overlay-crowded-prompt-content .combo-inline-icon-mark { width: calc(36px * var(--icon-width-scale, 1)); height: 36px; flex: 0 0 calc(36px * var(--icon-width-scale, 1)); background: rgba(255,255,255,.08); }
+.rhythm-overlay-crowded-prompt-content .combo-inline-icon { width: calc(33px * var(--icon-width-scale, 1)); height: 33px; }
 .rhythm-overlay-switch-ring { position: absolute; z-index: 7; width: 62px; height: 62px; left: calc(50% + var(--switch-ring-x, 0px)); bottom: calc(15px + var(--switch-ring-y, 0px)); background: url('/rhythm-switch-ring.png') center / contain no-repeat; transform: translateX(-50%) scale(var(--switch-ring-scale, 1.25)); opacity: var(--switch-ring-opacity, 1); pointer-events: none; filter: drop-shadow(0 0 2px rgba(0,0,0,.8)) drop-shadow(0 0 8px rgba(255,255,255,.38)); }
 .rhythm-overlay-avatar { width: 58px; height: 58px; border-radius: 50%; border: 2px solid rgba(255,255,255,.8); background-color: rgba(0,0,0,.35); background-position: center; background-repeat: no-repeat; display: grid; place-items: center; overflow: hidden; }
 .rhythm-overlay-avatar-cell .rhythm-overlay-avatar { transition: border-color .12s linear, box-shadow .12s linear, transform .12s linear; }

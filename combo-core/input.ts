@@ -17,6 +17,7 @@ export function buildBindingMap(bindings: KeyBinding[]): Map<string, string> {
 export function normalizeInputCode(code: string): string {
   const normalized = String(code || '').trim();
   const lower = normalized.toLowerCase();
+  const compactLower = lower.replace(/[\s_-]+/g, '');
   const comboParts = normalized.split('+').map((part) => part.trim()).filter(Boolean);
   if (comboParts.length > 1) return comboParts.map((part) => normalizeInputCode(part)).join('+');
   const aliases: Record<string, string> = {
@@ -51,6 +52,19 @@ export function normalizeInputCode(code: string): string {
     '空格': 'Space'
   };
   if (aliases[lower]) return aliases[lower];
+  const sideButtonAliases: Record<string, string> = {
+    xbutton1: 'Mouse3',
+    mouseback: 'Mouse3',
+    browserback: 'Mouse3',
+    mousebutton4: 'Mouse3',
+    xbutton2: 'Mouse4',
+    mouseforward: 'Mouse4',
+    browserforward: 'Mouse4',
+    mousebutton5: 'Mouse4'
+  };
+  if (sideButtonAliases[compactLower]) return sideButtonAliases[compactLower];
+  const mouseNumber = /^mouse(\d+)$/.exec(compactLower)?.[1];
+  if (mouseNumber !== undefined) return `Mouse${Number(mouseNumber)}`;
   if (/^[a-z]$/i.test(normalized)) return `Key${normalized.toUpperCase()}`;
   if (/^[0-9]$/.test(normalized)) return `Digit${normalized}`;
   return normalized;
@@ -89,4 +103,12 @@ export function mouseButtonToCode(button: number): string {
   if (button === 1) return 'MouseMiddle';
   if (button === 2) return 'MouseRight';
   return `Mouse${button}`;
+}
+
+export function mouseButtonDisplayNumber(code: string): number | null {
+  const normalized = normalizeInputCode(code).replace(/Hold$/, '');
+  const button = /^Mouse(\d+)$/.exec(normalized)?.[1];
+  if (button === undefined) return null;
+  const number = Number(button) + 1;
+  return Number.isFinite(number) ? number : null;
 }

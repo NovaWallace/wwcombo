@@ -4,7 +4,7 @@
 
 WW Combo Trainer is a Windows desktop tool for recording, editing, practicing, and exporting Wuthering Waves combos. It only reads input for recording and judgement; it never sends gameplay input for you. This is an unofficial fan project and is not affiliated with Kuro Games.
 
-## v0.5.0 update (2026-07-31)
+## v0.6.0 update (2026-08-01)
 
 - Connected Text Axis to the current timeline and added Time / Content modes. Unchanged timing text preserves action IDs, duration, lanes, warm-up, and recovery.
 - Text Axis accepts uppercase and `Hold + letter` syntax. Non-Chinese interfaces use English axis/action terms, including `Intro` / `Outro`, instead of unnecessary Chinese text.
@@ -17,13 +17,13 @@ WW Combo Trainer is a Windows desktop tool for recording, editing, practicing, a
 - Always on Top is now Keep Combo Overlay on Top with a yellow/black eye button; a moving triangle points to Global Input Capture while it is disabled.
 - Added a prominent first-run warning that the software is free and paid copies are fraudulent.
 
-### New shortcuts in v0.5.0
+### New shortcuts in v0.6.0
 
 - `Delete`: delete selected blocks; with no selection, enter Continuous Delete mode.
 - `C`: split selected blocks at the pointer time; with no selection, enter Continuous Split mode.
 - `V`: merge selected compatible action blocks.
 - `Ctrl+C` / `Ctrl+V`: copy and paste action blocks using the clipboard shared by normal and video timelines.
-- Add mode `F`: Finisher; `B`: adaptive Intro switch; `Y`: append Outro to selected block content.
+- Add mode `F`: Tunebreak; `B`: adaptive Intro switch; `Y`: append Outro to selected block content.
 - `Tab`: adaptive switch; `X`: switch between action and period placement; `Shift`: enter Add mode.
 
 ## v0.3.0 update (2026-07-30)
@@ -32,7 +32,7 @@ WW Combo Trainer is a Windows desktop tool for recording, editing, practicing, a
 - Settings now imports and exports `.wwkeys.json` binding backups and provides configurable single-key and Shift shortcuts; editing combinations beginning with Ctrl or Alt remain fixed.
 - The Windows build now requires administrator privileges at launch. Global Input Capture, mouse side buttons, dual bindings, and the gamepad input path were improved.
 - Fixed `Delete`, `Ctrl+C`, and `Ctrl+V`; added `C` for Split and `V` for Merge. Delete enters Continuous Delete with no selection, and conflicting browser defaults are suppressed.
-- Add mode now supports `F` for Finisher and `B` for adaptive Intro switches. Press `Y` on selected blocks to append Outro, with default prompts for Finisher, Intro, Outro, and Move Forward.
+- Add mode now supports `F` for Tunebreak and `B` for adaptive Intro switches. Press `Y` on selected blocks to append Outro, with default prompts for Tunebreak, Intro, Outro, and Move Forward.
 - Action text supports literal square brackets such as `[Basic Attack]`: bracketed text bypasses icon conversion and the brackets are hidden when rendered.
 - Added Change and Merge to the context menu, enabled selection actions from empty timeline space, and fixed block dragging plus `Alt`-drag warm-up/recovery editing.
 - Appearance adds text outlines, protected background edges, team presets, and actual-key icons, with improved default crops and light-theme contrast.
@@ -42,7 +42,7 @@ WW Combo Trainer is a Windows desktop tool for recording, editing, practicing, a
 
 ## Installation and first setup
 
-1. Download `wwcombo-正式版-0.5-Windows-x64.zip` from GitHub Releases and extract it completely.
+1. Download `wwcombo-正式版-0.6-Windows-x64.zip` from GitHub Releases and extract it completely.
 2. Launch it with the shortcut beside the `便携版` folder. Keep the shortcut and folder together. If Windows shows a source warning, continue only after confirming that the file came from this repository's Release page.
 3. Open `Settings` and select Chinese, English, Japanese, or Korean.
 4. Switch between `Keyboard & Mouse` and `Gamepad`, then match every action to your in-game controls.
@@ -91,9 +91,9 @@ Content mode changes what the player sees, not action timing.
 
 - `Block Text` is used by overlays and exported images.
 - `Note` is the practice hint.
-- Empty Action can only be inserted with Add. It is display-only and is ignored by Practice and Challenge judgement. If its text is a known mapping such as `w`, `f`, or `e`, the default hint becomes Move Forward, Finisher, or Resonance Skill.
+- Empty Action can only be inserted with Add. It is display-only and is ignored by Practice and Challenge judgement. If its text is a known mapping such as `w`, `f`, or `e`, the default hint becomes Move Forward, Tunebreak, or Resonance Skill.
 
-Common icon text: `a` Basic Attack, `z` Heavy Attack, `e/E` Skill/Hold Skill, `q/Q` Echo/Hold Echo, `r/R` Liberation/Hold Liberation, `s` or `d` Dodge, `j` Jump, `f` Finisher, `w` Move Forward, and `i/ii/iii` character switches.
+Common icon text: `a` Basic Attack, `z` Heavy Attack, `e/E` Skill/Hold Skill, `q/Q` Echo/Hold Echo, `r/R` Liberation/Hold Liberation, `s` or `d` Dodge, `j` Jump, `f` Tunebreak, `w` Move Forward, and `i/ii/iii` character switches.
 
 ## Combo library, import, and sharing
 

@@ -86,7 +86,7 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
             items: [
               '进入“设置”，在“输入模式”选择“键鼠”或“手柄”，只会显示当前模式的绑定。',
               '点击每个绑定框右侧的捕获按钮，再按下目标按键；同一招式可同时设置两个按键，例如 Shift 与鼠标右键。',
-              '手柄可选择 Xbox 或 PlayStation 图标；键鼠可选择默认招式图标或实际按键图标。',
+              '手柄可选择 Xbox 或 PlayStation 图标；键鼠统一显示实际按键图标，并可点击按键图标上传自定义图片。',
               '用“导出按键设置”备份键鼠与手柄绑定，之后可导入 .wwkeys.json 恢复；该文件与连段分享 JSON 相互独立。',
               '在“快捷键设置”中可修改时间轴与视频工具的单键或 Shift 组合；Ctrl、Alt 起手的编辑组合保持固定。'
             ]
@@ -129,7 +129,7 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
             items: [
               '先在“设置”核对键鼠或手柄绑定，再开启左侧栏的“全局捕获”。',
               'Windows 版启动时会自动请求管理员权限，请确认系统 UAC 弹窗，确保可以捕获以管理员身份运行的游戏输入。',
-              '进入“录制”，按 F 开始、Esc 结束。结束后点击“覆盖”，把本次输入载入连段谱编辑区；“调试”可用本次输入校正已有连段。'
+              '进入“录制”，按 F 开始、Esc 结束。默认点击“覆盖”把本次输入载入编辑区；在文字轴界面左下开启“基于文字轴”后，该按钮会变为“调试”，只用录制数据校准现有招式的位置和持续时间，不新增招式。'
             ],
             note: '开始正式录制前，建议先做一次短测试，确认切人、长按和鼠标按键都能被正确识别。'
           },
@@ -148,6 +148,7 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
             title: '用视频辅助精修',
             items: [
               '在“录制”点击“视频辅助”，导入实战视频。视频只在当前会话引用，不会写进连段 JSON。',
+              '点击视频模式右上角的黄色识别图标，可框选按键映射区域并从蓝色亮圈识别点按与长按。识别结果会先预览，确认后才替换时间轴。',
               '裁剪视频的有效区间，让视频起点与连段起点一致；用播放头逐帧对齐招式块。',
               '视频时间轴可调整高度、缩放和轨道密度；导出前先选择导出文件夹并完整预览一次。',
               '可导出合成视频或透明连段图层。导出期间不要关闭视频辅助窗口。'
@@ -251,6 +252,7 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
             controls: [
               { name: '继承录制时间轴', effect: '招式块拖动、复制粘贴、删除、添加模式、撤销重做及时间/内容切换均与“录制 > 时间轴编辑与添加”一致。' },
               { name: '导入视频', effect: '加载实战视频作为本次编辑参照，不会写入 JSON。' },
+              { name: '视频按键识别（右上角黄色图标）', effect: '按当前裁剪范围逐帧识别默认按键映射的蓝色亮圈。文字轴左下开启“基于文字轴”后，只校准现有招式的位置和持续时间并忽略额外识别；关闭时则按识别结果替换时间轴。' },
               { name: '裁剪时长（最左侧）', effect: '设置导入视频的有效起点和终点，不修改源视频文件。' },
               { name: '移动 / 缩放', effect: '调整合成连段图层的位置和整体比例。' },
               { name: '多功能按钮（最右侧）', effect: '时间轴工具栏中的特殊工具。' },
@@ -329,7 +331,7 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
               { name: '输入模式', effect: '在键鼠和手柄之间切换；只显示当前模式的绑定。' },
               { name: '按键 1 / 按键 2', effect: '同一招式最多绑定两个输入，适配不同操作习惯。' },
               { name: '独立 / 推进', effect: '独立操作可与其他操作并行记录；推进决定该招式是否推动练习步骤。' },
-              { name: '键鼠 / 手柄图标', effect: '切换实际键帽、默认招式图标或 Xbox、PlayStation 手柄图标。' },
+              { name: '键鼠 / 手柄图标', effect: '键鼠显示实际按键图标；手柄可选择 Xbox 或 PlayStation 图标。' },
               { name: '导入 / 导出按键设置', effect: '用独立的 .wwkeys.json 文件备份或恢复键鼠与手柄绑定，不会导入连段或外观。' },
               { name: '快捷键设置', effect: '修改时间轴与视频工具的单键或 Shift 组合；Ctrl、Alt 起手的固定编辑组合不会被覆盖。' },
               { name: 'Live2D / 录制提示点', effect: '分别控制主界面动态角色和录制状态提示点的显示。' }
@@ -342,8 +344,9 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
         summary: '记录公开版本和当前开发版的重要变化。',
         groups: [
           {
-            title: 'v0.5.0 · 2026-07-31',
+            title: 'v0.6.0 · 2026-08-01',
             items: [
+              '视频模式右上角新增黄色“视频按键识别”入口。可拖动并等比缩放识别框，按当前裁剪区逐帧识别默认按键映射中的蓝色圆形提示，区分点按与长按，并在确认后通过现有录制逻辑生成时间轴；同角色切换保护、500 ms 连按合并与撤销历史继续生效。',
               '桌面版现在会在启动时默认尝试开启全局捕获；用户仍可从左侧栏手动关闭。编辑时间轴、填写分享信息、使用视频编辑或调整外观时，只暂停招式动作进入录制与练习判定，时间轴自身的 Delete、C、V、Ctrl+C、Ctrl+V 等快捷键保持可用。',
               '文字轴长按语法新增“长+字母”，例如“长e”和大写 E 都会生成长按技能，原有大写写法继续兼容。',
               '打通时间轴与文字轴：打开文字轴识别时，当前时间轴会按招式块边界转换为可编辑文字；未修改时间文本时保留原招式 ID、时长、轨道、预热和后摇。新增“时间 / 内容”切换，可直接在同一批招式边界上编辑显示内容。',
@@ -357,7 +360,13 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
               '时间轴复制内容改为普通编辑器与视频编辑器共享，修复切换界面或组件重新挂载后 Ctrl+C / Ctrl+V 偶发失效。',
               '首次离开主界面的引导弹窗新增醒目防骗提示：软件完全免费，任何平台付费购买均应立即申请退款。',
               '文字轴时间模式优先使用可读文字映射；外语界面使用英文轴名与动作词，并以 Intro / Outro 表示变奏和延奏。内容模式继续保留 j、s、J、S、f、w 等实际映射码。',
-              '练习页完整轴图不再读取最大合并数量，而是按可用宽度持续排版并自动换行；同时修正头像、图标、文字和底图宽度估算，减少纵向间距并避免内容超出底图。'
+              '练习页完整轴图不再读取最大合并数量，而是按可用宽度持续排版并自动换行；同时修正头像、图标、文字和底图宽度估算，减少纵向间距并避免内容超出底图。',
+              '英文“处决”统一改为 Tunebreak，并修复文字与图标转换中 A、Z 未稳定识别为重击，以及 z 与 y 连写时重击和延奏图标组合错误的问题。视频按键识别提高了切人提示的灵敏度。“基于文字轴”开关移到文字轴界面左下；开启后视频识别和录制调试都保留现有招式，只校准位置与持续时间并忽略额外输入。录制页移除独立调试按钮，原“覆盖”会在该模式下切换为“调试”。',
+              '左侧栏新增“社区”，在客户端内直接加载连段社区。社区中的“下载连段”会改为自动导入本体连段库并选中该连段；普通浏览器访问社区时仍按原方式下载 .wwcombo.json 文件。',
+              '调整主导航顺序：社区位于实验上方；主界面第 4、5 个入口改为社区和实验，实验入口进入工具总览。六个入口在较窄窗口中仍保持同排可见，不再直接隐藏社区或实验。',
+              '外观的默认宽度模式改为“适应内容”；切换到固定宽度时，新建配置默认使用 600 px，不覆盖用户已经保存的外观参数。',
+              '移除键鼠图标中已经合并的“默认 / 实际”选项；键盘与鼠标现在统一使用实际按键图标，旧按键设置文件中的“默认”模式会自动兼容迁移。',
+              '修复客户端内社区的下载状态：离开社区再返回时不再重建页面，“已导入客户端”会持久保留；下载身份使用签名令牌恢复，并优先于可能过期的 iframe Cookie，因此重新进入或刷新后仍可正常点赞和反馈。'
             ]
           },
           {
@@ -439,7 +448,7 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
             items: [
               'Open Settings and choose Keyboard & Mouse or Gamepad under Input Mode. Only bindings for the active mode are shown.',
               'Click the capture button beside a binding, then press the desired input. One action can have two bindings, such as Shift and the right mouse button.',
-              'Gamepad mode supports Xbox and PlayStation icons. Keyboard mode can use default action icons or actual key icons.',
+              'Gamepad mode supports Xbox and PlayStation icons. Keyboard and mouse inputs use actual-key icons, which can be clicked to upload custom images.',
               'Use Export Input Settings to back up keyboard, mouse, and gamepad bindings, then import the .wwkeys.json file to restore them. This format is separate from combo-share JSON.',
               'Shortcut Settings can customize single-key and Shift combinations for timeline and video tools. Editing combinations beginning with Ctrl or Alt remain fixed.'
             ]
@@ -482,7 +491,7 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
             items: [
               'Verify keyboard, mouse, or gamepad bindings in Settings, then enable Global Input Capture in the sidebar.',
               'The Windows build requests administrator privileges at launch. Approve the UAC prompt so background input can be captured from an elevated game.',
-              'Open Record, press F to start, and press Esc to stop. Click Replace to load the run into the editor; Test can use the run to refine an existing combo.'
+              'Open Record, press F to start, and press Esc to stop. Replace loads the run into the editor. Enable Base Recognition on Text Axis at the lower left of Text Axis Import to change that button to Test; it then aligns only the position and duration of existing actions without adding actions.'
             ],
             note: 'Before a full recording, make a short test and confirm that character switches, holds, and mouse inputs are recognized.'
           },
@@ -492,8 +501,8 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
               'In Timing mode, drag action blocks to adjust start time and duration. Add, split, or delete actions, and define startup and loop axes.',
               'Use undo, redo, and the playhead to review timing. Changing character order also remaps character-switch targets.',
               'Switch to Content mode to edit block labels, prompts, and displayed rounds. Use Appearance for shared visual styling.',
-              'Useful editing keys include Delete, Ctrl+C / Ctrl+V, C for Split, and V for Merge. In Add mode, F selects Finisher and B selects an adaptive Intro switch; press Y with blocks selected to append Outro content.',
-              'Wrap literal English text in square brackets, such as [Basic Attack]. Bracketed text bypasses icon conversion and the brackets are hidden. Finisher, Intro, Outro, and Move Forward also receive their matching default prompts.',
+              'Useful editing keys include Delete, Ctrl+C / Ctrl+V, C for Split, and V for Merge. In Add mode, F selects Tunebreak and B selects an adaptive Intro switch; press Y with blocks selected to append Outro content.',
+              'Wrap literal English text in square brackets, such as [Basic Attack]. Bracketed text bypasses icon conversion and the brackets are hidden. Tunebreak, Intro, Outro, and Move Forward also receive their matching default prompts.',
               'Save when editing is complete. Saving creates a new library entry so an older version can remain available.'
             ]
           },
@@ -501,6 +510,7 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
             title: 'Refine with Video Tools',
             items: [
               'Click Video Tools in Record and import gameplay footage. The video is referenced for this session and is not embedded in the combo JSON.',
+              'Use the yellow recognition icon at the top right of Video Tools to frame the Key Mapping overlay and recognize taps and holds from its blue activation circles. Results are previewed before they can replace the timeline.',
               'Trim the useful range so video time zero matches the combo start, then align blocks frame by frame.',
               'The video timeline supports panel height, zoom, and lane-density adjustment. Choose an export folder and preview the full result before export.',
               'Export either a composed video or a transparent combo layer. Keep Video Tools open until export finishes.'
@@ -566,7 +576,7 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
               { keys: ['Z / Shift+A'], action: 'Choose Heavy Attack for placement', nested: true },
               { keys: ['E / Q / R'], action: 'Choose Skill / Echo / Resonance Liberation', note: 'Hold Shift for each hold variant.', nested: true },
               { keys: ['S / D / J'], action: 'S or D chooses Dodge; J chooses Jump', nested: true },
-              { keys: ['F / W'], action: 'Choose a display-only Finisher with content f / Empty Action with content w', nested: true },
+              { keys: ['F / W'], action: 'Choose a display-only Tunebreak with content f / Empty Action with content w', nested: true },
               { keys: ['Tab'], action: 'Choose an adaptive character switch', note: 'Change these non-Ctrl/Alt shortcuts under Settings > Shortcut Settings.', nested: true },
               { keys: ['B'], action: 'Choose an adaptive Intro character switch', note: 'Produces ib, iib, or iiib according to the destination character.', nested: true },
               { keys: ['Right click'], action: 'Leave placement mode or open an action-block menu', nested: true }
@@ -604,6 +614,7 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
             controls: [
               { name: 'Inherits the Record timeline', effect: 'Block dragging, copy/paste, deletion, Add mode, undo/redo, and Timing/Content work exactly as described under Record > Timeline editing and placement.' },
               { name: 'Import Video', effect: 'Loads gameplay footage for the current editing session; it is not stored in JSON.' },
+              { name: 'Video Key Recognition (yellow icon, top right)', effect: 'Scans the current trimmed range for the default Key Mapping blue circles. With Base Recognition on Text Axis enabled in Text Axis Import, it only aligns existing action positions and durations and ignores extra detections; otherwise it replaces the timeline from recognition.' },
               { name: 'Trim Video (leftmost)', effect: 'Sets the useful source-video start and end without modifying the source file.' },
               { name: 'Move / Scale', effect: 'Moves and scales the composed combo layer.' },
               { name: 'Multifunction (rightmost)', effect: 'A special tool at the end of the timeline toolbar.' },
@@ -682,7 +693,7 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
               { name: 'Input Mode', effect: 'Switches between keyboard/mouse and gamepad, showing bindings for only the active mode.' },
               { name: 'Binding 1 / Binding 2', effect: 'Assigns up to two inputs to one action for different control habits.' },
               { name: 'Independent / Advances Step', effect: 'Independent actions can overlap others; Advances Step decides whether an action moves practice forward.' },
-              { name: 'Keyboard / gamepad icons', effect: 'Selects actual keycaps, default action icons, or Xbox and PlayStation icons.' },
+              { name: 'Keyboard / gamepad icons', effect: 'Keyboard and mouse inputs use actual-key icons; gamepad mode supports Xbox and PlayStation icons.' },
               { name: 'Import / Export Input Settings', effect: 'Backs up or restores keyboard, mouse, and gamepad bindings with a separate .wwkeys.json file; combos and appearance are not imported.' },
               { name: 'Shortcut Settings', effect: 'Customizes single-key and Shift combinations for timeline and video tools without replacing fixed Ctrl or Alt editing combinations.' },
               { name: 'Live2D / Recording Indicator', effect: 'Controls the animated home character and the recording status dot.' }
@@ -695,8 +706,9 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
         summary: 'Important changes in public releases and the current development build.',
         groups: [
           {
-            title: 'v0.5.0 · 2026-07-31',
+            title: 'v0.6.0 · 2026-08-01',
             items: [
+              'Added a yellow Video Key Recognition entry at the top right of Video mode. Its draggable, aspect-locked frame scans the current trimmed range for default Key Mapping blue circles, distinguishes taps from holds, previews results before replacement, and replays accepted events through existing recording behavior so same-character switch protection, 500 ms rapid-tap merging, and undo history remain intact.',
               'The desktop app now attempts to enable Global Input Capture on launch by default; it can still be disabled manually from the sidebar. While editing the timeline, filling share metadata, using Video Tools, or adjusting Appearance, action capture is paused before it can reach recording or practice judgment, while timeline shortcuts such as Delete, C, V, Ctrl+C, and Ctrl+V remain available.',
               'Text Axis hold syntax now accepts Hold + letter, so Hold e and uppercase E both create hold Skill while the original uppercase syntax remains compatible.',
               'Connected the timeline and Text Axis Import. Opening the dialog converts the current timeline into editable text marked by action boundaries. If timing text is left unchanged, original action IDs, durations, lanes, warm-up, and recovery are preserved. A Time / Content switch edits timing syntax or display content on the same block boundaries.',
@@ -705,12 +717,18 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
               'Renamed Always on Top to Keep Combo Overlay on Top with a yellow background, black text, and an eye icon. The Move control now uses a four-way move icon. Fixed block artwork being clipped when the overlay crosses between the upper and lower halves of the screen and the prompt arrow changes sides. While Global Input Capture is off, a gently animated yellow triangle points to its sidebar button.',
               'Added global custom icons in Settings. Icons can be uploaded or restored individually, override matching keyboard, gamepad, and appearance icons, and travel with .wwkeys.json input-settings import and export.',
               'Added recording switch protection. Pressing the switch key for the character already on field no longer creates an invalid switch block; the next recorded switch must target another character.',
-              'Added Text Axis Import to Record mode. It matches current Chinese character names or first-character abbreviations, creates actions from letters and Chinese action terms, treats uppercase as hold input, recognizes startup and loop axes, Intro, Outro, Finisher, Jump, Dodge, and Move Forward, and assigns default durations of 3 seconds for Liberation, 0.5 seconds for switches, and 1 second for other actions.',
+              'Added Text Axis Import to Record mode. It matches current Chinese character names or first-character abbreviations, creates actions from letters and Chinese action terms, treats uppercase as hold input, recognizes startup and loop axes, Intro, Outro, Tunebreak, Jump, Dodge, and Move Forward, and assigns default durations of 3 seconds for Liberation, 0.5 seconds for switches, and 1 second for other actions.',
               'C now splits selected blocks at the current pointer time, while still entering continuous Split mode when nothing is selected. A multiselection remains active until an unselected block is clicked; double-clicking a member collapses the group to that block.',
               'Shared the timeline clipboard between the normal and video editors, fixing intermittent Ctrl+C / Ctrl+V failures after switching views or remounting the editor.',
               'Added a prominent first-run anti-scam warning: the software is completely free, and users who paid on any platform should request a refund immediately.',
-              'Text Axis Time mode now uses English axis/action terms in non-Chinese interfaces, including Intro / Outro, Jump, Dodge, Hold Jump, Hold Dodge, Finisher, and Move Forward. Content mode continues to expose the actual j, s, J, S, f, and w mapping codes.',
-              'The full Practice axis ignores the maximum merge count and keeps packing actions by available width before wrapping. Avatar, icon, text, and background width estimates were corrected, vertical spacing was reduced, and content no longer overflows its block artwork.'
+              'Text Axis Time mode now uses English axis/action terms in non-Chinese interfaces, including Intro / Outro, Jump, Dodge, Hold Jump, Hold Dodge, Tunebreak, and Move Forward. Content mode continues to expose the actual j, s, J, S, f, and w mapping codes.',
+              'The full Practice axis ignores the maximum merge count and keeps packing actions by available width before wrapping. Avatar, icon, text, and background width estimates were corrected, vertical spacing was reduced, and content no longer overflows its block artwork.',
+              'Renamed the English Finisher label to Tunebreak. Fixed A and Z conversion to Heavy Attack and corrected Heavy Attack + Outro icon rendering for z followed by y. Video Key Recognition now detects character switches more sensitively. Moved Base Recognition on Text Axis to the lower left of Text Axis Import; when enabled, video recognition and recording Test preserve existing actions, align only position and duration, and ignore extra inputs. Removed the separate Test button in Record; Replace changes to Test in this mode.',
+              'Added Community to the sidebar and embedded the combo repository in the client. Downloading a combo inside the client now imports and selects it in the local combo library automatically; the standalone website continues to download a .wwcombo.json file normally.',
+              'Reordered the main navigation so Community sits above Labs. Home buttons 4 and 5 now open Community and the Labs overview. All six Home entries remain visible in one row at narrower window widths instead of hiding Community or Labs.',
+              'Changed the default Appearance width mode to Fit Content. New configurations use 600 px when switched to Fixed Width without overwriting an existing saved appearance.',
+              'Removed the obsolete Default / Actual keyboard icon choice. Keyboard and mouse inputs now consistently use actual-key icons, and old input-settings files using Default migrate automatically.',
+              'Fixed downloaded state in the embedded Community. Leaving and returning no longer remounts the page, Imported into client persists, and a signed voter token restores download eligibility after reload. The token takes precedence over a stale iframe cookie so likes and feedback remain available.'
             ]
           },
           {
@@ -731,7 +749,7 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
               'Improved video trimming and toolbar order: Trim is leftmost, the five edit tools stay together, and the multifunction timeline control is rightmost.',
               'Added input-settings import/export and Shortcut Settings. Single-key and Shift combinations are configurable while Ctrl- and Alt-based editing combinations remain fixed.',
               'Fixed Delete, Ctrl+C, and Ctrl+V. Delete enters Continuous Delete with no selection, C opens Split, V merges selected blocks, and conflicting native browser shortcuts are suppressed.',
-              'Added F for Finisher placement, B for adaptive Intro switches, and Y to append Outro y to selected blocks; also added default prompts for Finisher, Intro, Outro, and Move Forward.',
+              'Added F for Tunebreak placement, B for adaptive Intro switches, and Y to append Outro y to selected blocks; also added default prompts for Tunebreak, Intro, Outro, and Move Forward.',
               'Added literal text in square brackets: [Basic Attack] bypasses icon conversion and displays without the brackets.',
               'Added action-text outline controls for enablement, width, and color.',
               'The Windows build now requires administrator privileges at launch; approving UAC prevents elevated games from blocking Global Input Capture.',
@@ -780,7 +798,7 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
         summary: '連段JSONの読み込みから、入力設定、グローバル監視、モード選択、表示調整までの流れです。',
         groups: [
           { title: '連段を読み込んで選ぶ', items: ['「練習」を開き、右側の「連段ライブラリ」で「インポート」を押し、このアプリから書き出されたJSONを選びます。', '読み込みに成功すると一覧へ追加され、その連段が選択されます。以後は一覧をクリックして切り替えられます。', '信頼できる配布元のJSONだけを読み込んでください。入力設定や外観プリセットは上書きされません。'] },
-          { title: 'キーボード・マウス／ゲームパッドを設定', items: ['「設定」の「入力モード」でキーボード・マウスまたはゲームパッドを選びます。選択中のモードだけが表示されます。', '入力欄の右にあるキャプチャボタンを押してから割り当てたい入力を行います。1アクションにShiftと右クリックなど2つまで設定できます。', 'ゲームパッドはXbox／PlayStation表示、キーボードは既定アイコン／実キーアイコンを選べます。', '「入力設定を書き出す」でキーボード・マウス／ゲームパッド割り当てをバックアップし、.wwkeys.jsonを読み込んで復元できます。連段共有JSONとは別形式です。', '「ショートカット設定」ではタイムラインと動画ツールの単キー／Shift組み合わせを変更できます。CtrlまたはAltで始まる編集操作は固定です。'] },
+          { title: 'キーボード・マウス／ゲームパッドを設定', items: ['「設定」の「入力モード」でキーボード・マウスまたはゲームパッドを選びます。選択中のモードだけが表示されます。', '入力欄の右にあるキャプチャボタンを押してから割り当てたい入力を行います。1アクションにShiftと右クリックなど2つまで設定できます。', 'キーボード・マウスは実キーアイコンを表示し、アイコンをクリックして画像を変更できます。ゲームパッドはXbox／PlayStation表示を選べます。', '「入力設定を書き出す」でキーボード・マウス／ゲームパッド割り当てをバックアップし、.wwkeys.jsonを読み込んで復元できます。連段共有JSONとは別形式です。', '「ショートカット設定」ではタイムラインと動画ツールの単キー／Shift組み合わせを変更できます。CtrlまたはAltで始まる編集操作は固定です。'] },
           { title: 'グローバル入力監視を有効にする', items: ['練習前にサイドバーの「グローバル入力監視」を押し、有効表示になったことを確認します。ゲームが前面でも入力を受け取れます。', 'Windows版は起動時に管理者権限を自動で要求します。管理者として動作するゲームの入力を取得できるよう、UACダイアログで「はい」を選んでください。', '入力されない場合は入力モードと割り当てを確認し、グローバル入力監視を一度オフにして再度オンにします。'], note: '起動時のUAC要求を拒否しないでください。「ウィンドウ内入力」はバックグラウンド入力が有効という意味ではありません。' },
           { title: 'モードを選んで開始', items: ['「デモ」は時間に沿って自動再生され、順番とリズムの確認に向いています。正しい入力は不要です。', '「進行」は正しい入力で進み、タイミング判定は比較的緩めです。手順を覚えるときに使います。', '「チャレンジ」は順番とタイミングを同時に判定します。安定してからの確認に使います。', '連段とモードを選び、Fで開始、Escで終了します。必要に応じて「軸の最初のアクションで開始」や自動リセットを使います。'] },
           { title: '練習表示とリズム軸を調整', optional: true, items: ['「外観」で横・縦・ウォーターフォールを選び、アバター、キャラクター背景、アクションブロック、文字の縁取り、アイコン変換、事前表示、結合、フェードを調整します。', '目のボタンで最前面連段表示を切り替え、「移動」でゲーム上の位置を変更し、「リセット」で現在のレイアウトを初期値へ戻します。', '「実験 > リズム軸」は連段をリズムレーンへ変換します。連段を選び、画面サイズ、レーン間隔、落下速度、判定線、キャラクター間隔を調整します。'] }
@@ -790,9 +808,9 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
         title: '攻略作者向け制作フロー',
         summary: '入力の録画、時間軸の調整、動画同期、JSON共有、軸画像の書き出しまでをまとめています。',
         groups: [
-          { title: '操作を録画する', items: ['「設定」で入力割り当てを確認し、サイドバーの「グローバル入力監視」を有効にします。', 'Windows版は起動時に管理者権限を自動で要求します。UACダイアログを承認すると、管理者権限のゲームからもバックグラウンド入力を取得できます。', '「録画」でFを押して開始し、Escで終了します。「置換」で今回の入力を編集へ読み込み、「テスト」で既存連段の補正に利用できます。'], note: '本番前に短いテストを行い、キャラクター切替、長押し、マウス入力が認識されることを確認してください。' },
+          { title: '操作を録画する', items: ['「設定」で入力割り当てを確認し、サイドバーの「グローバル入力監視」を有効にします。', 'Windows版は起動時に管理者権限を自動で要求します。UACダイアログを承認すると、管理者権限のゲームからもバックグラウンド入力を取得できます。', '「録画」でFを押して開始し、Escで終了します。通常は「置換」で編集へ読み込みます。文字軸画面左下の「文字軸を基準にする」を有効にするとボタンが「テスト」に変わり、既存アクションを追加せず位置と持続時間だけを補正します。'], note: '本番前に短いテストを行い、キャラクター切替、長押し、マウス入力が認識されることを確認してください。' },
           { title: '時間軸と表示内容を編集', items: ['「タイミング」ではブロックをドラッグして開始時刻と長さを調整します。アクションの追加・分割・削除、開始軸・ループ軸の設定もできます。', '元に戻す、やり直す、再生ヘッドで確認します。キャラクター順の変更時は切替先も同期して変換されます。', '「内容」ではブロックの文字、ヒント、表示ラウンドを編集します。共通の見た目は「外観」で調整します。', 'Delete、Ctrl+C／Ctrl+V、Cの分割、Vの結合を利用できます。追加中はFでフィニッシャー、Bで変奏付き自動切替を選び、選択後にYを押すと終奏内容を追加します。', '[Basic Attack] のように角括弧で囲むと、アイコンへ変換せず文字だけを表示し、括弧自体は隠れます。フィニッシャー、変奏、終奏、前進には対応する既定ヒントも表示されます。', '完了後に保存すると新しい一覧項目が作られ、以前の版を残せます。'] },
-          { title: '動画ツールで精密調整', items: ['「録画」の「動画ツール」から実戦動画を読み込みます。動画は現在のセッションだけで参照され、連段JSONには入りません。', '有効区間をトリミングして動画の開始と連段の開始を合わせ、フレーム単位でブロックを調整します。', '動画時間軸では高さ、ズーム、レーン密度を調整できます。先に出力フォルダーを選び、全体をプレビューしてください。', '合成動画または透明連段レイヤーを書き出せます。完了するまで動画ツールを閉じないでください。'] },
+          { title: '動画ツールで精密調整', items: ['「録画」の「動画ツール」から実戦動画を読み込みます。動画は現在のセッションだけで参照され、連段JSONには入りません。', '右上の黄色い認識アイコンでキー表示領域を囲み、青い点灯円から短押しと長押しを認識できます。結果は確認するまでタイムラインを置き換えません。', '有効区間をトリミングして動画の開始と連段の開始を合わせ、フレーム単位でブロックを調整します。', '動画時間軸では高さ、ズーム、レーン密度を調整できます。先に出力フォルダーを選び、全体をプレビューしてください。', '合成動画または透明連段レイヤーを書き出せます。完了するまで動画ツールを閉じないでください。'] },
           { title: 'JSONを書き出して共有', items: ['「練習」の連段ライブラリで対象を選び、「共有」を押します。', '名前、タグ、説明、任意のリンクを入力します。キャラクター、ラウンド、IDは自動生成されます。', '「共有JSONを書き出す」で保存し、相手は「練習 > 連段ライブラリ > インポート」から利用できます。', '公開前に書き出したJSONを再度読み込み、キャラクター、ラウンド、文字、時間軸を確認してください。'] },
           { title: '軸画像とキー表示を書き出す', optional: true, items: ['「実験 > 軸画像を書き出す」で完全なPNGを作れます。連段と表示ラウンド、キャンバスサイズを選ぶと自動で縮小・改行されます。', '軸画像の外観、背景、アイコン設定は独立しており、録画・練習の共通外観は変更しません。', '「実験 > キーマッピング」はキーボード、マウス、ゲームパッド入力を任意の画像へ割り当て、録画中のキー表示に使えます。', 'ゲーム背面で使う場合はグローバル入力監視を有効にし、録画前に全マッピングをテストしてください。'] },
           { title: '連段サイトの紹介', optional: true, items: [] }
@@ -870,6 +888,7 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
             controls: [
               { name: '録画タイムラインを継承', effect: 'ブロックのドラッグ、コピー、削除、追加モード、元に戻す／やり直す、タイミング／内容は「録画 > タイムライン編集と配置」と同じです。' },
               { name: '動画を読み込む', effect: '実戦動画を現在の編集参照として読み込みます。JSONには保存されません。' },
+              { name: '動画キー認識（右上の黄色アイコン）', effect: '現在のトリミング範囲から既定キー表示の青い円を解析します。「文字軸を基準にする」が有効なら既存アクションの位置と持続時間だけを補正し、余分な検出を無視します。無効なら認識結果でタイムラインを置き換えます。' },
               { name: '動画をトリミング（左端）', effect: '元ファイルを変更せず使用する開始・終了位置を設定します。' },
               { name: '移動 / 拡大縮小', effect: '合成する連段レイヤーの位置と全体倍率を変更します。' },
               { name: '多機能ボタン（右端）', effect: 'タイムラインツールバー末尾の特殊ツールです。' },
@@ -948,7 +967,7 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
               { name: '入力モード', effect: 'キーボード・マウスとゲームパッドを切り替え、現在のモードの割り当てだけを表示します。' },
               { name: '割り当て 1 / 2', effect: '1アクションへ最大2つの入力を割り当てます。' },
               { name: '独立 / ステップ進行', effect: '独立は他操作との重なりを許可し、ステップ進行は練習を次へ進めるかを決めます。' },
-              { name: 'キー / パッドアイコン', effect: '実キー、既定アクション、Xbox、PlayStation表示を選びます。' },
+              { name: 'キー / パッドアイコン', effect: 'キーボード・マウスは実キーアイコンを表示し、ゲームパッドはXbox／PlayStation表示を選べます。' },
               { name: '入力設定の読み込み / 書き出し', effect: '独立した.wwkeys.jsonでキーボード・マウス／ゲームパッド割り当てを復元・保存します。連段や外観は含まれません。' },
               { name: 'ショートカット設定', effect: 'タイムラインと動画ツールの単キー／Shift組み合わせを変更します。固定のCtrl／Alt編集操作は上書きしません。' },
               { name: 'Live2D / 録画インジケーター', effect: 'ホームの動くキャラクターと録画状態ドットを切り替えます。' }
@@ -961,8 +980,9 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
         summary: '公開版と現在の開発版における主な変更です。',
         groups: [
           {
-            title: 'v0.5.0 · 2026-07-31',
+            title: 'v0.6.0 · 2026-08-01',
             items: [
+              '動画モード右上に黄色の「動画キー認識」を追加しました。縦横比を保つ認識枠を移動・拡大縮小し、現在のトリミング範囲から既定キー表示の青い円をフレーム単位で解析します。短押しと長押しを分け、確認後に既存の録画処理でタイムラインへ変換するため、同一キャラクター切替保護、500 msの連打結合、取り消し履歴も維持されます。',
               'デスクトップ版は起動時にグローバル入力監視を既定で有効化するよう試みます。サイドバーから手動で無効化することもできます。タイムライン編集中、共有情報入力中、動画編集または外観調整中は、録画や練習判定へ届くアクション入力だけを停止し、Delete、C、V、Ctrl+C、Ctrl+Vなどタイムライン固有のショートカットは維持します。',
               '文字軸の長押し記法に「長＋文字」を追加しました。「長e」と大文字Eはいずれもスキル長押しを生成し、従来の大文字記法も引き続き利用できます。',
               'タイムラインと文字軸を接続しました。文字軸を開くと現在のタイムラインをアクション境界付きの編集可能な文字として表示します。時間テキストを変更しなければ、元のID、時間、レーン、予熱、後隙を保持します。「時間／内容」で同じブロック境界のまま時間記法と表示内容を編集できます。',
@@ -976,7 +996,13 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
               '通常編集と動画編集でタイムラインのクリップボードを共有し、画面切替や再マウント後に Ctrl+C／Ctrl+V が失敗する問題を修正しました。',
               '初回案内に、本ソフトは完全無料であり、有料購入した場合は直ちに返金申請するよう促す詐欺防止警告を追加しました。',
               '中国語以外の文字軸時間モードは英語の軸名とアクション語を使用し、変奏／終奏を Intro / Outro と表示します。内容モードでは j、s、J、S、f、w の実マッピングコードを維持します。',
-              '練習画面の全体軸は最大結合数を使用せず、利用可能な幅へ詰めてから自動改行します。アバター、アイコン、文字、背景幅の計算を修正し、縦間隔を縮め、内容が背景からはみ出す問題を解消しました。'
+              '練習画面の全体軸は最大結合数を使用せず、利用可能な幅へ詰めてから自動改行します。アバター、アイコン、文字、背景幅の計算を修正し、縦間隔を縮め、内容が背景からはみ出す問題を解消しました。',
+              '英語のフィニッシャー表記を Tunebreak に統一しました。A／Zを重撃へ変換できない問題と、zの直後にyを入力した際の重撃＋終奏アイコン表示を修正しました。動画キー認識ではキャラクター切替の感度を高めました。「文字軸を基準にする」を文字軸画面左下へ移し、有効時は動画認識と録画テストが既存アクションを保持して位置と持続時間だけを補正し、余分な入力を無視します。録画画面の独立したテストボタンは削除し、このモードでは「置換」が「テスト」に切り替わります。',
+              'サイドバーに「コミュニティ」を追加し、コンボ共有サイトをクライアントへ内蔵しました。クライアント内でコンボをダウンロードするとローカルのコンボ一覧へ自動で取り込み、選択します。通常のブラウザーでは従来どおり .wwcombo.json をダウンロードします。',
+              'メインナビゲーションの順序を変更し、「コミュニティ」を「実験」の上へ移動しました。ホームの4番と5番はコミュニティと実験ツール一覧を開きます。幅が狭い場合もコミュニティや実験を隠さず、6つの入口を1列で表示します。',
+              '外観の既定幅モードを「内容に合わせる」へ変更しました。固定幅へ切り替えた新規設定では 600 px を使用し、保存済みの外観設定は上書きしません。',
+              '統合済みのキーボードアイコン「既定／実キー」選択を削除しました。キーボード・マウスは常に実キーアイコンを使用し、旧設定ファイルの既定モードも自動移行します。',
+              'クライアント内コミュニティのダウンロード状態を修正しました。別画面へ移動して戻ってもページを再生成せず、「クライアントへ取り込み済み」を保持します。再読み込み後も署名付き識別トークンで資格を復元し、古い iframe Cookie より優先するため、いいねとフィードバックを利用できます。'
             ]
           },
           {
@@ -1032,7 +1058,7 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
         summary: '콤보 JSON 가져오기부터 입력 설정, 전역 캡처, 모드 선택과 연습 화면 조정까지 안내합니다.',
         groups: [
           { title: '콤보 가져오기와 선택', items: ['“연습”을 열고 오른쪽 “콤보 라이브러리”에서 “가져오기”를 눌러 이 앱에서 내보낸 JSON을 선택합니다.', '가져오기에 성공하면 목록에 추가되고 자동으로 선택됩니다. 이후 목록의 항목을 눌러 콤보를 바꿀 수 있습니다.', '신뢰할 수 있는 출처의 JSON만 가져오세요. 입력 설정과 외형 프리셋은 덮어쓰지 않습니다.'] },
-          { title: '키보드·마우스 또는 게임패드 설정', items: ['“설정”의 “입력 모드”에서 키보드·마우스 또는 게임패드를 선택합니다. 현재 모드의 바인딩만 표시됩니다.', '입력 칸 오른쪽의 캡처 버튼을 누른 뒤 원하는 입력을 누릅니다. 한 동작에 Shift와 마우스 오른쪽 버튼처럼 두 입력을 지정할 수 있습니다.', '게임패드는 Xbox/PlayStation 아이콘을, 키보드는 기본 동작 아이콘/실제 키 아이콘을 선택할 수 있습니다.', '“입력 설정 내보내기”로 키보드·마우스와 게임패드 바인딩을 백업하고 .wwkeys.json을 가져와 복원할 수 있습니다. 콤보 공유 JSON과는 별도 형식입니다.', '“단축키 설정”에서는 타임라인과 영상 도구의 단일 키 또는 Shift 조합을 바꿀 수 있습니다. Ctrl이나 Alt로 시작하는 편집 조합은 고정됩니다.'] },
+          { title: '키보드·마우스 또는 게임패드 설정', items: ['“설정”의 “입력 모드”에서 키보드·마우스 또는 게임패드를 선택합니다. 현재 모드의 바인딩만 표시됩니다.', '입력 칸 오른쪽의 캡처 버튼을 누른 뒤 원하는 입력을 누릅니다. 한 동작에 Shift와 마우스 오른쪽 버튼처럼 두 입력을 지정할 수 있습니다.', '키보드·마우스는 실제 키 아이콘을 표시하며 아이콘을 눌러 사용자 이미지를 올릴 수 있습니다. 게임패드는 Xbox/PlayStation 아이콘을 선택할 수 있습니다.', '“입력 설정 내보내기”로 키보드·마우스와 게임패드 바인딩을 백업하고 .wwkeys.json을 가져와 복원할 수 있습니다. 콤보 공유 JSON과는 별도 형식입니다.', '“단축키 설정”에서는 타임라인과 영상 도구의 단일 키 또는 Shift 조합을 바꿀 수 있습니다. Ctrl이나 Alt로 시작하는 편집 조합은 고정됩니다.'] },
           { title: '전역 입력 캡처 켜기', items: ['연습 전에 사이드바의 “전역 입력 캡처”를 눌러 활성 상태인지 확인합니다. 게임에 포커스가 있어도 앱이 입력을 받을 수 있습니다.', 'Windows 버전은 시작할 때 관리자 권한을 자동으로 요청합니다. 관리자 권한으로 실행되는 게임의 입력도 캡처할 수 있도록 UAC 창에서 “예”를 선택하세요.', '입력이 없다면 입력 모드와 바인딩을 확인한 뒤 전역 입력 캡처를 껐다가 다시 켜세요.'], note: '시작할 때 표시되는 UAC 요청을 거부하지 마세요. “창 내부 입력”은 백그라운드 게임 입력이 가능하다는 뜻이 아닙니다.' },
           { title: '모드 선택 후 시작', items: ['“데모”는 시간에 맞춰 자동 재생되며 순서와 리듬 확인에 적합합니다. 정확한 입력은 필요하지 않습니다.', '“진행”은 올바른 입력 후 진행되고 판정이 비교적 여유로워 순서를 익히기에 좋습니다.', '“도전”은 순서와 타이밍을 함께 검사하며 충분히 익숙해진 뒤 안정성을 확인할 때 사용합니다.', '콤보와 모드를 선택하고 F로 시작, Esc로 종료합니다. 필요하면 “축 첫 동작에서 시작” 또는 자동 초기화를 켜세요.'] },
           { title: '연습 표시와 리듬 축 조정', optional: true, items: ['“외형”에서 가로, 세로, 워터폴을 선택하고 아바타, 캐릭터 배경, 동작 블록, 문자 외곽선, 아이콘 변환, 사전 안내, 병합, 페이드를 조정합니다.', '눈 버튼으로 항상 위 콤보를 표시/숨기고, “이동”으로 게임 화면 위치를 바꾸며, “초기화”로 현재 레이아웃 기본값을 복원합니다.', '“실험 > 리듬 축”은 콤보를 리듬 레인으로 바꿉니다. 콤보를 선택한 뒤 화면 크기, 레인 간격, 낙하 속도, 판정선과 캐릭터 간격을 조정하세요.'] }
@@ -1042,9 +1068,9 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
         title: '공략 제작자 작업 흐름',
         summary: '입력 녹화부터 타임라인 정리, 영상 동기화, JSON 공유와 축 이미지 내보내기까지 안내합니다.',
         groups: [
-          { title: '플레이 입력 녹화', items: ['“설정”에서 키보드·마우스 또는 게임패드 바인딩을 확인한 뒤 사이드바의 “전역 입력 캡처”를 켭니다.', 'Windows 버전은 시작할 때 관리자 권한을 자동으로 요청합니다. UAC 창을 승인하면 관리자 권한 게임의 백그라운드 입력도 캡처할 수 있습니다.', '“녹화”에서 F로 시작하고 Esc로 종료합니다. “교체”로 이번 입력을 편집기에 불러오고, “테스트”로 기존 콤보를 보정할 수 있습니다.'], note: '본 녹화 전에 짧게 테스트하여 캐릭터 전환, 길게 누르기, 마우스 입력이 모두 인식되는지 확인하세요.' },
+          { title: '플레이 입력 녹화', items: ['“설정”에서 키보드·마우스 또는 게임패드 바인딩을 확인한 뒤 사이드바의 “전역 입력 캡처”를 켭니다.', 'Windows 버전은 시작할 때 관리자 권한을 자동으로 요청합니다. UAC 창을 승인하면 관리자 권한 게임의 백그라운드 입력도 캡처할 수 있습니다.', '“녹화”에서 F로 시작하고 Esc로 종료합니다. 기본적으로 “교체”로 편집기에 불러옵니다. 문자 축 화면 왼쪽 아래의 “문자 축 기준”을 켜면 버튼이 “테스트”로 바뀌며 새 동작을 추가하지 않고 기존 동작의 위치와 지속 시간만 보정합니다.'], note: '본 녹화 전에 짧게 테스트하여 캐릭터 전환, 길게 누르기, 마우스 입력이 모두 인식되는지 확인하세요.' },
           { title: '타이밍과 표시 내용 편집', items: ['“타이밍” 모드에서 동작 블록을 드래그해 시작 시각과 지속 시간을 조정합니다. 동작 추가·분할·삭제와 시작 축·루프 축 설정도 가능합니다.', '실행 취소, 다시 실행, 재생 헤드로 리듬을 확인합니다. 캐릭터 순서를 바꾸면 전환 대상도 함께 다시 매핑됩니다.', '“내용” 모드에서 블록 문구, 안내와 표시 라운드를 수정합니다. 공통 시각 설정은 “외형”에서 조정합니다.', 'Delete, Ctrl+C/Ctrl+V, C 분할과 V 병합을 사용할 수 있습니다. 추가 중 F는 피니셔, B는 변주 자동 전환을 선택하며 선택한 블록에 Y를 누르면 반주 내용을 추가합니다.', '[Basic Attack]처럼 대괄호로 감싸면 아이콘으로 변환하지 않고 문자만 표시되며 괄호는 숨겨집니다. 피니셔, 변주, 반주와 앞으로 이동에는 해당 기본 안내도 표시됩니다.', '편집이 끝나면 저장하세요. 새 라이브러리 항목이 만들어져 이전 버전을 남길 수 있습니다.'] },
-          { title: '영상 도구로 정밀 조정', items: ['“녹화”에서 “영상 도구”를 열고 실제 플레이 영상을 가져옵니다. 영상은 현재 세션에서만 참조되며 콤보 JSON에 저장되지 않습니다.', '유효 구간을 잘라 영상 시작과 콤보 시작을 맞추고 프레임 단위로 블록을 정렬합니다.', '영상 타임라인의 높이, 확대와 레인 밀도를 조정할 수 있습니다. 내보내기 폴더를 선택하고 전체를 한 번 미리 보세요.', '합성 영상 또는 투명 콤보 레이어를 내보낼 수 있습니다. 완료될 때까지 영상 도구를 닫지 마세요.'] },
+          { title: '영상 도구로 정밀 조정', items: ['“녹화”에서 “영상 도구”를 열고 실제 플레이 영상을 가져옵니다. 영상은 현재 세션에서만 참조되며 콤보 JSON에 저장되지 않습니다.', '오른쪽 위 노란색 인식 아이콘으로 키 매핑 영역을 맞추면 파란색 점등 원에서 짧게 누르기와 길게 누르기를 인식할 수 있습니다. 확인하기 전에는 타임라인을 바꾸지 않습니다.', '유효 구간을 잘라 영상 시작과 콤보 시작을 맞추고 프레임 단위로 블록을 정렬합니다.', '영상 타임라인의 높이, 확대와 레인 밀도를 조정할 수 있습니다. 내보내기 폴더를 선택하고 전체를 한 번 미리 보세요.', '합성 영상 또는 투명 콤보 레이어를 내보낼 수 있습니다. 완료될 때까지 영상 도구를 닫지 마세요.'] },
           { title: 'JSON 내보내기와 공유', items: ['“연습”의 콤보 라이브러리에서 대상을 선택하고 “공유”를 누릅니다.', '이름, 태그, 설명과 선택 링크를 입력합니다. 캐릭터, 라운드와 ID는 현재 콤보에서 자동 생성됩니다.', '“공유 JSON 내보내기”로 저장해 전달하면 상대방은 “연습 > 콤보 라이브러리 > 가져오기”에서 사용할 수 있습니다.', '배포 전 내보낸 JSON을 다시 가져와 캐릭터, 라운드, 문구와 타이밍을 확인하세요.'] },
           { title: '축 이미지와 키 매핑', optional: true, items: ['“실험 > 축 이미지 내보내기”에서 전체 PNG를 만듭니다. 콤보와 표시 라운드, 캔버스 크기를 선택하면 블록이 자동으로 축소되고 줄바꿈됩니다.', '축 이미지 모듈의 외형, 배경과 아이콘 설정은 독립적이며 녹화·연습의 전역 외형을 바꾸지 않습니다.', '“실험 > 키 매핑”은 키보드, 마우스 또는 게임패드 입력을 사용자 이미지에 연결해 녹화용 입력 표시로 사용할 수 있습니다.', '게임 뒤에서도 키 매핑이 필요하면 전역 입력 캡처를 켜고 녹화 전에 모든 매핑을 테스트하세요.'] },
           { title: '콤보 웹사이트 소개', optional: true, items: [] }
@@ -1122,6 +1148,7 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
             controls: [
               { name: '녹화 타임라인 상속', effect: '블록 드래그, 복사, 삭제, 추가 모드, 실행 취소/다시 실행과 타이밍/내용 전환은 “녹화 > 타임라인 편집과 배치”와 같습니다.' },
               { name: '영상 가져오기', effect: '실전 영상을 현재 편집 참고 자료로 불러오며 JSON에는 저장하지 않습니다.' },
+              { name: '영상 키 인식 (오른쪽 위 노란색 아이콘)', effect: '현재 잘라낸 구간에서 기본 키 매핑의 파란색 원을 분석합니다. “문자 축 기준”이 켜져 있으면 기존 동작의 위치와 지속 시간만 보정하고 추가 인식은 무시합니다. 꺼져 있으면 인식 결과로 타임라인을 교체합니다.' },
               { name: '영상 자르기 (맨 왼쪽)', effect: '원본을 바꾸지 않고 사용할 시작과 종료 지점을 설정합니다.' },
               { name: '이동 / 확대', effect: '합성 콤보 레이어의 위치와 전체 배율을 바꿉니다.' },
               { name: '다기능 버튼 (맨 오른쪽)', effect: '타임라인 도구 모음 끝의 특수 도구입니다.' },
@@ -1200,7 +1227,7 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
               { name: '입력 모드', effect: '키보드·마우스와 게임패드를 전환하고 현재 모드의 바인딩만 보여 줍니다.' },
               { name: '바인딩 1 / 2', effect: '한 동작에 최대 두 입력을 지정합니다.' },
               { name: '독립 / 단계 진행', effect: '독립은 다른 동작과의 중첩을 허용하고 단계 진행은 연습을 다음으로 넘길지 결정합니다.' },
-              { name: '키 / 패드 아이콘', effect: '실제 키, 기본 동작, Xbox 또는 PlayStation 아이콘을 선택합니다.' },
+              { name: '키 / 패드 아이콘', effect: '키보드·마우스는 실제 키 아이콘을 표시하며 게임패드는 Xbox 또는 PlayStation 아이콘을 선택합니다.' },
               { name: '입력 설정 가져오기 / 내보내기', effect: '별도의 .wwkeys.json으로 키보드·마우스와 게임패드 바인딩을 저장하거나 복원합니다. 콤보와 외형은 포함되지 않습니다.' },
               { name: '단축키 설정', effect: '타임라인과 영상 도구의 단일 키 또는 Shift 조합을 바꿉니다. 고정된 Ctrl/Alt 편집 조합은 덮어쓰지 않습니다.' },
               { name: 'Live2D / 녹화 표시점', effect: '홈의 동적 캐릭터와 녹화 상태 점 표시를 전환합니다.' }
@@ -1213,8 +1240,9 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
         summary: '공개 버전과 현재 개발 빌드의 주요 변경 사항입니다.',
         groups: [
           {
-            title: 'v0.5.0 · 2026-07-31',
+            title: 'v0.6.0 · 2026-08-01',
             items: [
+              '영상 모드 오른쪽 위에 노란색 “영상 키 인식”을 추가했습니다. 비율이 고정된 인식 영역을 이동·확대하여 현재 잘라낸 구간의 기본 키 매핑 파란색 원을 프레임별로 분석합니다. 짧게 누르기와 길게 누르기를 구분하고 확인 후 기존 녹화 처리로 타임라인을 만들기 때문에 동일 캐릭터 전환 보호, 500 ms 연타 병합과 실행 취소 기록이 유지됩니다.',
               '데스크톱 앱은 시작할 때 전역 입력 감지를 기본으로 켜도록 시도합니다. 사이드바에서 수동으로 끌 수도 있습니다. 타임라인 편집, 공유 정보 입력, 영상 편집 또는 외형 조정 중에는 녹화와 연습 판정으로 들어가는 동작 입력만 일시 중지하며 Delete, C, V, Ctrl+C, Ctrl+V 같은 타임라인 단축키는 계속 사용할 수 있습니다.',
               '문자 축 길게 누르기 문법에 “길게+문자”를 추가했습니다. “길게 e”와 대문자 E는 모두 스킬 길게 누르기를 만들며 기존 대문자 문법도 계속 호환됩니다.',
               '타임라인과 문자 축을 연결했습니다. 문자 축을 열면 현재 타임라인이 동작 경계가 표시된 편집 가능한 문자로 나타납니다. 시간 문구를 바꾸지 않으면 기존 동작 ID, 시간, 레인, 준비와 후딜을 유지합니다. “시간 / 내용” 전환으로 같은 블록 경계에서 시간 문법과 표시 내용을 편집할 수 있습니다.',
@@ -1228,7 +1256,13 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
               '일반 편집기와 영상 편집기가 타임라인 클립보드를 공유하도록 해 화면 전환이나 재마운트 후 Ctrl+C/Ctrl+V가 간헐적으로 실패하던 문제를 수정했습니다.',
               '첫 실행 안내에 이 소프트웨어는 완전히 무료이며 유료로 구매했다면 즉시 환불을 요청해야 한다는 사기 방지 경고를 추가했습니다.',
               '중국어가 아닌 문자 축 시간 모드는 영어 축/동작 용어를 사용하고 변주/반주를 Intro / Outro로 표시합니다. 내용 모드는 j, s, J, S, f, w 실제 매핑 코드를 유지합니다.',
-              '전체 연습 축은 최대 병합 수를 무시하고 사용 가능한 폭에 맞춰 배치한 뒤 자동 줄바꿈합니다. 아바타, 아이콘, 글자와 배경 폭 계산을 수정하고 세로 간격을 줄여 내용이 배경 밖으로 넘치지 않게 했습니다.'
+              '전체 연습 축은 최대 병합 수를 무시하고 사용 가능한 폭에 맞춰 배치한 뒤 자동 줄바꿈합니다. 아바타, 아이콘, 글자와 배경 폭 계산을 수정하고 세로 간격을 줄여 내용이 배경 밖으로 넘치지 않게 했습니다.',
+              '영문 피니셔 표기를 Tunebreak로 통일했습니다. A와 Z가 강공격으로 변환되지 않던 문제와 z 다음에 y를 입력할 때 강공격＋반주 아이콘 조합이 잘못 표시되던 문제를 수정했습니다. 영상 키 인식의 캐릭터 전환 감도를 높였습니다. “문자 축 기준”을 문자 축 화면 왼쪽 아래로 옮겼으며, 활성화하면 영상 인식과 녹화 테스트가 기존 동작을 유지하고 위치와 지속 시간만 보정하며 추가 입력을 무시합니다. 녹화 화면의 별도 테스트 버튼은 제거되고 이 모드에서는 “교체”가 “테스트”로 바뀝니다.',
+              '사이드바에 커뮤니티를 추가하고 콤보 공유 사이트를 클라이언트에 내장했습니다. 클라이언트 안에서 콤보를 다운로드하면 로컬 콤보 목록으로 자동 가져오고 선택합니다. 일반 브라우저에서는 기존처럼 .wwcombo.json 파일을 다운로드합니다.',
+              '주요 탐색 순서를 조정해 커뮤니티를 실험 위에 배치했습니다. 홈의 4번과 5번 버튼은 커뮤니티와 실험 도구 목록을 엽니다. 창 폭이 좁아져도 커뮤니티나 실험을 숨기지 않고 여섯 진입 버튼을 한 줄로 유지합니다.',
+              '외형의 기본 폭 모드를 내용 맞춤으로 변경했습니다. 새 설정에서 고정 폭으로 전환하면 600 px를 사용하며 기존에 저장한 외형 값은 덮어쓰지 않습니다.',
+              '통합된 키보드 아이콘 “기본 / 실제” 선택을 제거했습니다. 키보드·마우스는 항상 실제 키 아이콘을 사용하며 이전 입력 설정의 기본 모드도 자동으로 호환됩니다.',
+              '클라이언트 내 커뮤니티의 다운로드 상태를 수정했습니다. 다른 화면으로 이동했다 돌아와도 페이지를 다시 만들지 않고 “클라이언트로 가져옴” 상태를 유지합니다. 새로고침 후에도 서명된 식별 토큰으로 다운로드 자격을 복원하며, 오래된 iframe 쿠키보다 우선해 좋아요와 피드백을 계속 사용할 수 있습니다.'
             ]
           },
           {

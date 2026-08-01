@@ -71,8 +71,8 @@ function preferredTextAxisWord(step: ComboStep, custom: string, language: AppLan
   if (step.moveId === 'jump_hold') return chinese ? '长按跳跃' : 'Hold Jump';
   if (step.moveId === 'dodge') return chinese ? '闪' : 'Dodge';
   if (step.moveId === 'dodge_hold') return chinese ? '长按闪避' : 'Hold Dodge';
-  if (step.moveId === 'finisher') return chinese ? '处决' : 'Finisher';
-  if (step.moveId === 'empty_action') return /^[fF]/u.test(custom) ? (chinese ? '处决' : 'Finisher') : (chinese ? '前走' : 'Move Forward');
+  if (step.moveId === 'finisher') return chinese ? '处决' : 'Tunebreak';
+  if (step.moveId === 'empty_action') return /^[fF]/u.test(custom) ? (chinese ? '处决' : 'Tunebreak') : (chinese ? '前走' : 'Move Forward');
   return undefined;
 }
 

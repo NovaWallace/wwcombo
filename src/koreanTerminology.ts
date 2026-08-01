@@ -17,7 +17,7 @@ const KOREAN_TERM_ANNOTATIONS: Readonly<Record<string, string>> = {
   '커뮤니티': 'Community',
   '워터폴': 'Waterfall',
   '어빌리티': 'Ability',
-  '피니셔': 'Finisher',
+  '피니셔': 'Tunebreak',
   '후딜레이': 'Recovery',
   '마우스': 'Mouse',
   '바인딩': 'Binding',

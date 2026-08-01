@@ -3,7 +3,7 @@ use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fs;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -15,6 +15,8 @@ use tauri::{
 
 static INPUT_HOOK_STARTED: AtomicBool = AtomicBool::new(false);
 static VIDEO_EXPORT_CANCELLED: AtomicBool = AtomicBool::new(false);
+static VIDEO_RECOGNITION_CANCELLED: AtomicBool = AtomicBool::new(false);
+static VIDEO_RECOGNITION_RUNNING: AtomicBool = AtomicBool::new(false);
 static INPUT_HOOK_STATUS: Lazy<Mutex<String>> = Lazy::new(|| Mutex::new(String::from("idle")));
 static INPUT_EVENT_COUNT: Lazy<Mutex<u64>> = Lazy::new(|| Mutex::new(0));
 static INPUT_PRESSED_CODES: Lazy<Mutex<HashSet<String>>> = Lazy::new(|| Mutex::new(HashSet::new()));
@@ -71,6 +73,71 @@ struct ExportVideoResult {
 struct PickedVideoFile {
     path: String,
     name: String,
+}
+
+#[derive(Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct VideoRecognitionHotspot {
+    id: String,
+    x: f64,
+    y: f64,
+    radius: f64,
+    #[serde(default)]
+    merge_repeated_hold: bool,
+    #[serde(default)]
+    preserve_tap_gaps: bool,
+    #[serde(default = "default_recognition_sensitivity")]
+    sensitivity: f64,
+}
+
+fn default_recognition_sensitivity() -> f64 {
+    1.0
+}
+
+#[derive(Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct VideoRecognitionRequest {
+    source_path: String,
+    start_ms: u64,
+    duration_ms: u64,
+    crop_x: u32,
+    crop_y: u32,
+    crop_width: u32,
+    crop_height: u32,
+    fps: u32,
+    hotspots: Vec<VideoRecognitionHotspot>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct VideoRecognitionEvent {
+    hotspot_id: String,
+    start_ms: u64,
+    duration_ms: u64,
+    confidence: f64,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct VideoRecognitionResult {
+    events: Vec<VideoRecognitionEvent>,
+    analyzed_frames: u64,
+    fps: u32,
+}
+
+#[derive(Clone, Copy)]
+struct VideoRecognitionFrameSample {
+    active: bool,
+    weak_active: bool,
+    confidence: f64,
+}
+
+struct VideoRecognitionRunGuard;
+
+impl Drop for VideoRecognitionRunGuard {
+    fn drop(&mut self) {
+        VIDEO_RECOGNITION_RUNNING.store(false, Ordering::SeqCst);
+    }
 }
 
 type FeedbackBounds = OverlayBounds;
@@ -760,6 +827,469 @@ fn pick_video_file() -> Option<PickedVideoFile> {
             name: path.file_name().and_then(|name| name.to_str()).unwrap_or("video").to_string(),
             path: path.to_string_lossy().to_string(),
         })
+}
+
+fn is_recognition_cyan(red: u8, green: u8, blue: u8) -> bool {
+    let red = i16::from(red);
+    let green = i16::from(green);
+    let blue = i16::from(blue);
+    green > 110 && blue > 110 && (green - red).min(blue - red) > 35 && (green - blue).abs() < 105
+}
+
+fn measure_recognition_hotspot(
+    frame: &[u8],
+    width: usize,
+    height: usize,
+    hotspot: &VideoRecognitionHotspot,
+) -> VideoRecognitionFrameSample {
+    let radius = hotspot.radius.max(3.0);
+    let outer_inner = radius + (radius * 0.18).max(2.0);
+    let outer_radius = radius + (radius * 0.55).max(4.0);
+    let min_x = (hotspot.x - outer_radius).floor().max(0.0) as usize;
+    let max_x = (hotspot.x + outer_radius)
+        .ceil()
+        .min(width.saturating_sub(1) as f64) as usize;
+    let min_y = (hotspot.y - outer_radius).floor().max(0.0) as usize;
+    let max_y = (hotspot.y + outer_radius)
+        .ceil()
+        .min(height.saturating_sub(1) as f64) as usize;
+    let radius_squared = radius * radius;
+    let outer_inner_squared = outer_inner * outer_inner;
+    let outer_radius_squared = outer_radius * outer_radius;
+    let mut inner_total = 0_u64;
+    let mut inner_cyan = 0_u64;
+    let mut outer_total = 0_u64;
+    let mut outer_cyan = 0_u64;
+
+    for y in min_y..=max_y {
+        for x in min_x..=max_x {
+            let dx = x as f64 - hotspot.x;
+            let dy = y as f64 - hotspot.y;
+            let distance_squared = dx * dx + dy * dy;
+            let pixel_offset = (y * width + x) * 3;
+            if pixel_offset + 2 >= frame.len() {
+                continue;
+            }
+            let cyan = is_recognition_cyan(
+                frame[pixel_offset],
+                frame[pixel_offset + 1],
+                frame[pixel_offset + 2],
+            );
+            if distance_squared <= radius_squared {
+                inner_total += 1;
+                if cyan {
+                    inner_cyan += 1;
+                }
+            } else if distance_squared >= outer_inner_squared
+                && distance_squared <= outer_radius_squared
+            {
+                outer_total += 1;
+                if cyan {
+                    outer_cyan += 1;
+                }
+            }
+        }
+    }
+
+    let inner_ratio = inner_cyan as f64 / inner_total.max(1) as f64;
+    let outer_ratio = outer_cyan as f64 / outer_total.max(1) as f64;
+    let contrast = inner_ratio - outer_ratio;
+    let confidence = (inner_ratio * 0.6 + contrast.max(0.0) * 0.4).clamp(0.0, 1.0);
+    let sensitivity = hotspot.sensitivity.clamp(0.65, 1.0);
+    VideoRecognitionFrameSample {
+        active: inner_ratio >= 0.34 * sensitivity
+            && contrast >= 0.14 * sensitivity
+            && confidence >= 0.26 * sensitivity,
+        weak_active: inner_ratio >= 0.24 * sensitivity
+            && contrast >= 0.08 * sensitivity
+            && confidence >= 0.18 * sensitivity,
+        confidence,
+    }
+}
+
+fn recognition_events_for_hotspot(
+    hotspot_id: &str,
+    samples: &[VideoRecognitionFrameSample],
+    fps: u32,
+    merge_repeated_hold: bool,
+    preserve_tap_gaps: bool,
+) -> Vec<VideoRecognitionEvent> {
+    if samples.is_empty() || fps == 0 {
+        return Vec::new();
+    }
+    let mut normalized = samples.to_vec();
+    let mut tracking_active = false;
+    for sample in &mut normalized {
+        if sample.active {
+            tracking_active = true;
+        } else if tracking_active && sample.weak_active {
+            sample.active = true;
+        } else {
+            tracking_active = false;
+        }
+    }
+
+    let max_hole_frames = if preserve_tap_gaps {
+        0
+    } else if merge_repeated_hold {
+        ((fps as f64 * 0.05).ceil() as usize).max(1)
+    } else {
+        1
+    };
+    let mut index = 0_usize;
+    while index < normalized.len() {
+        if normalized[index].active {
+            index += 1;
+            continue;
+        }
+        let gap_start = index;
+        while index < normalized.len() && !normalized[index].active {
+            index += 1;
+        }
+        let gap_end = index;
+        if gap_start > 0
+            && gap_end < normalized.len()
+            && gap_end - gap_start <= max_hole_frames
+            && normalized[gap_start - 1].active
+            && normalized[gap_end].active
+        {
+            let confidence =
+                (normalized[gap_start - 1].confidence + normalized[gap_end].confidence) / 2.0;
+            for sample in &mut normalized[gap_start..gap_end] {
+                sample.active = true;
+                sample.confidence = confidence;
+            }
+        }
+    }
+
+    let mut runs = Vec::<(usize, usize, f64)>::new();
+    index = 0;
+    while index < normalized.len() {
+        if !normalized[index].active {
+            index += 1;
+            continue;
+        }
+        let start = index;
+        index += 1;
+        while index < normalized.len() && normalized[index].active {
+            index += 1;
+        }
+        let end = index;
+        if end - start < 2 {
+            continue;
+        }
+        let confidence = normalized[start..end]
+            .iter()
+            .map(|sample| sample.confidence)
+            .sum::<f64>()
+            / (end - start) as f64;
+        runs.push((start, end, confidence));
+    }
+
+    if merge_repeated_hold && runs.len() >= 3 {
+        let max_repeat_gap_frames = ((fps as f64 * 0.4).ceil() as usize).max(1);
+        let minimum_hold_frames = ((fps as f64 * 0.3).ceil() as usize).max(2);
+        let mut merged = Vec::with_capacity(runs.len());
+        let mut run_index = 0_usize;
+        while run_index < runs.len() {
+            let group_start = run_index;
+            run_index += 1;
+            while run_index < runs.len()
+                && runs[run_index].0.saturating_sub(runs[run_index - 1].1)
+                    <= max_repeat_gap_frames
+            {
+                run_index += 1;
+            }
+            let group = &runs[group_start..run_index];
+            let span_frames = group.last().unwrap().1 - group[0].0;
+            if group.len() >= 3 && span_frames >= minimum_hold_frames {
+                let active_frames = group.iter().map(|(start, end, _)| end - start).sum::<usize>();
+                let confidence = group
+                    .iter()
+                    .map(|(start, end, confidence)| confidence * (end - start) as f64)
+                    .sum::<f64>()
+                    / active_frames.max(1) as f64;
+                merged.push((group[0].0, group.last().unwrap().1, confidence));
+            } else {
+                merged.extend_from_slice(group);
+            }
+        }
+        runs = merged;
+    }
+
+    runs.into_iter()
+        .map(|(start, end, confidence)| VideoRecognitionEvent {
+            hotspot_id: hotspot_id.to_string(),
+            start_ms: ((start as f64 * 1000.0) / fps as f64).round() as u64,
+            duration_ms: (((end - start) as f64 * 1000.0) / fps as f64).round() as u64,
+            confidence,
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod video_recognition_tests {
+    use super::{is_recognition_cyan, recognition_events_for_hotspot, VideoRecognitionFrameSample};
+
+    fn sample(active: bool) -> VideoRecognitionFrameSample {
+        VideoRecognitionFrameSample {
+            active,
+            weak_active: active,
+            confidence: if active { 0.9 } else { 0.0 },
+        }
+    }
+
+    #[test]
+    fn cyan_classifier_accepts_overlay_blue_and_rejects_neutral_pixels() {
+        assert!(is_recognition_cyan(36, 188, 224));
+        assert!(!is_recognition_cyan(210, 210, 210));
+        assert!(!is_recognition_cyan(180, 64, 48));
+    }
+
+    #[test]
+    fn fills_a_single_inactive_frame_inside_an_active_run() {
+        let events = recognition_events_for_hotspot(
+            "skill",
+            &[sample(true), sample(false), sample(true)],
+            30,
+            false,
+            false,
+        );
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].start_ms, 0);
+        assert_eq!(events[0].duration_ms, 100);
+    }
+
+    #[test]
+    fn rejects_single_frame_noise() {
+        let events = recognition_events_for_hotspot(
+            "skill",
+            &[sample(false), sample(true), sample(false)],
+            30,
+            false,
+            false,
+        );
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn coalesces_keyboard_repeat_pulses_into_one_hold() {
+        let mut samples = Vec::new();
+        for _ in 0..4 {
+            samples.extend([sample(true), sample(true), sample(false), sample(false), sample(false)]);
+        }
+        let events = recognition_events_for_hotspot("skill", &samples, 30, true, false);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].start_ms, 0);
+        assert!(events[0].duration_ms >= 500);
+    }
+
+    #[test]
+    fn keeps_repeated_basic_attack_pulses_separate() {
+        let mut samples = Vec::new();
+        for _ in 0..4 {
+            samples.extend([sample(true), sample(true), sample(false), sample(false), sample(false)]);
+        }
+        let events = recognition_events_for_hotspot("basic-attack", &samples, 30, false, true);
+        assert_eq!(events.len(), 4);
+    }
+
+    #[test]
+    fn does_not_fill_a_basic_attack_tap_gap() {
+        let events = recognition_events_for_hotspot(
+            "basic-attack",
+            &[sample(true), sample(true), sample(false), sample(true), sample(true)],
+            30,
+            false,
+            true,
+        );
+        assert_eq!(events.len(), 2);
+    }
+}
+
+#[tauri::command]
+fn cancel_video_key_mapping_recognition() {
+    VIDEO_RECOGNITION_CANCELLED.store(true, Ordering::SeqCst);
+}
+
+#[tauri::command]
+async fn analyze_video_key_mapping(
+    app: AppHandle,
+    request: VideoRecognitionRequest,
+) -> Result<VideoRecognitionResult, String> {
+    if VIDEO_RECOGNITION_RUNNING
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        return Err(String::from("已有视频按键识别任务正在运行。"));
+    }
+    VIDEO_RECOGNITION_CANCELLED.store(false, Ordering::SeqCst);
+    tauri::async_runtime::spawn_blocking(move || {
+        let _run_guard = VideoRecognitionRunGuard;
+        let source = PathBuf::from(request.source_path.trim());
+        if !source.is_file() {
+            return Err(String::from("视频文件不存在，请重新导入后再识别。"));
+        }
+        if request.hotspots.is_empty() {
+            return Err(String::from("没有可识别的按键位置。"));
+        }
+        let fps = request.fps.clamp(10, 60);
+        // FFmpeg's default yuv420 decoder requires even crop dimensions. Keep the
+        // byte buffer dimensions identical to the dimensions emitted by FFmpeg.
+        let crop_width = request.crop_width.max(8) & !1;
+        let crop_height = request.crop_height.max(8) & !1;
+        let crop_x = request.crop_x & !1;
+        let crop_y = request.crop_y & !1;
+        let frame_bytes = usize::try_from(crop_width)
+            .ok()
+            .and_then(|width| {
+                usize::try_from(crop_height)
+                    .ok()
+                    .map(|height| width * height * 3)
+            })
+            .ok_or_else(|| String::from("识别区域尺寸无效。"))?;
+        let ffmpeg =
+            find_ffmpeg(&app).ok_or_else(|| String::from("未找到 ffmpeg，无法识别视频。"))?;
+        let start_seconds = format!("{:.3}", request.start_ms as f64 / 1000.0);
+        let duration_seconds = format!("{:.3}", request.duration_ms.max(1) as f64 / 1000.0);
+        let filter = format!(
+            "crop={}:{}:{}:{},fps={}",
+            crop_width,
+            crop_height,
+            crop_x,
+            crop_y,
+            fps
+        );
+        let mut child = Command::new(ffmpeg)
+            .arg("-hide_banner")
+            .arg("-loglevel")
+            .arg("error")
+            .arg("-ss")
+            .arg(&start_seconds)
+            .arg("-i")
+            .arg(&source)
+            .arg("-t")
+            .arg(&duration_seconds)
+            .arg("-vf")
+            .arg(filter)
+            .arg("-an")
+            .arg("-sn")
+            .arg("-f")
+            .arg("rawvideo")
+            .arg("-pix_fmt")
+            .arg("rgb24")
+            .arg("pipe:1")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|error| format!("启动视频识别失败：{error}"))?;
+        let mut stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| String::from("无法读取 ffmpeg 视频帧。"))?;
+        let mut stderr = child.stderr.take();
+        let mut frame = vec![0_u8; frame_bytes];
+        let mut samples = vec![Vec::<VideoRecognitionFrameSample>::new(); request.hotspots.len()];
+        let total_frames = ((request.duration_ms.max(1) as f64 / 1000.0) * fps as f64)
+            .ceil()
+            .max(1.0) as u64;
+        let mut processed_frames = 0_u64;
+        loop {
+            if VIDEO_RECOGNITION_CANCELLED.load(Ordering::SeqCst) {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(String::from("视频按键识别已取消。"));
+            }
+            match stdout.read_exact(&mut frame) {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => break,
+                Err(error) => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(format!("读取视频帧失败：{error}"));
+                }
+            }
+            for (index, hotspot) in request.hotspots.iter().enumerate() {
+                samples[index].push(measure_recognition_hotspot(
+                    &frame,
+                    crop_width as usize,
+                    crop_height as usize,
+                    hotspot,
+                ));
+            }
+            processed_frames += 1;
+            if processed_frames % 6 == 0 || processed_frames >= total_frames {
+                let _ = app.emit(
+                    "video-key-recognition-progress",
+                    serde_json::json!({
+                        "progress": (processed_frames as f64 / total_frames as f64).clamp(0.0, 1.0),
+                        "processedFrames": processed_frames,
+                        "totalFrames": total_frames
+                    }),
+                );
+            }
+        }
+        let status = child
+            .wait()
+            .map_err(|error| format!("等待视频识别结束失败：{error}"))?;
+        let mut error_text = String::new();
+        if let Some(ref mut error_stream) = stderr {
+            let _ = error_stream.read_to_string(&mut error_text);
+        }
+        if !status.success() {
+            let details = error_text
+                .lines()
+                .rev()
+                .take(4)
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .collect::<Vec<_>>()
+                .join(" | ");
+            return Err(if details.is_empty() {
+                format!(
+                    "ffmpeg 视频识别失败，退出码：{}",
+                    status.code().unwrap_or(-1)
+                )
+            } else {
+                format!("ffmpeg 视频识别失败：{details}")
+            });
+        }
+        let mut events = request
+            .hotspots
+            .iter()
+            .enumerate()
+            .flat_map(|(index, hotspot)| {
+                recognition_events_for_hotspot(
+                    &hotspot.id,
+                    &samples[index],
+                    fps,
+                    hotspot.merge_repeated_hold,
+                    hotspot.preserve_tap_gaps,
+                )
+            })
+            .collect::<Vec<_>>();
+        events.sort_by(|left, right| {
+            left.start_ms
+                .cmp(&right.start_ms)
+                .then_with(|| left.hotspot_id.cmp(&right.hotspot_id))
+        });
+        let _ = app.emit(
+            "video-key-recognition-progress",
+            serde_json::json!({
+                "progress": 1.0,
+                "processedFrames": processed_frames,
+                "totalFrames": total_frames
+            }),
+        );
+        Ok(VideoRecognitionResult {
+            events,
+            analyzed_frames: processed_frames,
+            fps,
+        })
+    })
+    .await
+    .map_err(|error| format!("视频识别任务异常结束：{error}"))?
 }
 
 #[tauri::command]
@@ -1470,6 +2000,14 @@ mod winhook {
         keys
     }
 
+    fn xbutton_to_code(mouse_data: u32) -> Option<&'static str> {
+        match (mouse_data >> 16) & 0xFFFF {
+            1 => Some("Mouse3"),
+            2 => Some("Mouse4"),
+            _ => None,
+        }
+    }
+
     unsafe extern "system" fn keyboard_proc(code: i32, wparam: Wparam, lparam: Lparam) -> Lresult {
         if code == HC_ACTION {
             let data = &*(lparam as *const KbdLlHookStruct);
@@ -1496,20 +2034,10 @@ mod winhook {
                 WM_RBUTTONUP => Some(("mouseup", "MouseRight")),
                 WM_MBUTTONDOWN => Some(("mousedown", "MouseMiddle")),
                 WM_MBUTTONUP => Some(("mouseup", "MouseMiddle")),
-                WM_XBUTTONDOWN => {
-                    match ((*(lparam as *const MsllHookStruct)).mouse_data >> 16) & 0xFFFF {
-                        1 => Some(("mousedown", "Mouse3")),
-                        2 => Some(("mousedown", "Mouse4")),
-                        _ => None,
-                    }
-                }
-                WM_XBUTTONUP => {
-                    match ((*(lparam as *const MsllHookStruct)).mouse_data >> 16) & 0xFFFF {
-                        1 => Some(("mouseup", "Mouse3")),
-                        2 => Some(("mouseup", "Mouse4")),
-                        _ => None,
-                    }
-                }
+                WM_XBUTTONDOWN => xbutton_to_code((*(lparam as *const MsllHookStruct)).mouse_data)
+                    .map(|code| ("mousedown", code)),
+                WM_XBUTTONUP => xbutton_to_code((*(lparam as *const MsllHookStruct)).mouse_data)
+                    .map(|code| ("mouseup", code)),
                 _ => None,
             };
 
@@ -1595,6 +2123,17 @@ mod winhook {
                     ("gamepadbuttonup", String::from("GamepadLB")),
                 ]
             );
+        }
+
+        #[test]
+        fn maps_windows_side_buttons_to_dom_compatible_codes() {
+            assert_eq!(xbutton_to_code(1 << 16), Some("Mouse3"));
+            assert_eq!(xbutton_to_code(2 << 16), Some("Mouse4"));
+            assert_eq!(xbutton_to_code(3 << 16), None);
+
+            let keys = polled_keys();
+            assert!(keys.contains(&(0x05, "Mouse3")));
+            assert!(keys.contains(&(0x06, "Mouse4")));
         }
     }
 }
@@ -1750,6 +2289,8 @@ pub fn run() {
             save_export_file,
             pick_export_directory,
             pick_video_file,
+            analyze_video_key_mapping,
+            cancel_video_key_mapping_recognition,
             cancel_video_export,
             export_video_with_overlay,
             save_export_mp4

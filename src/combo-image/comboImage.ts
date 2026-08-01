@@ -1,4 +1,5 @@
 import type { CharacterSlot, ComboChart, ComboImageStyle, ComboStep, RectPercent, StretchPercent } from '../../combo-core';
+import { keyboardMouseIconSource } from '../gamepadIcons';
 
 export type ComboImageItem = {
   step: ComboStep;
@@ -32,10 +33,17 @@ type ComboImageMergeGroup = {
   characterSlot: CharacterSlot;
 };
 
-export type ComboContentPart = { kind: 'text'; value: string } | { kind: 'icon'; iconId: string; label: string; src: string; iconScale: number };
+export type ComboContentPart = { kind: 'text'; value: string } | { kind: 'icon'; iconId: string; label: string; src: string; iconScale: number; iconWidthScale: number };
 
 const DEFAULT_CAPSULE_IMAGE = '/combo-assets/capsule-presets/default-capsule.png';
 const DEFAULT_BASE_PRESET_IMAGE = '/combo-assets/base-presets/通用.png';
+const FORWARD_KEY_ICON = keyboardMouseIconSource('KeyW') ?? '/combo-assets/button-icons/forward.png';
+const GENERATED_SPECIAL_KEY_ICONS: Record<string, { generated: string | undefined; project: string }> = {
+  finisher: { generated: keyboardMouseIconSource('KeyF', 'accent'), project: '/combo-assets/button-icons/finisher.png' },
+  i: { generated: keyboardMouseIconSource('Digit1', 'accent'), project: '/combo-assets/button-icons/i.png' },
+  ii: { generated: keyboardMouseIconSource('Digit2', 'accent'), project: '/combo-assets/button-icons/ii.png' },
+  iii: { generated: keyboardMouseIconSource('Digit3', 'accent'), project: '/combo-assets/button-icons/iii.png' }
+};
 
 type RoleStyle = ComboImageStyle['roleStyles'][CharacterSlot];
 type CapsuleImageFields = {
@@ -55,7 +63,7 @@ export const DEFAULT_ROLE_COLORS: Record<CharacterSlot, string> = {
 
 export const DEFAULT_ICON_MAPPINGS: ComboImageStyle['iconMappings'] = [
   { id: 'mouse-right-hold', label: '长按闪避', src: '/combo-assets/button-icons/mouse-right-hold.png', triggers: ['S', 'D', '闪', '长按闪避'] },
-  { id: 'mouse-left-hold', label: '长按普攻', src: '/combo-assets/button-icons/mouse-left-hold.png', triggers: ['z', 'Z', '长按普攻', '重击'] },
+  { id: 'mouse-left-hold', label: '长按普攻', src: '/combo-assets/button-icons/mouse-left-hold.png', triggers: ['A', 'z', 'Z', '长按普攻', '重击'] },
   { id: 'skill-hold', label: '长按技能', src: '/combo-assets/button-icons/skill-hold.png', triggers: ['E', '长按技能'] },
   { id: 'echo-hold', label: '长按声骸', src: '/combo-assets/button-icons/echo-hold.png', triggers: ['Q', '长按声骸'] },
   { id: 'liberation-hold', label: '长按解放', src: '/combo-assets/button-icons/liberation-hold.png', triggers: ['R', '长按解放', '长按共鸣解放'] },
@@ -63,13 +71,14 @@ export const DEFAULT_ICON_MAPPINGS: ComboImageStyle['iconMappings'] = [
   { id: 'mouse-left', label: '普攻', src: '/combo-assets/button-icons/mouse-left.png', triggers: ['a', '普攻'] },
   { id: 'skill', label: '技能', src: '/combo-assets/button-icons/skill.png', triggers: ['e', '技能'] },
   { id: 'echo', label: '声骸', src: '/combo-assets/button-icons/echo.png', triggers: ['q', '声骸'] },
+  { id: 'tool', label: '工具', src: '/combo-assets/button-icons/tool.png', triggers: ['t', '工具'] },
   { id: 'liberation', label: '共鸣解放', src: '/combo-assets/button-icons/liberation.png', triggers: ['r', '共鸣解放'] },
   { id: 'mouse-right', label: '闪避', src: '/combo-assets/button-icons/mouse-right.png', triggers: ['s', 'd', '闪避'] },
   { id: 'jump', label: '跳跃', src: '/combo-assets/button-icons/jump.png', triggers: ['j', '跳跃', '跳'] },
   { id: 'intro', label: '变奏', src: '/combo-assets/button-icons/intro.png', triggers: ['b', '变奏'] },
   { id: 'outro', label: '延奏', src: '/combo-assets/button-icons/outro.png', triggers: ['y', '延奏'] },
-  { id: 'finisher', label: '处决 / Finisher', src: '/combo-assets/button-icons/finisher.png', triggers: ['f'] },
-  { id: 'forward', label: '前走 / Forward', src: '/combo-assets/button-icons/forward.png', triggers: ['w'] },
+  { id: 'finisher', label: '处决 / Tunebreak', src: '/combo-assets/button-icons/finisher.png', triggers: ['f'] },
+  { id: 'forward', label: '前走 / Forward', src: FORWARD_KEY_ICON, triggers: ['w'] },
   { id: 'iii', label: '3', src: '/combo-assets/button-icons/iii.png', triggers: ['iii'] },
   { id: 'ii', label: '2', src: '/combo-assets/button-icons/ii.png', triggers: ['ii'] },
   { id: 'i', label: '1', src: '/combo-assets/button-icons/i.png', triggers: ['i'] }
@@ -87,6 +96,8 @@ export const SKILL_ICON_MAP: Record<string, { id: string; label: string; src: st
   E: { id: 'skill-hold', label: '长按技能', src: '/combo-assets/button-icons/skill-hold.png' },
   q: { id: 'echo', label: '声骸', src: '/combo-assets/button-icons/echo.png' },
   Q: { id: 'echo-hold', label: '长按声骸', src: '/combo-assets/button-icons/echo-hold.png' },
+  t: { id: 'tool', label: '工具', src: '/combo-assets/button-icons/tool.png' },
+  T: { id: 'tool', label: '工具', src: '/combo-assets/button-icons/tool.png' },
   r: { id: 'liberation', label: '共鸣解放', src: '/combo-assets/button-icons/liberation.png' },
   R: { id: 'liberation-hold', label: '长按解放', src: '/combo-assets/button-icons/liberation-hold.png' },
   s: { id: 'mouse-right', label: '闪避', src: '/combo-assets/button-icons/mouse-right.png' },
@@ -94,8 +105,8 @@ export const SKILL_ICON_MAP: Record<string, { id: string; label: string; src: st
   j: { id: 'jump', label: '跳跃', src: '/combo-assets/button-icons/jump.png' },
   b: { id: 'intro', label: '变奏', src: '/combo-assets/button-icons/intro.png' },
   y: { id: 'outro', label: '延奏', src: '/combo-assets/button-icons/outro.png' },
-  f: { id: 'finisher', label: '处决 / Finisher', src: '/combo-assets/button-icons/finisher.png' },
-  w: { id: 'forward', label: '前走 / Forward', src: '/combo-assets/button-icons/forward.png' }
+  f: { id: 'finisher', label: '处决 / Tunebreak', src: '/combo-assets/button-icons/finisher.png' },
+  w: { id: 'forward', label: '前走 / Forward', src: FORWARD_KEY_ICON }
 };
 
 const TEXT_ICON_MAP: Record<string, { id: string; label: string; src: string }> = {
@@ -104,6 +115,7 @@ const TEXT_ICON_MAP: Record<string, { id: string; label: string; src: string }> 
   长按声骸: { id: 'echo-hold', label: '长按声骸', src: '/combo-assets/button-icons/echo-hold.png' },
   长按共鸣解放: { id: 'liberation-hold', label: '长按共鸣解放', src: '/combo-assets/button-icons/liberation-hold.png' },
   长按跳跃: { id: 'jump-hold', label: '长按跳跃', src: '/combo-assets/button-icons/jump-hold.png' },
+  工具: { id: 'tool', label: '工具', src: '/combo-assets/button-icons/tool.png' },
   iii: { id: 'iii', label: '3', src: '/combo-assets/button-icons/iii.png' },
   ii: { id: 'ii', label: '2', src: '/combo-assets/button-icons/ii.png' },
   i: { id: 'i', label: '1', src: '/combo-assets/button-icons/i.png' },
@@ -166,7 +178,7 @@ export function createDefaultComboImageStyle(): ComboImageStyle {
     capsuleImage: DEFAULT_BASE_PRESET_IMAGE,
     capsuleImageWidth: 426,
     capsuleImageHeight: 426,
-    imageBlockWidth: 100,
+    imageBlockWidth: 600,
     imageBlockHeight: 55,
     capsuleImageScale: 1,
     overallScale: 1,
@@ -183,7 +195,7 @@ export function createDefaultComboImageStyle(): ComboImageStyle {
     avatarOffsetX: -20,
     avatarOffsetY: 0,
     capsuleWidth: 200,
-    capsuleWidthMode: 'fixed',
+    capsuleWidthMode: 'auto',
     autoWidthPadding: 72,
     capsuleHeight: 80,
     capsuleGap: 20,
@@ -564,7 +576,7 @@ export function comboImageBackgroundSource(style: ComboImageStyle): string | und
 function comboTextDisplayUnits(value: string, convertIcons: boolean, mappings = DEFAULT_ICON_MAPPINGS): number {
   const parts = comboTextParts(value, convertIcons, mappings);
   const contentUnits = parts.reduce((sum, part) => {
-    if (part.kind === 'icon') return sum + 1.62 * part.iconScale;
+    if (part.kind === 'icon') return sum + 1.62 * part.iconScale * part.iconWidthScale;
     return sum + Array.from(part.value).reduce((inner, char) => inner + (/[^\x00-\xff]/.test(char) ? 1 : 0.62), 0);
   }, 0);
   return contentUnits + Math.max(0, parts.length - 1) * 0.18;
@@ -585,6 +597,7 @@ export function defaultComboContentLabelForMoveId(moveId: string): string | unde
   if (moveId === 'skill_hold') return 'E';
   if (moveId === 'echo') return 'q';
   if (moveId === 'echo_hold') return 'Q';
+  if (moveId === 'tool') return 't';
   if (moveId === 'liberation') return 'r';
   if (moveId === 'liberation_hold') return 'R';
   if (moveId === 'dodge') return 's';
@@ -637,7 +650,7 @@ export function comboTextParts(value: string, convertIcons: boolean, mappings = 
     const match = triggers.find(({ trigger }) => text.startsWith(trigger, index));
     if (match) {
       pushText();
-      parts.push({ kind: 'icon', iconId: match.mapping.id, label: match.mapping.label, src: match.mapping.src, iconScale: clampNumber(match.mapping.iconScale, 0.35, 3, 1) });
+      parts.push({ kind: 'icon', iconId: match.mapping.id, label: match.mapping.label, src: match.mapping.src, iconScale: clampNumber(match.mapping.iconScale, 0.35, 3, 1), iconWidthScale: clampNumber(match.mapping.iconWidthScale, 1, 4, 1) });
       index += match.trigger.length;
       continue;
     }
@@ -716,19 +729,33 @@ function normalizeIconMappings(value: unknown): ComboImageStyle['iconMappings'] 
     const entry = item as Partial<ComboImageStyle['iconMappings'][number]>;
     if (typeof entry.id !== 'string' || !entry.id.trim()) continue;
     if (typeof entry.src !== 'string' || !entry.src.trim()) continue;
-    const triggers = Array.isArray(entry.triggers)
+    let triggers = Array.isArray(entry.triggers)
       ? entry.triggers.map((trigger) => String(trigger).trim()).filter(Boolean)
       : [];
     if (entry.id.trim() === 'jump' && triggers.includes('跳') && !triggers.includes('跳跃')) triggers.push('跳跃');
+    if (entry.id.trim() === 'mouse-left-hold' && triggers.some((trigger) => ['A', 'z', 'Z', '长按普攻', '重击'].includes(trigger))) {
+      triggers = triggers.filter((trigger) => trigger !== 'a');
+      for (const trigger of ['A', 'z', 'Z']) if (!triggers.includes(trigger)) triggers.push(trigger);
+    }
     if (!triggers.length) continue;
-    const src = limitEmbeddedImage(entry.src.trim(), 800_000);
+    const id = entry.id.trim();
+    const storedSource = entry.src.trim();
+    const builtInForwardSource = id === 'forward' && storedSource.endsWith('/combo-assets/button-icons/forward.png');
+    const generatedSpecialIcon = GENERATED_SPECIAL_KEY_ICONS[id];
+    const migratedSource = builtInForwardSource
+      ? FORWARD_KEY_ICON
+      : generatedSpecialIcon?.generated === storedSource
+        ? generatedSpecialIcon.project
+        : storedSource;
+    const src = limitEmbeddedImage(migratedSource, 800_000);
     if (!src) continue;
-    byId.set(entry.id.trim(), {
-      id: entry.id.trim(),
-      label: typeof entry.label === 'string' && entry.label.trim() ? entry.label.trim() : entry.id.trim(),
+    byId.set(id, {
+      id,
+      label: typeof entry.label === 'string' && entry.label.trim() ? entry.label.trim() : id,
       src,
       triggers,
-      iconScale: clampNumber(entry.iconScale, 0.35, 3, 1)
+      iconScale: clampNumber(entry.iconScale, 0.35, 3, 1),
+      iconWidthScale: clampNumber(entry.iconWidthScale, 1, 4, 1)
     });
   }
 

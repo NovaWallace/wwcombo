@@ -45,6 +45,7 @@ const PHRASE_ACTIONS: Array<[string, string, string?]> = [
   ['basic attack', 'basic_attack'],
   ['heavy attack', 'heavy_attack'],
   ['liberation', 'liberation'],
+  ['tunebreak', 'empty_action', 'f'],
   ['finisher', 'empty_action', 'f'],
   ['dodge', 'dodge'],
   ['jump', 'jump'],

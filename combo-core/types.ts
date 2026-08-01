@@ -161,6 +161,7 @@ export type ComboIconMapping = {
   src: string;
   triggers: string[];
   iconScale?: number;
+  iconWidthScale?: number;
 };
 
 export type ComboBasePreset = {

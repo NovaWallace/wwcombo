@@ -384,7 +384,7 @@ async function drawInlineContent(ctx: CanvasRenderingContext2D, block: ExportBlo
   const availableWidth = Math.max(8, placement.width - 20 * scale - avatarSpace);
   ctx.font = `900 ${fontSize}px ${style.fontFamily}`;
   const measurements = parts.map((part) => part.kind === 'icon'
-    ? { part, width: fontSize * 1.62 * part.iconScale }
+    ? { part, width: fontSize * 1.62 * part.iconScale * part.iconWidthScale }
     : { part, width: ctx.measureText(part.value).width });
   const naturalWidth = measurements.reduce((sum, item) => sum + item.width, 0) + Math.max(0, measurements.length - 1) * 2 * scale;
   const fit = Math.min(1, availableWidth / Math.max(1, naturalWidth));
@@ -409,8 +409,9 @@ async function drawInlineContent(ctx: CanvasRenderingContext2D, block: ExportBlo
     if (measurement.part.kind === 'icon') {
       const image = await loadImage(measurement.part.src);
       if (image) {
-        const size = width;
-        ctx.drawImage(image, cursorX, centerY - size / 2, size, size);
+        const height = fittedFontSize * 1.45 * measurement.part.iconScale;
+        const imageWidth = height * measurement.part.iconWidthScale;
+        ctx.drawImage(image, cursorX + (width - imageWidth) / 2, centerY - height / 2, imageWidth, height);
       }
     } else {
       if (style.textStrokeEnabled && ctx.lineWidth > 0) ctx.strokeText(measurement.part.value, cursorX, centerY);
@@ -665,6 +666,14 @@ export function FullChartExportLab({ chart, library, style, basePresets, onSelec
       setSelectedBlockId('');
       return;
     }
+    setDraftStyle((current) => {
+      const roleStyles = { ...current.roleStyles };
+      ([1, 2, 3] as CharacterSlot[]).forEach((slot) => {
+        const sourceRole = sourceStyle.roleStyles[slot];
+        roleStyles[slot] = { ...current.roleStyles[slot], name: sourceRole.name, avatar: sourceRole.avatar, avatarCrop: sourceRole.avatarCrop };
+      });
+      return normalizeComboImageStyle({ ...current, roleStyles });
+    });
     const defaultLoops = defaultVisibleLoopIds(selectedChart);
     setVisibleLoopIds(defaultLoops);
     const next = blocksFromChart(selectedChart, effectiveStyle, language, defaultLoops);

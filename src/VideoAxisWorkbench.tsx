@@ -1,8 +1,8 @@
 import { cloneElement, isValidElement, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode, WheelEvent as ReactWheelEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, Clock3, Download, FileVideo, PanelBottomClose, PanelBottomOpen, Pause, Play, Save, Scissors, Upload, Volume2, VolumeX, X } from 'lucide-react';
-import type { CharacterSlot, ComboChart, ComboImageStyle, ComboPeriod, ComboStep } from '../combo-core';
+import { Check, Clock3, Download, FileVideo, PanelBottomClose, PanelBottomOpen, Pause, Play, Redo2, Save, ScanSearch, Scissors, Undo2, Upload, Volume2, VolumeX, X } from 'lucide-react';
+import type { CharacterSlot, ComboChart, ComboImageStyle, ComboPeriod, ComboStep, MoveDefinition } from '../combo-core';
 import {
   chartToComboImageItems,
   capsuleEdgeSourceRange,
@@ -23,6 +23,20 @@ import { NumericDraftInput } from './NumericDraftInput';
 import { buildRhythmCrowdedGroups, rhythmNoteHeight, rhythmNoteOpacity, rhythmNoteTop, visibleRhythmCrowdedGroups } from './rhythmCrowding';
 import { shortcutMatches } from './shortcutSettings';
 import type { ShortcutSettings } from './shortcutSettings';
+import { keyMappingDisplayBounds, loadStoredKeyMappingConfig } from './keyMappingTypes';
+import {
+  buildVideoRecognitionRequest,
+  combineVideoRecognitionWithExistingChart,
+  DEFAULT_VIDEO_RECOGNITION_HOTSPOTS,
+  normalizeVideoRecognitionBounds,
+  recognitionHeightForWidth,
+  recognizedChartFromVideo
+} from './videoKeyMappingRecognition';
+import type {
+  VideoRecognitionBounds,
+  VideoRecognitionProgress,
+  VideoRecognitionResult
+} from './videoKeyMappingRecognition';
 
 type ComboLayout = 'horizontal' | 'vertical' | 'waterfall';
 type LinearComboLayout = Exclude<ComboLayout, 'waterfall'>;
@@ -68,12 +82,25 @@ type TimelinePanelDragSnapshot = {
   axis: 'horizontal' | 'vertical' | null;
 };
 
-type VideoWorkbenchDesktopBridge = Pick<NonNullable<Window['trainerDesktop']>, 'pickVideoFile' | 'exportVideoWithOverlay' | 'cancelVideoExport' | 'onVideoExportProgress'>;
+type RecognitionBoundsDrag = {
+  pointerId: number;
+  mode: 'move' | VideoLayerCropEdge;
+  startX: number;
+  startY: number;
+  origin: VideoRecognitionBounds;
+  hostWidth: number;
+  hostHeight: number;
+};
+
+type VideoWorkbenchDesktopBridge = Pick<NonNullable<Window['trainerDesktop']>, 'pickVideoFile' | 'analyzeVideoKeyMapping' | 'cancelVideoKeyMappingRecognition' | 'onVideoKeyMappingRecognitionProgress' | 'exportVideoWithOverlay' | 'cancelVideoExport' | 'onVideoExportProgress'>;
 
 type VideoAxisWorkbenchProps = {
   open: boolean;
   desktop?: VideoWorkbenchDesktopBridge | null;
   chart: ComboChart;
+  moves: MoveDefinition[];
+  startingCharacterSlot: CharacterSlot;
+  recognitionBasedOnTextAxis: boolean;
   comboImageStyle: ComboImageStyle;
   timelineContentLabels: Record<string, string>;
   overlaySettings: OverlaySettings;
@@ -100,6 +127,11 @@ type ExportStatus = {
   state: 'idle' | 'running' | 'done' | 'error';
   message: string;
   progress: number;
+};
+
+type RecognitionStatus = {
+  state: 'idle' | 'running' | 'done' | 'error';
+  message: string;
 };
 
 type ImageCache = Map<string, HTMLImageElement | null>;
@@ -195,6 +227,49 @@ function normalizeDisplaySize(value: { width: number; height: number } | null | 
   const width = Math.round(value?.width ?? 0);
   const height = Math.round(value?.height ?? 0);
   return width > 0 && height > 0 ? { width, height } : null;
+}
+
+function storedRecognitionBounds(screenSize: { width: number; height: number }): VideoRecognitionBounds {
+  const mapping = keyMappingDisplayBounds(loadStoredKeyMappingConfig());
+  return normalizeVideoRecognitionBounds({
+    x: (mapping.x / Math.max(1, screenSize.width)) * 100,
+    y: (mapping.y / Math.max(1, screenSize.height)) * 100,
+    width: (mapping.width / Math.max(1, screenSize.width)) * 100,
+    height: (mapping.height / Math.max(1, screenSize.height)) * 100
+  });
+}
+
+function recognitionBoundsWithCanvasAspect(value: VideoRecognitionBounds, videoWidth: number, videoHeight: number): VideoRecognitionBounds {
+  const normalized = normalizeVideoRecognitionBounds(value);
+  let width = normalized.width;
+  let height = recognitionHeightForWidth(width, videoWidth, videoHeight);
+  if (height > 100) {
+    width *= 100 / height;
+    height = recognitionHeightForWidth(width, videoWidth, videoHeight);
+  }
+  return normalizeVideoRecognitionBounds({
+    x: clamp(normalized.x, 0, 100 - width),
+    y: clamp(normalized.y, 0, 100 - height),
+    width,
+    height
+  });
+}
+
+function recognitionHoldCount(result: VideoRecognitionResult): number {
+  const hotspots = new Map(DEFAULT_VIDEO_RECOGNITION_HOTSPOTS.map((hotspot) => [hotspot.id, hotspot]));
+  return result.events.filter((event) => {
+    const hotspot = hotspots.get(event.hotspotId);
+    return Boolean(hotspot?.holdMoveId && hotspot.holdThresholdMs && event.durationMs >= hotspot.holdThresholdMs);
+  }).length;
+}
+
+function localizedRecognitionError(error: unknown, text: (chinese: string, english: string) => string): string {
+  const raw = error instanceof Error ? error.message : String(error);
+  if (raw.includes('已取消')) return text('视频按键识别已取消。', 'Video key recognition was cancelled.');
+  if (raw.includes('视频文件不存在')) return text('视频原文件不存在，请重新导入后再试。', 'The original video file is missing. Re-import it and try again.');
+  if (raw.includes('ffmpeg')) return text('ffmpeg 无法完成视频识别，请检查安装文件后重试。', 'FFmpeg could not complete video recognition. Check the application files and try again.');
+  if (raw.includes('识别区域') || raw.includes('按键位置')) return text('识别区域无效，请调整识别框后重试。', 'The recognition region is invalid. Adjust the frame and try again.');
+  return `${text('视频识别失败', 'Video recognition failed')}: ${raw}`;
 }
 
 function overlayBoundsToVideoPercent(settings: OverlaySettings, screenSize: { width: number; height: number }): VideoLayerBounds {
@@ -327,14 +402,14 @@ function CapsuleBlockBackground() {
 }
 
 function ComboInlineContent({ parts, className, hideIconAlt = false }: { parts: ReturnType<typeof comboTextParts>; className: string; hideIconAlt?: boolean }) {
-  return <strong className={className}>{parts.map((part, index) => part.kind === 'icon' ? <span key={`${part.iconId}-${index}`} className="combo-inline-icon-mark" style={{ '--icon-scale': part.iconScale } as CSSProperties}><img className="combo-inline-icon" src={part.src} alt={hideIconAlt ? '' : part.label} title={part.label} /></span> : <span key={`text-${index}`}>{part.value}</span>)}</strong>;
+  return <strong className={className}>{parts.map((part, index) => part.kind === 'icon' ? <span key={`${part.iconId}-${index}`} className="combo-inline-icon-mark" style={{ '--icon-scale': part.iconScale, '--icon-width-scale': part.iconWidthScale } as CSSProperties}><img className="combo-inline-icon" src={part.src} alt={hideIconAlt ? '' : part.label} title={part.label} /></span> : <span key={`text-${index}`}>{part.value}</span>)}</strong>;
 }
 
 function ComboItemContent({ item, parts, className, mappings, activeStepId }: { item: ReturnType<typeof chartToComboImageItems>[number]; parts: ReturnType<typeof comboTextParts>; className: string; mappings: ComboImageStyle['iconMappings']; activeStepId?: string }) {
   if (item.mergedParts?.length && activeStepId) {
     return <strong className={className}>{item.mergedParts.map((part) => {
       const active = part.stepId === activeStepId;
-      return <span key={part.stepId} className={active ? 'combo-merged-part active' : 'combo-merged-part'}>{comboTextParts(part.displayText, Boolean(part.iconId), mappings).map((piece, index) => piece.kind === 'icon' ? <span key={`${piece.iconId}-${index}`} className={active ? 'combo-inline-icon-mark active' : 'combo-inline-icon-mark'} style={{ '--icon-scale': piece.iconScale } as CSSProperties}><img className="combo-inline-icon" src={piece.src} alt={piece.label} title={piece.label} /></span> : <span key={`text-${index}`}>{piece.value}</span>)}</span>;
+      return <span key={part.stepId} className={active ? 'combo-merged-part active' : 'combo-merged-part'}>{comboTextParts(part.displayText, Boolean(part.iconId), mappings).map((piece, index) => piece.kind === 'icon' ? <span key={`${piece.iconId}-${index}`} className={active ? 'combo-inline-icon-mark active' : 'combo-inline-icon-mark'} style={{ '--icon-scale': piece.iconScale, '--icon-width-scale': piece.iconWidthScale } as CSSProperties}><img className="combo-inline-icon" src={piece.src} alt={piece.label} title={piece.label} /></span> : <span key={`text-${index}`}>{piece.value}</span>)}</span>;
     })}</strong>;
   }
   return <ComboInlineContent parts={parts} className={className} />;
@@ -693,16 +768,18 @@ function drawCapsuleImageBlock(ctx: CanvasRenderingContext2D, image: HTMLImageEl
   ctx.imageSmoothingEnabled = previousSmoothing;
 }
 
-type ComboTextPartLayout = { left: number; width: number; iconSize?: number; markerSize?: number };
+type ComboTextPartLayout = { left: number; width: number; iconSize?: number; iconWidth?: number; markerSize?: number; markerHeight?: number };
 
 function measureComboTextParts(ctx: CanvasRenderingContext2D, parts: ReturnType<typeof comboTextParts>, fontSize: number): ComboTextPartLayout[] {
   const gap = fontSize * 0.18;
   let cursor = 0;
   return parts.map((part, index) => {
     if (part.kind === 'icon') {
-      const markerSize = fontSize * 1.62 * part.iconScale;
+      const markerHeight = fontSize * 1.62 * part.iconScale;
+      const markerSize = markerHeight * part.iconWidthScale;
       const iconSize = fontSize * 1.45 * part.iconScale;
-      const layout = { left: cursor, width: markerSize, iconSize, markerSize };
+      const iconWidth = iconSize * part.iconWidthScale;
+      const layout = { left: cursor, width: markerSize, iconSize, iconWidth, markerSize, markerHeight };
       cursor += markerSize + (index < parts.length - 1 ? gap : 0);
       return layout;
     }
@@ -727,10 +804,11 @@ function drawComboTextParts(ctx: CanvasRenderingContext2D, parts: ReturnType<typ
     if (partX >= x + maxWidth) return;
     if (part.kind === 'icon') {
       const image = loadCanvasImage(part.src, imageCache);
-      const markerSize = partLayout.markerSize ?? fontSize * 1.62 * part.iconScale;
+      const markerSize = partLayout.markerSize ?? fontSize * 1.62 * part.iconScale * part.iconWidthScale;
       const size = partLayout.iconSize ?? fontSize * 1.45 * part.iconScale;
+      const imageWidth = partLayout.iconWidth ?? size * part.iconWidthScale;
       if (image) {
-        ctx.drawImage(image, partX + (markerSize - size) / 2, y - size / 2, size, size);
+        ctx.drawImage(image, partX + (markerSize - imageWidth) / 2, y - size / 2, imageWidth, size);
         continue;
       }
       if (drawIconFallbackText) ctx.fillText(part.label, partX, y, Math.max(1, x + maxWidth - partX));
@@ -1003,7 +1081,7 @@ function drawComboLayerToCanvas(ctx: CanvasRenderingContext2D, chart: ComboChart
         let mergedCursor = contentLeft;
         let activePartLeft = contentLeft;
         let activePartWidth = 0;
-        let activeIconBounds: { left: number; width: number; highlightSize: number }[] = [];
+        let activeIconBounds: { left: number; width: number; highlightHeight: number }[] = [];
 
         item.mergedParts.forEach((mergedPart, mergedIndex) => {
           const mergedTextParts = comboTextParts(mergedPart.displayText, Boolean(mergedPart.iconId), mappings);
@@ -1014,8 +1092,9 @@ function drawComboLayerToCanvas(ctx: CanvasRenderingContext2D, chart: ComboChart
             activePartWidth = mergedPartWidth;
             activeIconBounds = mergedTextParts.flatMap((part, index) => {
               if (part.kind !== 'icon') return [];
-              const markerSize = mergedTextLayout[index].markerSize ?? fontSize * 1.62 * part.iconScale;
-              return [{ left: mergedCursor + mergedTextLayout[index].left, width: markerSize, highlightSize: markerSize }];
+              const markerHeight = mergedTextLayout[index].markerHeight ?? fontSize * 1.62 * part.iconScale;
+              const markerSize = mergedTextLayout[index].markerSize ?? markerHeight * part.iconWidthScale;
+              return [{ left: mergedCursor + mergedTextLayout[index].left, width: markerSize, highlightHeight: markerHeight }];
             });
           }
           mergedCursor += mergedPartWidth + (mergedIndex < item.mergedParts!.length - 1 ? fontSize * 0.18 : 0);
@@ -1035,8 +1114,9 @@ function drawComboLayerToCanvas(ctx: CanvasRenderingContext2D, chart: ComboChart
         if (clampedIcons.length) {
           clampedIcons.forEach((bounds) => {
             const center = bounds.left + bounds.width / 2;
-            const highlightSize = Math.max(18, bounds.highlightSize);
-            roundedRect(ctx, center - highlightSize / 2, chipY + chipHeight / 2 - highlightSize / 2, highlightSize, highlightSize, Math.max(3, fontSize * 0.18));
+            const highlightHeight = Math.max(18, bounds.highlightHeight);
+            const highlightWidth = Math.max(18, bounds.width);
+            roundedRect(ctx, center - highlightWidth / 2, chipY + chipHeight / 2 - highlightHeight / 2, highlightWidth, highlightHeight, Math.max(3, fontSize * 0.18));
             ctx.fillStyle = 'rgba(255,224,55,0.98)';
             ctx.fill();
             ctx.lineWidth = 2;
@@ -1217,7 +1297,7 @@ function VideoRhythmLayer({ chart, style, timeMs, settings, bounds }: { chart: C
   return <div ref={hostRef} className="video-rhythm-scale-host"><div className="video-rhythm-shell" style={{ width: stageWidth, height: stageHeight, transform: `scale(${scaleX * scale}, ${scaleY * scale})`, '--rhythm-judge-y': judgeY + 'px', '--rhythm-lane-gap': settings.laneGap + 'px', '--rhythm-role-spacing': settings.roleSpacing + 'px' } as CSSProperties}><div className="rhythm-overlay-lanes">{CHARACTER_SLOTS.map((slot) => <div key={slot} className="rhythm-overlay-lane">{activeSlot === slot && <div className="rhythm-overlay-active-role-gradient" />}{visibleSteps.filter((step) => (step.characterSlot ?? 1) === slot).map((step) => { const parts = notePartsByStepId.get(step.id) ?? []; const height = rhythmNoteHeight(parts.length); const active = timeMs >= step.startMin && timeMs <= step.startMin + step.durationMax; return <div key={step.id} className={'rhythm-overlay-note ' + (step.moveId === 'heavy_attack' || step.moveId.endsWith('_hold') ? 'hold' : 'normal') + (parts.length > 1 ? ' stacked' : '') + (active ? ' active' : '')} style={{ top: rhythmNoteTop(step, height, timeMs, judgeY, settings.fallSpeed), height, opacity: rhythmNoteOpacity(step, timeMs) } as CSSProperties}><ComboInlineContent parts={parts} className="rhythm-overlay-note-content" hideIconAlt /></div>; })}</div>)}</div><div className="rhythm-overlay-judge" /><div className="rhythm-overlay-avatars">{CHARACTER_SLOTS.map((slot) => { const role = style.roleStyles[slot]; const prompt = orderedSteps.find((step) => (step.characterSlot ?? 1) === slot && timeMs <= step.startMin + step.durationMax); const crowdedPrompts = visibleCrowdedGroups.filter((group) => group.characterSlot === slot).map((group) => ({ group, parts: [...group.entries].reverse().flatMap((entry) => notePartsByStepId.get(entry.step.id) ?? []) })).filter((item) => item.parts.length > 1); return <div key={slot} className={`rhythm-overlay-avatar-cell ${activeSlot === slot ? 'active' : ''}`}><span className="rhythm-overlay-lane-prompt">{promptTextForStep(prompt, style, language)}</span>{crowdedPrompts.length > 0 && <span className="rhythm-overlay-crowded-prompts">{crowdedPrompts.map(({ group, parts }) => <span key={group.id} className="rhythm-overlay-crowded-prompt" style={{ '--rhythm-crowded-color': role.color } as CSSProperties}><ComboInlineContent parts={parts} className="rhythm-overlay-crowded-prompt-content" hideIconAlt /></span>)}</span>}<span className="rhythm-overlay-avatar" style={imageCropBackground(role.avatar, role.avatarCrop)}>{role.avatar ? null : slot}</span></div>; })}</div></div></div>;
 }
 
-export function VideoAxisWorkbench({ open, desktop, chart, comboImageStyle, timelineContentLabels, overlaySettings, rhythmUiSettings, shortcutSettings, exportDirectory, ensureExportDirectory, timelineEditor, onApplyChart, onApplyContentLabels, onClose, onSave, getDisplaySize }: VideoAxisWorkbenchProps) {
+export function VideoAxisWorkbench({ open, desktop, chart, moves, startingCharacterSlot, recognitionBasedOnTextAxis, comboImageStyle, timelineContentLabels, overlaySettings, rhythmUiSettings, shortcutSettings, exportDirectory, ensureExportDirectory, timelineEditor, onApplyChart, onApplyContentLabels, onClose, onSave, getDisplaySize }: VideoAxisWorkbenchProps) {
   const { language, text } = useI18n();
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [videoSourcePath, setVideoSourcePath] = useState<string | null>(null);
@@ -1255,8 +1335,15 @@ export function VideoAxisWorkbench({ open, desktop, chart, comboImageStyle, time
   const [layerTransformMode, setLayerTransformMode] = useState(false);
   const [layerTransform, setLayerTransform] = useState<VideoLayerTransform>({ offsetX: 0, offsetY: 0, scale: 1, cropLeft: 0, cropTop: 0, cropRight: 0, cropBottom: 0 });
   const [stageHudVisible, setStageHudVisible] = useState(true);
+  const [recognitionDialogOpen, setRecognitionDialogOpen] = useState(false);
+  const [recognitionBounds, setRecognitionBounds] = useState<VideoRecognitionBounds>({ x: 58, y: 10, width: 34, height: 28 });
+  const [recognitionPreviewMs, setRecognitionPreviewMs] = useState(0);
+  const [recognitionProgress, setRecognitionProgress] = useState<VideoRecognitionProgress>({ progress: 0, processedFrames: 0, totalFrames: 0 });
+  const [recognitionStatus, setRecognitionStatus] = useState<RecognitionStatus>(() => ({ state: 'idle', message: text('调整识别框，使蓝色按键提示完整落在框内。', 'Adjust the frame so the blue key indicators fit inside it.') }));
+  const [recognitionResult, setRecognitionResult] = useState<VideoRecognitionResult | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const trimPreviewRef = useRef<HTMLVideoElement | null>(null);
+  const recognitionPreviewRef = useRef<HTMLVideoElement | null>(null);
   const trimDragRef = useRef<VideoTrimDrag | null>(null);
   const playbackRateMenuRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -1268,6 +1355,8 @@ export function VideoAxisWorkbench({ open, desktop, chart, comboImageStyle, time
   const layerMoveDragRef = useRef<VideoLayerMoveDrag | null>(null);
   const layerScaleDragRef = useRef<VideoLayerScaleDrag | null>(null);
   const layerCropDragRef = useRef<VideoLayerCropDrag | null>(null);
+  const recognitionBoundsDragRef = useRef<RecognitionBoundsDrag | null>(null);
+  const recognitionRunRef = useRef(0);
   const layerScaleSuppressClickRef = useRef(false);
   const stageHudHideTimerRef = useRef<number | null>(null);
   const videoToastTimerRef = useRef<number | null>(null);
@@ -1333,6 +1422,10 @@ export function VideoAxisWorkbench({ open, desktop, chart, comboImageStyle, time
   const workbenchMainStyle = {
     '--video-timeline-height': `${timelineHeight}px`
   } as CSSProperties;
+  const recognitionAverageConfidence = recognitionResult?.events.length
+    ? recognitionResult.events.reduce((sum, event) => sum + event.confidence, 0) / recognitionResult.events.length
+    : 0;
+  const recognitionHolds = recognitionResult ? recognitionHoldCount(recognitionResult) : 0;
 
   function cloneChartSnapshot(source: ComboChart): ComboChart {
     return { ...source, steps: source.steps.map((step) => ({ ...step })), periods: source.periods?.map((period) => ({ ...period })) };
@@ -1651,6 +1744,160 @@ export function VideoAxisWorkbench({ open, desktop, chart, comboImageStyle, time
     setTimelineLaneHeight((current) => Math.round(clamp(current + delta, MIN_VIDEO_TIMELINE_LANE_HEIGHT, MAX_VIDEO_TIMELINE_LANE_HEIGHT)));
   }
 
+  function openRecognitionDialog() {
+    if (!videoUrl) {
+      showVideoToast(text('请先导入视频。', 'Import a video first.'));
+      return;
+    }
+    videoRef.current?.pause();
+    const screen = displaySize ?? currentScreenSize(overlaySettings);
+    let nextBounds = storedRecognitionBounds(screen);
+    try {
+      const stored = localStorage.getItem('ww-video-key-recognition-bounds-v1');
+      if (stored) nextBounds = normalizeVideoRecognitionBounds(JSON.parse(stored));
+    } catch {
+      // Fall back to the current Key Mapping overlay bounds.
+    }
+    setRecognitionBounds(recognitionBoundsWithCanvasAspect(nextBounds, videoMeta.width, videoMeta.height));
+    setRecognitionPreviewMs(clamp(playbackMs, 0, trimDurationMs));
+    setRecognitionProgress({ progress: 0, processedFrames: 0, totalFrames: 0 });
+    setRecognitionResult(null);
+    setRecognitionStatus(videoSourcePath && desktop?.analyzeVideoKeyMapping
+      ? { state: 'idle', message: text('调整识别框，使蓝色按键提示完整落在框内。', 'Adjust the frame so the blue key indicators fit inside it.') }
+      : { state: 'error', message: text('请通过桌面端“导入视频”重新选择原视频文件后识别。', 'Re-import the original video through the desktop app before recognition.') });
+    setRecognitionDialogOpen(true);
+  }
+
+  function closeRecognitionDialog() {
+    recognitionBoundsDragRef.current = null;
+    if (recognitionStatus.state === 'running') {
+      recognitionRunRef.current += 1;
+      void desktop?.cancelVideoKeyMappingRecognition?.();
+    }
+    setRecognitionDialogOpen(false);
+  }
+
+  function seekRecognitionPreview(nextMs: number) {
+    const normalized = clamp(nextMs, 0, trimDurationMs);
+    setRecognitionPreviewMs(normalized);
+    if (recognitionPreviewRef.current) recognitionPreviewRef.current.currentTime = (trimStartMs + normalized) / 1000;
+  }
+
+  function beginRecognitionBoundsDrag(event: ReactPointerEvent<HTMLElement>, mode: RecognitionBoundsDrag['mode']) {
+    if (recognitionStatus.state === 'running' || event.button !== 0) return;
+    const host = event.currentTarget.closest('.video-recognition-preview') as HTMLElement | null;
+    if (!host) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    const rect = host.getBoundingClientRect();
+    recognitionBoundsDragRef.current = {
+      pointerId: event.pointerId,
+      mode,
+      startX: event.clientX,
+      startY: event.clientY,
+      origin: { ...recognitionBounds },
+      hostWidth: Math.max(1, rect.width),
+      hostHeight: Math.max(1, rect.height)
+    };
+  }
+
+  function moveRecognitionBoundsDrag(event: ReactPointerEvent<HTMLElement>) {
+    const drag = recognitionBoundsDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const dx = ((event.clientX - drag.startX) / drag.hostWidth) * 100;
+    const dy = ((event.clientY - drag.startY) / drag.hostHeight) * 100;
+    if (drag.mode === 'move') {
+      setRecognitionBounds(normalizeVideoRecognitionBounds({
+        ...drag.origin,
+        x: clamp(drag.origin.x + dx, 0, 100 - drag.origin.width),
+        y: clamp(drag.origin.y + dy, 0, 100 - drag.origin.height)
+      }));
+      return;
+    }
+
+    const fromLeft = drag.mode === 'nw' || drag.mode === 'sw';
+    const fromTop = drag.mode === 'nw' || drag.mode === 'ne';
+    const horizontalDelta = fromLeft ? -dx : dx;
+    const heightFactor = recognitionHeightForWidth(1, videoMeta.width, videoMeta.height);
+    const horizontalLimit = fromLeft ? drag.origin.x + drag.origin.width : 100 - drag.origin.x;
+    const verticalLimit = fromTop ? drag.origin.y + drag.origin.height : 100 - drag.origin.y;
+    const nextWidth = clamp(drag.origin.width + horizontalDelta, 8, Math.min(horizontalLimit, verticalLimit / Math.max(0.01, heightFactor)));
+    const nextHeight = recognitionHeightForWidth(nextWidth, videoMeta.width, videoMeta.height);
+    const right = drag.origin.x + drag.origin.width;
+    const bottom = drag.origin.y + drag.origin.height;
+    setRecognitionBounds(normalizeVideoRecognitionBounds({
+      x: fromLeft ? right - nextWidth : drag.origin.x,
+      y: fromTop ? bottom - nextHeight : drag.origin.y,
+      width: nextWidth,
+      height: nextHeight
+    }));
+  }
+
+  function endRecognitionBoundsDrag(event: ReactPointerEvent<HTMLElement>) {
+    if (recognitionBoundsDragRef.current?.pointerId !== event.pointerId) return;
+    recognitionBoundsDragRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    localStorage.setItem('ww-video-key-recognition-bounds-v1', JSON.stringify(recognitionBounds));
+  }
+
+  async function runVideoRecognition() {
+    if (!videoSourcePath || !desktop?.analyzeVideoKeyMapping || trimDurationMs <= 0) return;
+    const runId = recognitionRunRef.current + 1;
+    recognitionRunRef.current = runId;
+    localStorage.setItem('ww-video-key-recognition-bounds-v1', JSON.stringify(recognitionBounds));
+    setRecognitionResult(null);
+    setRecognitionProgress({ progress: 0, processedFrames: 0, totalFrames: 0 });
+    setRecognitionStatus({ state: 'running', message: text('正在逐帧识别蓝色按键提示...', 'Scanning blue key indicators frame by frame...') });
+    try {
+      const request = buildVideoRecognitionRequest(videoSourcePath, trimStartMs, trimDurationMs, videoMeta.width, videoMeta.height, recognitionBounds);
+      const result = await desktop.analyzeVideoKeyMapping(request);
+      if (recognitionRunRef.current !== runId) return;
+      setRecognitionResult(result);
+      setRecognitionProgress((current) => ({ ...current, progress: 1 }));
+      setRecognitionStatus({
+        state: 'done',
+        message: result.events.length
+          ? text(`识别到 ${result.events.length} 次操作，请选择应用方式后确认。`, `${result.events.length} inputs recognized. Choose how to apply the result.`)
+          : text('没有识别到按键提示，请调整识别框后重试。', 'No key indicators were found. Adjust the frame and try again.')
+      });
+    } catch (error) {
+      if (recognitionRunRef.current !== runId) return;
+      const raw = error instanceof Error ? error.message : String(error);
+      setRecognitionStatus({ state: raw.includes('已取消') ? 'idle' : 'error', message: localizedRecognitionError(error, text) });
+    }
+  }
+
+  function cancelVideoRecognition() {
+    void desktop?.cancelVideoKeyMappingRecognition?.();
+    setRecognitionStatus({ state: 'running', message: text('正在取消识别...', 'Cancelling recognition...') });
+  }
+
+  function applyVideoRecognition() {
+    if (!recognitionResult?.events.length) return;
+    const generated = recognizedChartFromVideo(chart, moves, startingCharacterSlot, recognitionResult, trimDurationMs);
+    if (recognitionBasedOnTextAxis) {
+      const combined = combineVideoRecognitionWithExistingChart(chart, timelineContentLabels, generated, trimDurationMs);
+      if (!combined.matchedSteps) {
+        showVideoToast(text('没有找到可与现有时间轴对应的识别结果，未修改时间轴。', 'No recognized inputs matched the existing timeline. Nothing was changed.'));
+        return;
+      }
+      captureWorkbenchHistory();
+      onApplyChart(combined.chart);
+      onApplyContentLabels(combined.contentLabels);
+      setRecognitionDialogOpen(false);
+      showVideoToast(text(`已匹配 ${combined.matchedSteps}/${chart.steps.length} 个现有招式，保留内容并更新时间。`, `Matched ${combined.matchedSteps} of ${chart.steps.length} existing actions. Kept the content and updated its timing.`));
+      return;
+    }
+    captureWorkbenchHistory();
+    onApplyChart(generated.chart);
+    onApplyContentLabels(generated.contentLabels);
+    setRecognitionDialogOpen(false);
+    showVideoToast(text(`已用 ${generated.chart.steps.length} 个识别招式块替换时间轴。`, `Replaced the timeline with ${generated.chart.steps.length} recognized action blocks.`));
+  }
+
   useEffect(() => {
     if (!open) {
       videoRef.current?.pause();
@@ -1662,6 +1909,22 @@ export function VideoAxisWorkbench({ open, desktop, chart, comboImageStyle, time
   }, [open]);
 
   useEffect(() => () => clearStageHudHideTimer(), []);
+
+  useEffect(() => {
+    if (!recognitionDialogOpen || !desktop?.onVideoKeyMappingRecognitionProgress) return;
+    return desktop.onVideoKeyMappingRecognitionProgress((progress) => {
+      setRecognitionProgress({
+        progress: clamp(Number(progress.progress) || 0, 0, 1),
+        processedFrames: Math.max(0, Math.round(Number(progress.processedFrames) || 0)),
+        totalFrames: Math.max(0, Math.round(Number(progress.totalFrames) || 0))
+      });
+    });
+  }, [desktop, recognitionDialogOpen]);
+
+  useEffect(() => () => {
+    recognitionRunRef.current += 1;
+    void desktop?.cancelVideoKeyMappingRecognition?.();
+  }, [desktop]);
 
   useEffect(() => {
     if (!playbackRateMenuOpen) return;
@@ -1711,6 +1974,18 @@ export function VideoAxisWorkbench({ open, desktop, chart, comboImageStyle, time
         }
         return;
       }
+      if (recognitionDialogOpen) {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          event.stopPropagation();
+          closeRecognitionDialog();
+        }
+        if (isPlaybackEvent(event) || isSeekBackwardEvent(event) || isSeekForwardEvent(event)) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+        return;
+      }
       const isTyping = isTypingTarget(event.target);
       if (!isTyping && isPlaybackEvent(event)) {
         event.preventDefault();
@@ -1751,7 +2026,7 @@ export function VideoAxisWorkbench({ open, desktop, chart, comboImageStyle, time
       window.removeEventListener('keyup', onKeyUp, true);
       window.removeEventListener('contextmenu', onContextMenu, true);
     };
-  }, [open, trimDialogOpen, shortcutSettings]);
+  }, [open, trimDialogOpen, recognitionDialogOpen, recognitionStatus.state, shortcutSettings]);
 
   useEffect(() => {
     let disposed = false;
@@ -2413,6 +2688,65 @@ export function VideoAxisWorkbench({ open, desktop, chart, comboImageStyle, time
     <div className={`video-workbench ${open ? '' : 'hidden'}`} role="dialog" aria-modal="true" aria-hidden={!open} aria-label={text('视频辅助轴编辑', 'Video Timeline Editor') }>
       {videoToast && <div className="video-export-toast" role="status">{videoToast}</div>}
       <input ref={fileInputRef} className="file-input" type="file" accept="video/*" onChange={(event) => void importVideo(event.target.files?.[0] ?? null)} />
+      {recognitionDialogOpen && videoUrl && <div className="video-recognition-dialog-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget) closeRecognitionDialog(); }}>
+        <section className="video-recognition-dialog" role="dialog" aria-modal="true" aria-label={text('视频按键识别', 'Video Key Recognition')} onPointerDown={(event) => event.stopPropagation()}>
+          <header>
+            <div><ScanSearch size={18} /><strong>{text('视频按键识别', 'Video Key Recognition')}</strong><span>{text('扫描当前裁剪范围', 'Scans the current trimmed range')}</span></div>
+            <button className="icon-button" type="button" title={text('关闭', 'Close')} onClick={closeRecognitionDialog}><X size={17} /></button>
+          </header>
+          <div className="video-recognition-preview" style={{ aspectRatio: frameAspect, '--video-recognition-aspect': Math.max(1, videoMeta.width) / Math.max(1, videoMeta.height) } as CSSProperties}>
+            <video ref={recognitionPreviewRef} src={videoUrl} muted playsInline preload="auto" onLoadedMetadata={(event) => { event.currentTarget.currentTime = (trimStartMs + recognitionPreviewMs) / 1000; }} />
+            <div
+              className={`video-recognition-frame ${recognitionStatus.state === 'running' ? 'locked' : ''}`}
+              style={{ left: `${recognitionBounds.x}%`, top: `${recognitionBounds.y}%`, width: `${recognitionBounds.width}%`, height: `${recognitionBounds.height}%` }}
+              onPointerDown={(event) => beginRecognitionBoundsDrag(event, 'move')}
+              onPointerMove={moveRecognitionBoundsDrag}
+              onPointerUp={endRecognitionBoundsDrag}
+              onPointerCancel={endRecognitionBoundsDrag}
+            >
+              {DEFAULT_VIDEO_RECOGNITION_HOTSPOTS.map((hotspot) => <span key={hotspot.id} className="video-recognition-hotspot" style={{ left: `${hotspot.x}%`, top: `${hotspot.y}%`, width: `${hotspot.radius * 2}%`, aspectRatio: '1' }} title={hotspot.id} />)}
+              {(['nw', 'ne', 'se', 'sw'] as VideoLayerCropEdge[]).map((edge) => <button
+                key={edge}
+                className={`video-recognition-resize ${edge}`}
+                type="button"
+                aria-label={text('缩放识别框', 'Resize Recognition Frame')}
+                onPointerDown={(event) => beginRecognitionBoundsDrag(event, edge)}
+                onPointerMove={moveRecognitionBoundsDrag}
+                onPointerUp={endRecognitionBoundsDrag}
+                onPointerCancel={endRecognitionBoundsDrag}
+              />)}
+            </div>
+          </div>
+          <div className="video-recognition-seek">
+            <span>{formatMs(recognitionPreviewMs)}</span>
+            <input type="range" min="0" max={Math.max(1, trimDurationMs)} step="33" value={recognitionPreviewMs} onChange={(event) => seekRecognitionPreview(Number(event.target.value))} disabled={recognitionStatus.state === 'running'} />
+            <span>{formatMs(trimDurationMs)}</span>
+          </div>
+          <div className={`video-recognition-status ${recognitionStatus.state}`} role="status">
+            <div className="video-recognition-progress"><span style={{ width: `${Math.round(recognitionProgress.progress * 100)}%` }} /></div>
+            <p>{recognitionStatus.message}</p>
+            {recognitionStatus.state === 'running' && <small>{Math.round(recognitionProgress.progress * 100)}% · {recognitionProgress.processedFrames}/{recognitionProgress.totalFrames || '—'} {text('帧', 'Frames')}</small>}
+            {recognitionResult && <div className="video-recognition-summary">
+              <span><strong>{recognitionResult.events.length}</strong>{text('操作', 'Inputs')}</span>
+              <span><strong>{recognitionHolds}</strong>{text('长按', 'Holds')}</span>
+              <span><strong>{Math.round(recognitionAverageConfidence * 100)}%</strong>{text('平均置信度', 'Average Confidence')}</span>
+            </div>}
+          </div>
+          <footer>
+            <div className="video-recognition-apply-options">
+              {recognitionBasedOnTextAxis && <p className="video-recognition-basis-active"><strong>{text('基于文字轴', 'Based on Text Axis')}</strong>{text('已开启：保留现有招式，只校准位置和持续时间，额外识别结果会被忽略。', 'Enabled: existing actions are preserved, only position and duration are aligned, and extra detections are ignored.')}</p>}
+              <p>{text('当前版本识别默认按键映射中的蓝色圆形提示；变奏、延奏和白色方向提示不会自动推断。', 'This version recognizes the default blue circular indicators. Intro, Outro, and white direction indicators are not inferred automatically.')}</p>
+            </div>
+            <div className="video-recognition-actions">
+              {recognitionStatus.state === 'running'
+                ? <button type="button" className="danger" onClick={cancelVideoRecognition}>{text('取消识别', 'Cancel Recognition')}</button>
+                : <button type="button" className="video-recognition-run" disabled={!videoSourcePath || !desktop?.analyzeVideoKeyMapping} onClick={() => void runVideoRecognition()}><ScanSearch size={16} />{recognitionResult ? text('重新识别', 'Scan Again') : text('开始识别', 'Start Recognition')}</button>}
+              <button type="button" onClick={closeRecognitionDialog}>{text('取消', 'Cancel')}</button>
+              <button type="button" className="primary" disabled={!recognitionResult?.events.length || recognitionStatus.state === 'running' || (recognitionBasedOnTextAxis && !chart.steps.length)} onClick={applyVideoRecognition}><Check size={16} />{recognitionBasedOnTextAxis ? text('校准现有时间', 'Align Existing Timing') : text('替换时间轴', 'Replace Timeline')}</button>
+            </div>
+          </footer>
+        </section>
+      </div>}
       {trimDialogOpen && videoUrl && <div className="video-trim-dialog-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget) closeTrimDialog(); }}>
         <section className="video-trim-dialog" role="dialog" aria-modal="true" aria-label={text('裁剪时长', 'Trim Video')} onPointerDown={(event) => event.stopPropagation()}>
           <header>
@@ -2508,6 +2842,7 @@ export function VideoAxisWorkbench({ open, desktop, chart, comboImageStyle, time
         </section>
         <aside className="video-side-inspector" ref={setInspectorPortalTarget}>
           <div className="video-side-toolbar" onPointerDown={(event) => event.stopPropagation()}>
+            <button className="icon-button video-recognition-trigger" title={text('从视频识别按键映射', 'Recognize Key Mapping from Video')} onClick={openRecognitionDialog} disabled={isExporting}><ScanSearch size={19} /></button>
             <div className="video-file-actions">
               <button className="icon-button" title={text('导入视频', 'Import Video') } onClick={() => void chooseVideo()} disabled={isExporting}><Upload size={18} /></button>
               <button className="icon-button" title={text('保存连段', 'Save Combo') } onClick={onSave} disabled={isExporting}><Save size={18} /></button>
@@ -2525,6 +2860,14 @@ export function VideoAxisWorkbench({ open, desktop, chart, comboImageStyle, time
             <div className="video-timeline-topbar" onPointerDown={(event) => event.stopPropagation()}>
               <button className={`icon-button video-trim-trigger ${trimStartMs > 0 || trimEndMs < videoMeta.durationMs ? 'active' : ''}`} type="button" title={text('裁剪时长', 'Trim Video')} aria-label={text('裁剪时长', 'Trim Video')} onClick={openTrimDialog} disabled={!videoUrl || isExporting}><Clock3 size={16} /></button>
               <div className="video-timeline-tools-slot" ref={setToolbarPortalTarget} />
+              <div className="video-timeline-history-actions" aria-label={text('时间轴历史', 'Timeline history')}>
+                <button className="icon-button" type="button" title={text('撤销 (Ctrl+Z)', 'Undo (Ctrl+Z)')} aria-label={text('撤销 (Ctrl+Z)', 'Undo (Ctrl+Z)')} onClick={undoWorkbench} disabled={!undoStack.length || isExporting}>
+                  <Undo2 size={16} />
+                </button>
+                <button className="icon-button" type="button" title={text('重做 (Ctrl+Y)', 'Redo (Ctrl+Y)')} aria-label={text('重做 (Ctrl+Y)', 'Redo (Ctrl+Y)')} onClick={redoWorkbench} disabled={!redoStack.length || isExporting}>
+                  <Redo2 size={16} />
+                </button>
+              </div>
               <button className="video-timeline-toggle inline icon-button" title={text('多功能：点击收起时间轴；按住拖动时，上下调高度、左右调时间轴缩放；悬浮滚轮调轨道密度', 'Multifunction: click to collapse the timeline; drag vertically to resize or horizontally to zoom; hover and scroll to change lane density.')} onPointerDown={beginTimelinePanelDrag} onPointerMove={moveTimelinePanelDrag} onPointerUp={endTimelinePanelDrag} onPointerCancel={endTimelinePanelDrag} onClick={toggleTimelineCollapsedFromButton} onWheel={changeTimelineLaneHeight}>
                 <PanelBottomClose size={16} />
               </button>

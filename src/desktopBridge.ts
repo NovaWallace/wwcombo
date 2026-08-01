@@ -2,6 +2,11 @@ import { convertFileSrc, invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import type { DesktopInputEvent } from './vite-env';
+import type {
+  VideoRecognitionProgress,
+  VideoRecognitionRequest,
+  VideoRecognitionResult
+} from './videoKeyMappingRecognition';
 
 type DesktopBridge = NonNullable<Window['trainerDesktop']>;
 
@@ -89,6 +94,9 @@ export function createDesktopBridge(): DesktopBridge | null {
       const picked = await invoke<{ path: string; name: string } | null>('pick_video_file');
       return picked ? { ...picked, url: convertFileSrc(picked.path) } : null;
     },
+    analyzeVideoKeyMapping: (request: VideoRecognitionRequest) => invoke<VideoRecognitionResult>('analyze_video_key_mapping', { request }),
+    cancelVideoKeyMappingRecognition: () => invoke<void>('cancel_video_key_mapping_recognition'),
+    onVideoKeyMappingRecognitionProgress: (callback: (progress: VideoRecognitionProgress) => void) => listenUntilDisposed('video-key-recognition-progress', callback),
     exportVideoWithOverlay: (directory: string, filename: string, sourcePath: string, overlayX: number, overlayY: number, startMs: number, durationMs: number, overlayBytes: Uint8Array) => invoke<{ path: string }>('export_video_with_overlay', { directory, filename, sourcePath, overlayX, overlayY, startMs: Math.max(0, Math.round(startMs)), durationMs: Math.max(0, Math.round(durationMs)), overlayBytes: Array.from(overlayBytes) }),
     cancelVideoExport: () => invoke<void>('cancel_video_export'),
     onVideoExportProgress: (callback: (progress: { progress: number; processedMs: number; durationMs: number }) => void) => listenUntilDisposed('video-export-progress', callback),

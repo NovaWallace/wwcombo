@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react';
 import type { KeyBinding } from '../combo-core/types';
-import { normalizeInputCode } from '../combo-core/input';
+import { mouseButtonDisplayNumber, normalizeInputCode } from '../combo-core/input';
 
 export type KeyMappingBounds = { x: number; y: number; width: number; height: number };
 export type KeyMappingTransform = { x: number; y: number; width: number; height: number; opacity: number; rotate: number };
@@ -206,6 +206,15 @@ export function createDefaultKeyMappingConfig(): KeyMappingConfig {
   };
 }
 
+export function loadStoredKeyMappingConfig(): KeyMappingConfig {
+  try {
+    const raw = localStorage.getItem(KEY_MAPPING_STORAGE_KEY);
+    return raw ? normalizeKeyMappingConfig(JSON.parse(raw)) : createDefaultKeyMappingConfig();
+  } catch {
+    return createDefaultKeyMappingConfig();
+  }
+}
+
 function normalizeBinding(value: unknown, index: number): KeyMappingBinding | null {
   const record = value as Partial<KeyMappingBinding> | null;
   if (!record || typeof record !== 'object') return null;
@@ -235,7 +244,12 @@ function normalizeBinding(value: unknown, index: number): KeyMappingBinding | nu
   const primaryCode = codes[0] || '';
   const defaultName = defaultIndex >= 0 ? DEFAULT_CODES[defaultIndex][0] : undefined;
   const storedName = typeof record.name === 'string' && record.name.trim() ? record.name.trim() : '';
-  const name = migratedDefaultDodge ? '闪避' : storedName || defaultName || primaryCode || `按键 ${index + 1}`;
+  const capturedCodeName = Boolean(defaultMoveId && storedName && codes.some((capturedCode) => (
+    storedName === capturedCode
+    || storedName === keyMappingCodeLabel(capturedCode)
+    || storedName === keyMappingCodeLabel(capturedCode, (_chinese, english) => english)
+  )));
+  const name = migratedDefaultDodge ? '闪避' : capturedCodeName ? defaultName! : storedName || defaultName || primaryCode || `按键 ${index + 1}`;
 
   return {
     id,
@@ -317,6 +331,8 @@ export function keyMappingCodeLabel(code: string, translate?: KeyMappingLabelTra
   if (normalized === 'MouseLeft') return label('鼠标左键', 'Left Mouse Button');
   if (normalized === 'MouseRight') return label('鼠标右键', 'Right Mouse Button');
   if (normalized === 'MouseMiddle') return label('鼠标中键', 'Middle Mouse Button');
+  const mouseButtonNumber = normalized.endsWith('Hold') ? null : mouseButtonDisplayNumber(normalized);
+  if (mouseButtonNumber !== null) return label(`鼠标侧键 ${mouseButtonNumber - 3}`, `Mouse Button ${mouseButtonNumber}`);
   if (normalized === 'Space') return label('空格', 'Space');
   if (normalized === 'ShiftLeft' || normalized === 'ShiftRight') return 'Shift';
   if (normalized === 'ControlLeft' || normalized === 'ControlRight') return 'Ctrl';

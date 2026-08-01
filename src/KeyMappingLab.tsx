@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 import { Image as ImageIcon, Keyboard, Layers, Move, Plus, RotateCcw, Save, Settings, Trash2, Upload, X } from 'lucide-react';
 import type { KeyBinding } from '../combo-core/types';
-import { normalizeInputCode } from '../combo-core/input';
+import { mouseButtonToCode, normalizeInputCode } from '../combo-core/input';
 import { createDesktopBridge } from './desktopBridge';
 import { useI18n } from './i18n';
 import { NumericDraftInput } from './NumericDraftInput';
@@ -42,6 +42,7 @@ type Props = {
   inputSignal: KeyMappingInputSignal | null;
   inputMode: 'keyboard' | 'gamepad';
   bindings: KeyBinding[];
+  onBindingChange?: (moveId: string, value: string) => void;
   onRequestGlobalInput?: () => void | Promise<void>;
   visible?: boolean;
   onVisibleChange?: (visible: boolean) => void;
@@ -117,13 +118,6 @@ function loadConfig(): KeyMappingConfig {
   } catch {
     return createDefaultKeyMappingConfig();
   }
-}
-
-function mouseButtonToCode(button: number): string {
-  if (button === 0) return 'MouseLeft';
-  if (button === 1) return 'MouseMiddle';
-  if (button === 2) return 'MouseRight';
-  return `Mouse${button}`;
 }
 
 function isPress(type: KeyMappingInputType): boolean {
@@ -217,7 +211,7 @@ function configFromLiveBounds(bounds: { x: number; y: number; width: number; hei
   });
 }
 
-export function KeyMappingLab({ inputSignal, inputMode, bindings, onRequestGlobalInput, visible: controlledVisible, onVisibleChange }: Props) {
+export function KeyMappingLab({ inputSignal, inputMode, bindings, onBindingChange, onRequestGlobalInput, visible: controlledVisible, onVisibleChange }: Props) {
   const { text } = useI18n();
   const desktop = useMemo(createDesktopBridge, []);
   const [config, setConfig] = useState<KeyMappingConfig>(loadConfig);
@@ -295,6 +289,10 @@ export function KeyMappingLab({ inputSignal, inputMode, bindings, onRequestGloba
   }, [visible]);
 
   useEffect(() => {
+    setCaptureBindingId(null);
+  }, [inputMode]);
+
+  useEffect(() => {
     if (displaySelectedLayer?.kind !== 'keys' || !displaySelectedLayer.bindings.length) return;
     if (displaySelectedLayer.bindings.some((binding) => binding.id === config.selectedBindingId)) return;
     patchConfig((current) => ({ ...current, selectedBindingId: displaySelectedLayer.bindings[0]?.id }));
@@ -349,7 +347,17 @@ export function KeyMappingLab({ inputSignal, inputMode, bindings, onRequestGloba
     if (!captureBindingId) return;
     const commit = (code: string) => {
       const normalized = normalizeInputCode(code);
-      updateBinding(captureBindingId, { code: normalized, codes: [normalized], name: keyMappingCodeLabel(normalized, text) });
+      const capturedBinding = configRef.current.layers
+        .flatMap((layer) => layer.kind === 'keys' ? layer.bindings : [])
+        .find((binding) => binding.id === captureBindingId);
+      if (capturedBinding?.moveId && onBindingChange) {
+        const currentCodes = bindings.find((binding) => binding.moveId === capturedBinding.moveId)?.inputs.map((input) => normalizeInputCode(input.code)) ?? [];
+        const codes = [normalized, ...currentCodes.slice(1)].filter((item, index, items) => item && items.indexOf(item) === index).slice(0, 2);
+        updateBinding(captureBindingId, { code: codes[0] ?? normalized, codes });
+        onBindingChange(capturedBinding.moveId, codes.join(', '));
+      } else {
+        updateBinding(captureBindingId, { code: normalized, codes: [normalized], name: keyMappingCodeLabel(normalized, text) });
+      }
       setCaptureBindingId(null);
     };
     const onKeyDown = (event: KeyboardEvent) => {
@@ -358,7 +366,6 @@ export function KeyMappingLab({ inputSignal, inputMode, bindings, onRequestGloba
       commit(event.code);
     };
     const onMouseDown = (event: MouseEvent) => {
-      if ((event.target as Element | null)?.closest('[data-keymap-capture-button]')) return;
       event.preventDefault();
       event.stopPropagation();
       commit(mouseButtonToCode(event.button));
@@ -375,7 +382,19 @@ export function KeyMappingLab({ inputSignal, inputMode, bindings, onRequestGloba
       window.removeEventListener('mousedown', onMouseDown, true);
       window.removeEventListener('contextmenu', onContextMenu, true);
     };
-  }, [captureBindingId, text]);
+  }, [bindings, captureBindingId, onBindingChange, text]);
+
+  useEffect(() => {
+    if (visible) return;
+    setPressedCodes(new Set());
+  }, [visible]);
+
+  useEffect(() => {
+    if (desktop) return;
+    const clearPressedCodes = () => setPressedCodes(new Set());
+    window.addEventListener('blur', clearPressedCodes);
+    return () => window.removeEventListener('blur', clearPressedCodes);
+  }, [desktop]);
 
   function patchConfig(updater: (current: KeyMappingConfig) => KeyMappingConfig) {
     setConfig((current) => normalizeKeyMappingConfig(updater(current)));
@@ -674,6 +693,8 @@ export function KeyMappingLab({ inputSignal, inputMode, bindings, onRequestGloba
                     <button
                       className={captureBindingId === binding.id ? 'active' : ''}
                       data-keymap-capture-button="true"
+                      disabled={inputMode === 'gamepad'}
+                      title={inputMode === 'gamepad' ? text('手柄键位请在设置中修改', 'Change controller bindings in Settings') : undefined}
                       onClick={(event) => {
                         event.stopPropagation();
                         setCaptureBindingId(captureBindingId === binding.id ? null : binding.id);

@@ -1,5 +1,11 @@
 /// <reference types="vite/client" />
 
+import type {
+  VideoRecognitionProgress,
+  VideoRecognitionRequest,
+  VideoRecognitionResult
+} from './videoKeyMappingRecognition';
+
 declare global {
   const __APP_VERSION__: string;
   interface Window {
@@ -32,6 +38,9 @@ declare global {
       stopGlobalInput(): Promise<void>;
       pickExportDirectory?(currentDirectory?: string, title?: string): Promise<string | null>;
       pickVideoFile?(): Promise<{ path: string; name: string; url: string } | null>;
+      analyzeVideoKeyMapping?(request: VideoRecognitionRequest): Promise<VideoRecognitionResult>;
+      cancelVideoKeyMappingRecognition?(): Promise<void>;
+      onVideoKeyMappingRecognitionProgress?(callback: (progress: VideoRecognitionProgress) => void): () => void;
       exportVideoWithOverlay?(directory: string, filename: string, sourcePath: string, overlayX: number, overlayY: number, startMs: number, durationMs: number, overlayBytes: Uint8Array): Promise<{ path: string }>;
       cancelVideoExport?(): Promise<void>;
       onVideoExportProgress?(callback: (progress: { progress: number; processedMs: number; durationMs: number }) => void): () => void;
