@@ -1,6 +1,6 @@
 [package]
 name = "wwcombo"
-version = "0.61.0"
+version = "0.62.0"
 description = "Wuthering Waves combo trainer"
 authors = ["NovaWallace"]
 license = "MIT"

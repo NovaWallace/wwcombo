@@ -91,7 +91,8 @@ type DefaultBasePresetEntry = ComboBasePreset;
 type ProjectAssetCharacter = { id: string; names: Partial<Record<AppLanguage, string>>; basePreset?: Omit<ComboBasePreset, 'id' | 'name' | 'user'> | null  };
 type ProjectAssetManifest = { schemaVersion: number; revision: number; updatedAt: string; characters: ProjectAssetCharacter[]  };
 type AppReleaseDownload = { url: string; fileName?: string; bytes?: number; sha256?: string  };
-type AppReleaseManifest = { schemaVersion: number; version: string; title: string; notes: string; publishedAt: string; download: AppReleaseDownload | null; downloadLinks: { china: string; global: string  }  };
+type AppReleaseChannel = 'quark' | 'baidu' | 'cloud123' | 'github';
+type AppReleaseManifest = { schemaVersion: number; version: string; title: string; notes: string; publishedAt: string; download: AppReleaseDownload | null; downloadLinks: Record<AppReleaseChannel, string> & { china: string; global: string; lanzou?: string }  };
 type CommunityImportMessage = { type: 'wwcombo:community-import'; version: 1; requestId: string; filename?: string; payload: unknown  };
 type CommunityLibraryRequestMessage = { type: 'wwcombo:community-library-request'; version: 1  };
 type CommunityLibraryItemRequestMessage = { type: 'wwcombo:community-library-item-request'; version: 1; requestId: string; chartId: string  };
@@ -570,6 +571,15 @@ function isRemoteAvatarPlaceholder(src: string): boolean {
   return src.split(/[?#]/, 1)[0].endsWith(REMOTE_AVATAR_PLACEHOLDER);
  }
 
+function isReplaceableAvatarSource(src: string | undefined): boolean {
+  const normalized = src?.trim() ?? '';
+  if (!normalized || isRemoteAvatarPlaceholder(normalized)) return true;
+  if (normalized.includes('/combo-assets/default-avatars/') || normalized.includes('/combo-assets/avatar-presets/')) return true;
+  // Uploaded avatars are stored as data URLs. Other remote URLs are legacy/default sources
+  // and may be unavailable after the remote avatar service changes.
+  return /^https?:\/\//i.test(normalized);
+ }
+
 function travelerFormKey(name: string): string | null {
   const normalized = name.trim();
   if (!normalized.includes('漂泊者')) return null;
@@ -578,18 +588,38 @@ function travelerFormKey(name: string): string | null {
  }
 
 function normalizeRemoteAvatarList(value: unknown): DefaultAvatarEntry[] {
+  const objectValue = value && typeof value === 'object' && !Array.isArray(value)
+    ? value as { items?: unknown; avatars?: unknown; data?: unknown }
+    : null;
   const source = Array.isArray(value)
     ? value
-    : value && typeof value === 'object'
-      ? Object.entries(value)
-      : [];
+    : Array.isArray(objectValue?.items)
+      ? objectValue.items
+      : Array.isArray(objectValue?.avatars)
+        ? objectValue.avatars
+        : objectValue?.data && typeof objectValue.data === 'object'
+          ? Object.entries(objectValue.data)
+          : value && typeof value === 'object'
+            ? Object.entries(value)
+            : [];
   const travelerGroups = new Map<string, DefaultAvatarEntry[]>();
   const regularItems: DefaultAvatarEntry[] = [];
   const seen = new Set<string>();
   source.forEach((item) => {
-    if (!Array.isArray(item) || typeof item[0] !== 'string') return;
-    const name = normalizeCharacterName(item[0]);
-    const remoteSrc = typeof item[1] === 'string' ? item[1].trim() : '';
+    let rawName = '';
+    let remoteSrc = '';
+    if (Array.isArray(item)) {
+      rawName = typeof item[0] === 'string' ? item[0] : '';
+      remoteSrc = typeof item[1] === 'string' ? item[1].trim() : '';
+    } else if (item && typeof item === 'object') {
+      const entry = item as { name?: unknown; character?: unknown; src?: unknown; url?: unknown; image?: unknown; icon?: unknown };
+      rawName = typeof entry.name === 'string'
+        ? entry.name
+        : typeof entry.character === 'string' ? entry.character : '';
+      const candidate = entry.src ?? entry.url ?? entry.image ?? entry.icon;
+      remoteSrc = typeof candidate === 'string' ? candidate.trim() : '';
+    }
+    const name = normalizeCharacterName(rawName);
     const src = /^https?:\/\//i.test(remoteSrc) ? remoteSrc : REMOTE_AVATAR_PLACEHOLDER;
     if (!name) return;
     const key = remoteAvatarCacheKey(name, src);
@@ -676,13 +706,21 @@ async function fetchRemoteAvatarPresets(): Promise<DefaultAvatarEntry[]> {
  }
 
 async function loadBundledAvatarPresets(): Promise<DefaultAvatarEntry[]> {
-  try {
-    const response = await fetch(assetUrl(BUNDLED_AVATAR_MANIFEST_URL), { cache: 'force-cache'  });
-    if (!response.ok) return [];
-    return sortAvatarPresets(normalizeAvatarPresets(await response.json()));
-   } catch {
-    return [];
-   }
+  const candidates = [
+    assetUrl(BUNDLED_AVATAR_MANIFEST_URL),
+    new URL('./combo-assets/avatar-presets/index.json', window.location.href).toString()
+  ];
+  for (const candidate of [...new Set(candidates)]) {
+    try {
+      const response = await fetch(candidate, { cache: 'force-cache'  });
+      if (!response.ok) continue;
+      const presets = sortAvatarPresets(normalizeAvatarPresets(await response.json()));
+      if (presets.length) return presets;
+    } catch {
+      // Try the alternate relative URL before giving up on bundled avatars.
+    }
+  }
+  return [];
  }
 
 async function loadCachedRemoteAvatarPresets(): Promise<DefaultAvatarEntry[]> {
@@ -778,8 +816,11 @@ function normalizeAppRelease(value: unknown): AppReleaseManifest | null {
     ? { ...record.download, url: resolvedDownloadUrl  }
     : null;
   const links = (record.downloadLinks && typeof record.downloadLinks === 'object' ? record.downloadLinks : {}) as Partial<AppReleaseManifest['downloadLinks']>;
-  const chinaLink = typeof links.china === 'string' && links.china.trim() ? assetUrl(links.china, REMOTE_APP_RELEASE_API) : '';
-  const globalLink = typeof links.global === 'string' && links.global.trim() ? assetUrl(links.global, REMOTE_APP_RELEASE_API) : '';
+  const channelValue = (value: unknown) => typeof value === 'string' && value.trim() ? assetUrl(value, REMOTE_APP_RELEASE_API) : '';
+  const quarkLink = channelValue(links.quark || links.china);
+  const baiduLink = channelValue(links.baidu);
+  const cloud123Link = channelValue(links.cloud123 || links.lanzou);
+  const githubLink = channelValue(links.github || links.global);
   return {
     schemaVersion: 1,
     version: record.version,
@@ -788,16 +829,26 @@ function normalizeAppRelease(value: unknown): AppReleaseManifest | null {
     publishedAt: typeof record.publishedAt === 'string' ? record.publishedAt : '',
     download,
     downloadLinks: {
-      china: /^https?:\/\//i.test(chinaLink) ? chinaLink : '',
-      global: /^https?:\/\//i.test(globalLink) ? globalLink : ''
+      quark: /^https?:\/\//i.test(quarkLink) ? quarkLink : '',
+      baidu: /^https?:\/\//i.test(baiduLink) ? baiduLink : '',
+      cloud123: /^https?:\/\//i.test(cloud123Link) ? cloud123Link : '',
+      github: /^https?:\/\//i.test(githubLink) ? githubLink : '',
+      china: /^https?:\/\//i.test(quarkLink) ? quarkLink : '',
+      global: /^https?:\/\//i.test(githubLink) ? githubLink : ''
     }
-   };
-  }
+  };
+}
 
-function appReleaseDownloadForLanguage(release: AppReleaseManifest, language: AppLanguage): AppReleaseDownload | null {
-  const selectedUrl = language === 'zh-CN' ? release.downloadLinks.china : release.downloadLinks.global;
-  if (!selectedUrl) return release.download;
-  return { ...(release.download || {}), url: selectedUrl };
+const APP_RELEASE_CHANNELS: Array<{ key: AppReleaseChannel; label: string }> = [
+  { key: 'quark', label: '夸克网盘' },
+  { key: 'baidu', label: '百度网盘' },
+  { key: 'cloud123', label: '123 云盘' },
+  { key: 'github', label: 'GitHub' }
+];
+
+function appReleaseDownloadLinks(release: AppReleaseManifest | null): Array<{ key: AppReleaseChannel; label: string; url: string }> {
+  if (!release) return APP_RELEASE_CHANNELS.map((channel) => ({ ...channel, url: '' }));
+  return APP_RELEASE_CHANNELS.map((channel) => ({ ...channel, url: release.downloadLinks[channel.key] || '' }));
  }
 
 function compareVersions(left: string, right: string): number {
@@ -1495,6 +1546,7 @@ export default function App() {
   const [editorAutoFollow, setEditorAutoFollow] = useState(true);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [availableUpdate, setAvailableUpdate] = useState<AppReleaseManifest | null>(null);
+  const [updateDownloadOpen, setUpdateDownloadOpen] = useState(false);
   const [defaultAvatars, setDefaultAvatars] = useState<DefaultAvatarEntry[]>([]);
   const [defaultBasePresets, setDefaultBasePresets] = useState<DefaultBasePresetEntry[]>([]);
   const [timelineUndoStack, setTimelineUndoStack] = useState<TimelineHistorySnapshot[]>([]);
@@ -1502,6 +1554,7 @@ export default function App() {
   const [sharePreflightWarning, setSharePreflightWarning] = useState<SharePreflightWarning | null>(null);
   const [timelineRedoStack, setTimelineRedoStack] = useState<TimelineHistorySnapshot[]>([]);
   const [communityFrameKey, setCommunityFrameKey] = useState(0);
+  const [communityFrameStatus, setCommunityFrameStatus] = useState<'loading' | 'ready' | 'error'>('loading');
 
   const overlaySettingsRef = useRef(saved.overlaySettings);
   const overlayBoundsTransitionRef = useRef<OverlayBoundsTransition | null>(null);
@@ -1513,6 +1566,7 @@ export default function App() {
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const communityFrameRef = useRef<HTMLIFrameElement | null>(null);
   const communityFrameReadyRef = useRef(false);
+  const communityFrameTimeoutRef = useRef<number | null>(null);
   const pendingCommunityUploadRef = useRef<CommunityUploadPackage | null>(null);
   const avatarInputRefs = useRef<Record<number, HTMLInputElement | null>>({ });
   const holdPressRef = useRef(new Map<string, { pressEvent: TrainerLikeInputEvent; holdCode: string; thresholdMs: number; timer: number | null; holdTriggered: boolean  }>());
@@ -1770,11 +1824,29 @@ export default function App() {
     return () => window.removeEventListener('message', onCommunityMessage);
    }, [bindings, comboImageStyle.contentLabels, customIconSources, defaultAvatars, defaultBasePresets, gamepadBindings, gamepadIconSet, inputMode, language, library, moves, roleBaseFollowsAvatar, shortcutSettings]);
   useEffect(() => {
+    if (communityFrameTimeoutRef.current !== null) {
+      window.clearTimeout(communityFrameTimeoutRef.current);
+      communityFrameTimeoutRef.current = null;
+    }
     if (page !== 'community') {
       communityFrameReadyRef.current = false;
+      setCommunityFrameStatus('loading');
       return;
-     }
-    if (communityFrameReadyRef.current) postCommunityLibrary();
+    }
+    communityFrameReadyRef.current = false;
+    setCommunityFrameStatus('loading');
+    communityFrameTimeoutRef.current = window.setTimeout(() => {
+      if (!communityFrameReadyRef.current) setCommunityFrameStatus('error');
+    }, 12_000);
+    return () => {
+      if (communityFrameTimeoutRef.current !== null) {
+        window.clearTimeout(communityFrameTimeoutRef.current);
+        communityFrameTimeoutRef.current = null;
+      }
+    };
+   }, [communityFrameKey, page]);
+  useEffect(() => {
+    if (page === 'community' && communityFrameReadyRef.current) postCommunityLibrary();
    }, [library, page]);
   useEffect(() => {
     if (page === 'community' && communityFrameReadyRef.current) postCommunityInputSettings();
@@ -1853,7 +1925,7 @@ export default function App() {
           const role = current.roleStyles[slot];
           const name = normalizeCharacterName(role.name);
           const apiAvatar = avatarByName.get(name);
-          const usesReplaceableAvatar = Boolean(role.avatar && (role.avatar.includes('/combo-assets/default-avatars/') || isRemoteAvatarPlaceholder(role.avatar)));
+          const usesReplaceableAvatar = isReplaceableAvatarSource(role.avatar);
           return [slot, { ...role, name, ...(apiAvatar && (usesReplaceableAvatar || !role.avatar) ? { avatar: apiAvatar.src, avatarCrop: { x: 0, y: 0, w: 100, h: 100  } } : { })  }];
         })) as ComboImageStyle['roleStyles'],
         avatarPresets: current.avatarPresets
@@ -2830,13 +2902,26 @@ export default function App() {
     }, 3200);
    }
 
-  async function openUpdateDownload() {
-    if (!updateDownload?.url) return;
+  function openUpdateDownload() {
+    if (availableUpdate) setUpdateDownloadOpen(true);
+   }
+
+  async function openUpdateChannel(url: string) {
+    if (!url) return;
     try {
-      await openExternalUrl(updateDownload.url);
+      await openExternalUrl(url);
+      setUpdateDownloadOpen(false);
      } catch {
       showToast(text('无法打开下载链接，请稍后重试。', 'Could not open the download link. Please try again.'));
      }
+   }
+
+  async function openCommunityInBrowser() {
+    try {
+      await openExternalUrl(COMMUNITY_SITE_URL);
+    } catch {
+      showToast(text('无法打开社区，请检查网络连接。', 'Could not open Community. Check your network connection.'));
+    }
    }
 
   async function importCharts(file: File | null) {
@@ -2933,17 +3018,25 @@ export default function App() {
    }
 
   const helpContent = HELP_CONTENT[language];
-  const updateDownload = availableUpdate ? appReleaseDownloadForLanguage(availableUpdate, language) : null;
+  const updateDownloadLinks = appReleaseDownloadLinks(availableUpdate);
+  const hasUpdateDownload = updateDownloadLinks.some((channel) => Boolean(channel.url));
 
   return (
     <div className={`app-shell ${appearanceMode === 'night' ? 'theme-night' : '' } ${appearanceMode === 'day' ? 'theme-day' : '' } ${appearanceMode === 'night2' ? 'theme-night2' : '' } ${page === 'experiment' && experimentPage === 'axis' ? 'axis-game-open' : '' }` }>
       {toastMessage && <div className="app-toast" role="status">{toastMessage}</div>}
       {availableUpdate && <section className="app-update-notice" aria-label={text('客户端更新', 'Client Update') }>
-        <div className="app-update-heading"><div><span>{text('发现新版本', 'New version available') }</span><strong>{availableUpdate.title || `WW Combo Trainer ${availableUpdate.version }`}</strong></div><button type="button" title={text('稍后提醒', 'Remind me later') } aria-label={text('关闭更新提示', 'Close update notice') } onClick={() => { dismissedUpdateVersionRef.current = availableUpdate.version; setAvailableUpdate(null);  } }><X size={17 } /></button></div>
+        <div className="app-update-heading"><div><span>{text('发现新版本', 'New version available') }</span><strong>{availableUpdate.title || 'WW Combo Trainer ' + availableUpdate.version }</strong></div><button type="button" title={text('稍后提醒', 'Remind me later') } aria-label={text('关闭更新提示', 'Close update notice') } onClick={() => { dismissedUpdateVersionRef.current = availableUpdate.version; setAvailableUpdate(null); setUpdateDownloadOpen(false); } }><X size={17 } /></button></div>
         <p className="app-update-version">v{__APP_VERSION__ } <span>→</span> v{availableUpdate.version }</p>
         {availableUpdate.notes && <p className="app-update-notes">{availableUpdate.notes }</p>}
-        {updateDownload && <button className="app-update-download" type="button" onClick={() => void openUpdateDownload() }><Download size={17 } />{text('打开下载链接', 'Open Download Link') }</button>}
+        {hasUpdateDownload && <button className="app-update-download" type="button" onClick={openUpdateDownload}><Download size={17 } />{text('下载线路', 'Choose Download Source')}</button>}
       </section>}
+      {updateDownloadOpen && availableUpdate && <div className="app-download-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setUpdateDownloadOpen(false); }}>
+        <section className="app-download-modal" role="dialog" aria-modal="true" aria-labelledby="appDownloadModalTitle">
+          <div className="app-download-modal-heading"><div><span>CLIENT DOWNLOAD</span><h2 id="appDownloadModalTitle">{text('下载线路', 'Download Sources')}</h2><small>v{availableUpdate.version}</small></div><button type="button" onClick={() => setUpdateDownloadOpen(false)} aria-label={text('关闭下载线路窗口', 'Close download sources')}><X size={18 } /></button></div>
+          <div className="app-download-intro"><p>我们这破玩意真的需要4个线路吗</p><p>你不懂，这是主的启示，只有这样我们才能乘坐橙色的鲸鱼上到天堂</p><p>你tm这是哪个天堂</p></div>
+          <div className="app-download-options">{updateDownloadLinks.map((channel) => channel.url ? <button key={channel.key} type="button" className="app-download-option" onClick={() => void openUpdateChannel(channel.url)}><Download size={18 } /><span><strong>{channel.label}</strong><small>{text('点击打开下载地址', 'Open download link')}</small></span><ExternalLink size={16 } /></button> : <div key={channel.key} className="app-download-option unavailable"><Download size={18 } /><span><strong>{channel.label}</strong><small>{text('维护端尚未配置', 'Not configured')}</small></span></div>)}</div>
+        </section>
+      </div>}
         <aside className="sidebar" data-trainer-capture-suspend="true">
           <button className={`brand ${page === 'home' ? 'home-active' : '' }` } type="button" aria-label={text('返回主界面', 'Back to Home') } title={text('返回主界面', 'Back to Home') } onClick={() => setPage('home') }><div className="brand-mark"><img src="/app-icon-avatar.png" alt="" /></div><div><h1>{text('鸣潮训练场', 'Wuthering Waves Trainer') }</h1><span>Combo Trainer</span></div></button>
           <nav>
@@ -3067,13 +3160,28 @@ export default function App() {
               sandbox="allow-downloads allow-forms allow-modals allow-popups allow-popups-to-escape-sandbox allow-same-origin allow-scripts allow-top-navigation-by-user-activation"
               onLoad={() => {
                 communityFrameReadyRef.current = true;
+                setCommunityFrameStatus('ready');
+                if (communityFrameTimeoutRef.current !== null) {
+                  window.clearTimeout(communityFrameTimeoutRef.current);
+                  communityFrameTimeoutRef.current = null;
+                }
                 postCommunityLibrary();
                 postCommunityInputSettings();
                } }
+               onError={() => {
+                communityFrameReadyRef.current = false;
+                setCommunityFrameStatus('error');
+               } }
             />
+            {communityFrameStatus === 'error' && <div className="community-frame-fallback" role="alert">
+              <TriangleAlert size={24 } />
+              <strong>{text('社区加载失败', 'Community could not be loaded')}</strong>
+              <span>{text('可能是当前网络无法访问社区服务器。你可以重试，或直接用系统浏览器打开。', 'The Community server may be unavailable from this network. Retry or open it in the system browser.')}</span>
+              <div><button type="button" onClick={() => { communityFrameReadyRef.current = false; setCommunityFrameStatus('loading'); setCommunityFrameKey((current) => current + 1); }}><RefreshCw size={16 } />{text('重试', 'Retry')}</button><button type="button" onClick={() => void openCommunityInBrowser()}><ExternalLink size={16 } />{text('浏览器打开', 'Open in Browser')}</button></div>
+            </div>}
             <div className="community-frame-tools">
-              <button className="icon-button" type="button" title={text('刷新社区', 'Reload Community') } aria-label={text('刷新社区', 'Reload Community') } onClick={() => { communityFrameReadyRef.current = false; setCommunityFrameKey((current) => current + 1);  } }><RefreshCw size={18 } /></button>
-              <a className="icon-button" href={COMMUNITY_SITE_URL } target="_blank" rel="noopener noreferrer" title={text('在浏览器打开社区', 'Open Community in Browser') } aria-label={text('在浏览器打开社区', 'Open Community in Browser') }><ExternalLink size={18 } /></a>
+              <button className="icon-button" type="button" title={text('刷新社区', 'Reload Community') } aria-label={text('刷新社区', 'Reload Community') } onClick={() => { communityFrameReadyRef.current = false; setCommunityFrameStatus('loading'); setCommunityFrameKey((current) => current + 1);  } }><RefreshCw size={18 } /></button>
+              <button className="icon-button" type="button" onClick={() => void openCommunityInBrowser()} title={text('在浏览器打开社区', 'Open Community in Browser')} aria-label={text('在浏览器打开社区', 'Open Community in Browser')}><ExternalLink size={18 } /></button>
             </div>
           </section>
         ) }

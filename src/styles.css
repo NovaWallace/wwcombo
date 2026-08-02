@@ -1351,6 +1351,32 @@ body[data-appearance-mode='night2'] .video-workbench button.active:hover { backg
 .app-update-version span { padding: 0 7px; color: #72d8c5; }
 .app-update-notes { max-height: 112px; overflow: auto; margin: 11px 0 0; color: #c6cccf; font-size: 12px; line-height: 1.65; white-space: pre-line; }
 .app-update-download { width: 100%; min-height: 38px; display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 13px; border: 1px solid #f0474f; border-radius: 3px; background: var(--red); color: #fff; font-size: 13px; font-weight: 900; cursor: pointer; }
+.app-download-modal-backdrop { position: fixed; inset: 0; z-index: 10040; display: grid; place-items: center; padding: 24px; background: rgba(0,0,0,.78); backdrop-filter: blur(6px); }
+.app-download-modal { width: min(650px, calc(100vw - 40px)); max-height: min(760px, calc(100vh - 40px)); overflow: auto; border: 1px solid rgba(255,255,255,.24); border-radius: 5px; background: #11161a; color: #f5f7f8; box-shadow: 0 30px 100px rgba(0,0,0,.64); }
+.app-download-modal-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 18px 20px; border-bottom: 1px solid rgba(255,255,255,.12); }
+.app-download-modal-heading span { color: #ff7b81; font-size: 10px; font-weight: 900; }
+.app-download-modal-heading h2 { margin: 5px 0 3px; font-size: 21px; }
+.app-download-modal-heading small { color: #aeb7bb; font: 12px Consolas, monospace; }
+.app-download-modal-heading button { width: 32px; height: 32px; display: grid; place-items: center; padding: 0; border: 1px solid rgba(255,255,255,.18); border-radius: 3px; background: #22272a; color: #eef1f2; }
+.app-download-intro { display: grid; gap: 6px; padding: 18px 20px 6px; color: #c6cccf; font-size: 13px; line-height: 1.65; }
+.app-download-intro p { margin: 0; }
+.app-download-intro p:nth-child(2) { color: #f2d18b; }
+.app-download-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 14px 20px 20px; }
+.app-download-option { min-width: 0; display: grid; grid-template-columns: 22px minmax(0, 1fr) 18px; align-items: center; gap: 10px; min-height: 70px; padding: 10px 12px; border: 1px solid #3e484e; border-radius: 4px; background: #191f23; color: #f5f7f8; text-align: left; }
+button.app-download-option { cursor: pointer; }
+button.app-download-option:hover { border-color: #e4545b; background: #252022; }
+.app-download-option.unavailable { opacity: .45; }
+.app-download-option span { min-width: 0; display: grid; gap: 4px; }
+.app-download-option strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+.app-download-option small { color: #aeb7bb; font-size: 11px; }
+.theme-day .app-download-modal { border-color: rgba(20,43,45,.2); background: #fff; color: #10201c; box-shadow: 0 30px 90px rgba(24,50,48,.24); }
+.theme-day .app-download-modal-heading { border-color: rgba(20,43,45,.14); }
+.theme-day .app-download-modal-heading button { border-color: rgba(20,43,45,.18); background: #edf1ef; color: #182822; }
+.theme-day .app-download-intro { color: #50625c; }
+.theme-day .app-download-option { border-color: #b7c6c9; background: #f7fafb; color: #17282d; }
+.theme-day button.app-download-option:hover { border-color: #2d8b64; background: #e5f5ee; }
+.theme-day .app-download-option small { color: #63777e; }
+@media (max-width: 600px) { .app-download-modal-backdrop { align-items: end; padding: 0; } .app-download-modal { width: 100%; max-height: 94vh; border-radius: 5px 5px 0 0; } .app-download-options { grid-template-columns: 1fr; } }
 .theme-day .app-update-notice { border-color: rgba(20,43,45,.2); border-left-color: var(--red); background: rgba(255,255,255,.98); color: #10201c; box-shadow: 0 20px 54px rgba(24,50,48,.2); }
 .theme-day .app-update-heading button { border-color: rgba(20,43,45,.18); background: #edf1ef; color: #182822; }
 .theme-day .app-update-notes, .theme-day .app-update-version { color: #50625c; }
@@ -2021,3 +2047,15 @@ nav button.active svg,
 .combo-preview-chip .combo-preview-content span.combo-merged-move.error .combo-merged-move-marker.active {
   background: #ffe037;
 }
+
+
+.community-frame-fallback { position: absolute; inset: 0; z-index: 4; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 32px; background: rgba(17,21,24,.96); color: #f4f6f7; text-align: center; }
+.community-frame-fallback strong { color: #f4c542; font-size: 18px; }
+.community-frame-fallback span { max-width: 520px; color: #b9c2c6; font-size: 13px; line-height: 1.6; }
+.community-frame-fallback > svg { color: #f4c542; }
+.community-frame-fallback > div { display: flex; gap: 8px; margin-top: 6px; }
+.community-frame-fallback button { display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 0 12px; border: 1px solid #5b666b; border-radius: 3px; background: #20272b; color: #f4f6f7; cursor: pointer; }
+.community-frame-fallback button:hover { border-color: #f4c542; background: #2d3438; }
+.theme-day .community-frame-fallback { background: rgba(248,251,249,.97); color: #14211d; }
+.theme-day .community-frame-fallback span { color: #50625c; }
+.theme-day .community-frame-fallback button { border-color: #aabdb6; background: #fff; color: #14211d; }
