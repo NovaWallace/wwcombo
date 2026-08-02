@@ -20,12 +20,14 @@ import {
   normalizeComboImageStyle,
   effectiveComboImageStyle,
   normalizeRectPercent,
+  verticalComboTrackClipCompensation,
   visibleComboImageItems
 } from './combo-image/comboImage';
 import { createOverlayBridge } from './desktopBridge';
-import { I18nProvider, isAppLanguage, localizeEnglish, useI18n } from './i18n';
+import { I18nProvider, isAppLanguage, useI18n } from './i18n';
 import type { AppLanguage } from './i18n';
 import { localizedMovePrompt } from './moveLabels';
+import { currentPeriodLabelAtStep } from './periodLabels';
 import { buildRhythmCrowdedGroups, rhythmNoteHeight, rhythmNoteOpacity, rhythmNoteTop, visibleRhythmCrowdedGroups } from './rhythmCrowding';
 import './overlay.css';
 
@@ -129,22 +131,32 @@ function OverlayApp() {
   const isDraggingRef = useRef(false);
   const progressRef = useRef({ runKey: '', activeStepIndex: 0, indicatorStepIndex: 0 });
 
+  const applyPayload = React.useCallback((next: unknown) => {
+    if (!isPayload(next)) return;
+    setPayload(next);
+    if (next.settings && !isDraggingRef.current) {
+      const nextBounds = {
+        x: next.settings.x ?? DEFAULT_BOUNDS.x,
+        y: next.settings.y ?? DEFAULT_BOUNDS.y,
+        width: next.settings.width ?? DEFAULT_BOUNDS.width,
+        height: next.settings.height ?? DEFAULT_BOUNDS.height
+      };
+      setBounds(nextBounds);
+      latestBoundsRef.current = nextBounds;
+    }
+  }, []);
+
   useEffect(() => {
-    return overlay?.onUpdate((next) => {
-      if (!isPayload(next)) return;
-      setPayload(next);
-      if (next.settings && !isDraggingRef.current) {
-        const nextBounds = {
-          x: next.settings.x ?? DEFAULT_BOUNDS.x,
-          y: next.settings.y ?? DEFAULT_BOUNDS.y,
-          width: next.settings.width ?? DEFAULT_BOUNDS.width,
-          height: next.settings.height ?? DEFAULT_BOUNDS.height
-        };
-        setBounds(nextBounds);
-        latestBoundsRef.current = nextBounds;
-      }
-    });
-  }, [overlay]);
+    return overlay?.onUpdate(applyPayload);
+  }, [applyPayload, overlay]);
+
+  useEffect(() => {
+    let disposed = false;
+    overlay?.getState?.().then((next) => {
+      if (!disposed) applyPayload(next);
+    }).catch(() => undefined);
+    return () => { disposed = true; };
+  }, [applyPayload, overlay]);
 
   useEffect(() => {
     const node = surfaceRef.current;
@@ -191,7 +203,7 @@ function OverlayApp() {
   const trackOffset = comboTrackOffset(allItems, activeDisplayIndex, linearLayout, effectiveBounds, comboStyle);
   const activeMetric = metrics[Math.max(0, Math.min(activeDisplayIndex, Math.max(0, metrics.length - 1)))];
   const backgroundSource = comboImageBackgroundSource(comboStyle);
-  const periodLabel = currentPeriodLabel(chart, activeStepIndex, displayLanguage);
+  const periodLabel = currentPeriodLabelAtStep(chart, activeStepIndex, displayLanguage);
   const screenWidth = window.screen?.availWidth || window.innerWidth;
   const screenHeight = window.screen?.availHeight || window.innerHeight;
   const windowLeft = window.screenX ?? bounds.x;
@@ -206,6 +218,14 @@ function OverlayApp() {
   const promptText = promptTextForStep(promptStep, displayLanguage, comboStyle);
   const visualGap = comboRenderGap(linearLayout, comboStyle);
   const verticalImageOverlap = comboVerticalImageOverlap(comboStyle);
+  const firstVisibleItem = visibleItems[0];
+  const firstVisibleIndex = firstVisibleItem ? allItems.indexOf(firstVisibleItem) : -1;
+  const verticalTopCompensation = linearLayout === 'vertical' && firstVisibleIndex >= 0
+    ? verticalComboTrackClipCompensation(comboStyle, firstVisibleItem, metrics[firstVisibleIndex]?.start ?? 0, trackOffset, periodLabel ? 26 : 0)
+    : 0;
+  const renderTrackOffset = trackOffset + verticalTopCompensation;
+  const horizontalPeriodSide = promptSide === 'above' ? 'below' : 'above';
+  const verticalPeriodSide = promptSide === 'right' ? 'left' : 'right';
 
   const beginDrag = (event: ReactPointerEvent<HTMLElement>) => {
     if (!moveMode) return;
@@ -270,8 +290,7 @@ function OverlayApp() {
       <div ref={surfaceRef} className="overlay-drag-surface" onPointerDown={beginDrag}>
         {payload?.mode === 'rhythm' ? <RhythmOverlay chart={chart} practice={practice} style={comboStyle} bounds={effectiveBounds} settings={rhythmUiSettings} language={displayLanguage} /> : <>
         {backgroundSource && <div className="overlay-background" style={imageCropBackground(backgroundSource, normalizeRectPercent(comboStyle.backgroundCrop, { x: 0, y: 0, w: 100, h: 100 }))} />}
-        {periodLabel && <div className="overlay-period-label">{periodLabel}</div>}
-        <div className="combo-row" style={{ gap: visualGap, '--combo-vertical-image-overlap': `${verticalImageOverlap}px`, transform: layout === 'vertical' ? `translateY(${trackOffset}px)` : `translateX(${trackOffset}px)` } as CSSProperties}>
+        <div className="combo-row" style={{ gap: visualGap, '--combo-vertical-image-overlap': `${verticalImageOverlap}px`, transform: layout === 'vertical' ? `translateY(${renderTrackOffset}px)` : `translateX(${renderTrackOffset}px)` } as CSSProperties}>
           {visibleItems.length ? visibleItems.map((item) => {
             const roleStyle = comboStyle.roleStyles[item.characterSlot];
             const chipSize = comboImageItemSizeForDisplayItem(comboStyle, item, roleStyle);
@@ -299,7 +318,7 @@ function OverlayApp() {
                   color: comboStyle.textColor,
                   fontSize: comboStyle.fontSize,
                   fontFamily: comboStyle.fontFamily,
-                  opacity: isNext ? 1 : comboItemOpacity(metrics[allItems.indexOf(item)], activeMetric, trackOffset, linearLayout, effectiveBounds, comboStyle),
+                  opacity: isNext ? 1 : comboItemOpacity(metrics[allItems.indexOf(item)], activeMetric, renderTrackOffset, linearLayout, effectiveBounds, comboStyle),
                   backgroundColor: blockColor,
                   borderRadius: comboStyle.blockMode === 'capsule' && comboStyle.capsuleShape === 'capsule' ? 999 : 4,
                   ...blockImageStyle,
@@ -308,8 +327,9 @@ function OverlayApp() {
               >
                 {item.showAvatar && <span className="avatar-slot" style={{ width: comboStyle.avatarSize, height: comboStyle.avatarSize, left: avatarLeft, transform: `translateY(calc(-50% + ${comboStyle.avatarOffsetY}px))`, ...imageCropBackground(roleStyle.avatar, normalizeSquareRectPercent(roleStyle.avatarCrop)) }}>{roleStyle.avatar ? null : item.characterSlot}</span>}
                 {comboStyle.blockMode === 'image' && <CapsuleBlockBackground />}
-                {layout === 'horizontal' && promptText && comboImageItemContainsStep(item, promptStep?.id) && <div className={`overlay-action-prompt horizontal ${promptSide}`}>{promptText}</div>}
-                {layout === 'vertical' && promptText && isActive && <div className={`overlay-action-prompt vertical ${nextIndicatorSide}`}>{promptText}</div>}
+                {layout === 'horizontal' && promptText && comboImageItemContainsStep(item, promptStep?.id) && <div className={`overlay-action-prompt horizontal ${promptSide}`} style={{ fontFamily: comboStyle.promptFontFamily }}>{promptText}</div>}
+                {layout === 'vertical' && promptText && isActive && <div className={`overlay-action-prompt vertical ${nextIndicatorSide}`} style={{ fontFamily: comboStyle.promptFontFamily }}>{promptText}</div>}
+                {periodLabel && (layout === 'horizontal' ? isActive : item === firstVisibleItem) && <div className={`overlay-period-label inline ${layout === 'horizontal' ? `horizontal ${horizontalPeriodSide}` : `vertical ${verticalPeriodSide}`}`}>{periodLabel}</div>}
                 <ComboItemContent item={item} parts={contentParts} className="combo-chip-content" mappings={itemIconMappings} activeMergedStepId={activeMergedStepId} textStyle={comboTextStrokeStyle(comboStyle)} />
               </div>
             );
@@ -429,7 +449,25 @@ function ComboInlineContent({ parts, className, hideIconAlt = false, textStyle }
   return <strong className={className} style={textStyle}>{parts.map((part, index) => part.kind === 'icon' ? <span key={`${part.iconId}-${index}`} className="combo-inline-icon-mark" style={{ '--icon-scale': part.iconScale, '--icon-width-scale': part.iconWidthScale } as CSSProperties}><img className="combo-inline-icon" src={part.src} alt={hideIconAlt ? '' : part.label} title={part.label} /></span> : <span key={`text-${index}`}>{part.value}</span>)}</strong>;
 }
 
+function comboMergedCountTextStyle(): CSSProperties {
+  return { fontFamily: '"优设标题黑", Inter, system-ui, sans-serif', color: '#fff', WebkitTextStroke: '5px #050505', paintOrder: 'stroke fill' };
+}
+
+function ComboMergedMoveContent({ groups, className, textStyle, activeStepId }: { groups: NonNullable<ReturnType<typeof chartToComboImageItems>[number]['mergedMoveGroups']>; className: string; textStyle?: CSSProperties; activeStepId?: string }) {
+  return <strong className={className} style={textStyle}>{groups.map((group) => {
+    const activeIndex = activeStepId ? group.stepIds.indexOf(activeStepId) : -1;
+    return <span key={group.stepIds[0]} className="combo-merged-move">
+      <span className="combo-merged-move-body">
+        <span className={`combo-inline-icon-mark ${activeIndex >= 0 ? 'active' : ''}`} style={{ '--icon-scale': group.iconScale, '--icon-width-scale': group.iconWidthScale } as CSSProperties}><img className="combo-inline-icon" src={group.iconSrc} alt={group.iconLabel} title={group.iconLabel} /></span>
+        {group.count > 1 && <span className="combo-merged-move-count" style={comboMergedCountTextStyle()}>{`x${group.count}`}</span>}
+      </span>
+      {group.count > 1 && <span className="combo-merged-move-progress" aria-hidden="true">{Array.from({ length: group.count }, (_, index) => <span key={index} className={`combo-merged-move-marker dot ${activeIndex >= index ? 'active' : ''}`} />)}</span>}
+    </span>;
+  })}</strong>;
+}
+
 function ComboItemContent({ item, parts, className, mappings, activeMergedStepId, textStyle }: { item: ReturnType<typeof chartToComboImageItems>[number]; parts: ReturnType<typeof comboTextParts>; className: string; mappings: ComboImageStyle['iconMappings']; activeMergedStepId?: string; textStyle?: CSSProperties }) {
+  if (item.mergedMoveGroups?.length) return <ComboMergedMoveContent groups={item.mergedMoveGroups} className={className} textStyle={textStyle} activeStepId={activeMergedStepId} />;
   if (item.mergedParts?.length && activeMergedStepId) {
     return <strong className={className} style={textStyle}>{item.mergedParts.map((part) => {
       const active = part.stepId === activeMergedStepId;
@@ -441,7 +479,13 @@ function ComboItemContent({ item, parts, className, mappings, activeMergedStepId
 
 function comboTextStrokeStyle(style: ComboImageStyle): CSSProperties | undefined {
   if (!style.textStrokeEnabled || style.textStrokeWidth <= 0) return undefined;
-  return { WebkitTextStroke: `${style.textStrokeWidth}px ${style.textStrokeColor}`, paintOrder: 'stroke fill' };
+  const width = Math.max(1, style.textStrokeWidth);
+  const color = style.textStrokeColor;
+  return {
+    WebkitTextStroke: `${width}px ${color}`,
+    paintOrder: 'stroke fill',
+    textShadow: `${-width}px 0 0 ${color}, ${width}px 0 0 ${color}, 0 ${-width}px 0 ${color}, 0 ${width}px 0 ${color}`
+  };
 }
 
 function activeFrameVars(showAvatar: boolean, blockMode: ComboImageStyle['blockMode'], avatarLeft: number, avatarSize: number, avatarOffsetY: number, blockHeight: number, visualHeight = blockHeight): CSSProperties {
@@ -475,17 +519,6 @@ function promptTextForStep(step: OverlayStep | null | undefined, language: AppLa
   if (step.note?.trim()) return step.note.trim();
   const contentText = style.contentLabels[step.id]?.trim() || defaultComboContentLabelForMoveId(step.moveId);
   return localizedMovePrompt(step.moveId, displayMoveLabel(step), contentText, language);
-}
-
-function currentPeriodLabel(chart: ComboChart | null, stepIndex: number, language: AppLanguage): string {
-  if (!chart?.periods?.length) return '';
-  const step = chart.steps[Math.max(0, Math.min(stepIndex, Math.max(0, chart.steps.length - 1)))];
-  const time = step?.startMin ?? 0;
-  const period = chart.periods
-    .filter((candidate) => candidate.kind !== 'free_fire' && Number.isFinite(candidate.startMs) && Number.isFinite(candidate.endMs) && time >= candidate.startMs && time <= candidate.endMs)
-    .sort((left, right) => left.startMs - right.startMs)[0];
-  if (!period) return '';
-  return language === 'zh-CN' ? `当前：${period.label}` : localizeEnglish(`Current: ${period.label}`, language);
 }
 
 function comboVisualGap(layout: 'horizontal' | 'vertical', style: ComboImageStyle): number {

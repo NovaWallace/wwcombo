@@ -1,3 +1,4 @@
+import { FINISHER_ICON_BINDING_MOVE_ID } from '../combo-core';
 import type { ComboImageStyle, KeyBinding } from '../combo-core';
 import { mouseButtonDisplayNumber, normalizeInputCode } from '../combo-core/input';
 import youSheKeyFont from './assets/youshe-biaotihei-keys.ttf?inline';
@@ -20,6 +21,7 @@ const ICON_MAPPING_MOVE_IDS: Record<string, string> = {
   jump: 'jump',
   'jump-hold': 'jump_hold',
   tool: 'tool',
+  finisher: FINISHER_ICON_BINDING_MOVE_ID,
   i: 'switch_1',
   ii: 'switch_2',
   iii: 'switch_3'
@@ -78,6 +80,11 @@ export function keyboardMouseIconToneForMove(moveId: string): KeyboardMouseIconT
 export function inputIconCustomizationKey(mode: 'keyboard' | 'gamepad', code: string): string | undefined {
   const normalized = normalizeInputCode(code);
   return normalized ? `input:${mode}:${normalized}` : undefined;
+}
+
+export function iconMappingCustomizationKey(mappingId: string): string | undefined {
+  const normalized = mappingId.trim();
+  return normalized ? `mapping:${normalized}` : undefined;
 }
 
 export function usesOriginalKeyboardMouseIcon(moveId: string, code: string): boolean {
@@ -405,6 +412,9 @@ export function gamepadCodeLabel(code: string, iconSet: GamepadIconSet): string 
 
 function adaptMappings(mappings: ComboImageStyle['iconMappings'], bindings: KeyBinding[], iconSet: GamepadIconSet, customSources: Record<string, string>): ComboImageStyle['iconMappings'] {
   return mappings.map((mapping) => {
+    const mappingCustomKey = iconMappingCustomizationKey(mapping.id);
+    const mappingCustomSource = mappingCustomKey ? customSources[mappingCustomKey] : undefined;
+    if (mappingCustomSource) return { ...mapping, src: mappingCustomSource };
     const moveId = ICON_MAPPING_MOVE_IDS[mapping.id];
     const code = moveId
       ? bindings.find((binding) => binding.moveId === moveId)?.inputs.find((input) => input.code.trim())?.code
@@ -419,6 +429,9 @@ function adaptMappings(mappings: ComboImageStyle['iconMappings'], bindings: KeyB
 
 function adaptKeyboardMouseMappings(mappings: ComboImageStyle['iconMappings'], bindings: KeyBinding[], customSources: Record<string, string>): ComboImageStyle['iconMappings'] {
   return mappings.map((mapping) => {
+    const mappingCustomKey = iconMappingCustomizationKey(mapping.id);
+    const mappingCustomSource = mappingCustomKey ? customSources[mappingCustomKey] : undefined;
+    if (mappingCustomSource) return { ...mapping, src: mappingCustomSource };
     const moveId = ICON_MAPPING_MOVE_IDS[mapping.id];
     const code = moveId
       ? bindings.find((binding) => binding.moveId === moveId)?.inputs.find((input) => input.code.trim())?.code
@@ -429,7 +442,7 @@ function adaptKeyboardMouseMappings(mappings: ComboImageStyle['iconMappings'], b
     const defaultSource = moveId && code ? defaultKeyboardMouseIconSource(moveId, code) : undefined;
     if (defaultSource) return { ...mapping, src: defaultSource, iconWidthScale: 1 };
     const src = code ? keyboardMouseIconSource(code, keyboardMouseIconToneForMove(moveId ?? '')) : undefined;
-    return src && code ? { ...mapping, src, iconScale: Math.min(3, Math.max(0.35, (mapping.iconScale ?? 1) * 1.15)), iconWidthScale: keyboardMouseIconWidthScale(code) } : mapping;
+    return src && code ? { ...mapping, src, iconScale: Math.min(3, Math.max(0.35, mapping.iconScale ?? 1)), iconWidthScale: keyboardMouseIconWidthScale(code) } : mapping;
   });
 }
 

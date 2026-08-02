@@ -208,6 +208,7 @@ export type ComboImageStyle = {
   textStrokeColor: string;
   fontSize: number;
   fontFamily: string;
+  promptFontFamily: string;
   avatarSize: number;
   avatarOffsetX: number;
   avatarOffsetY: number;
@@ -225,6 +226,7 @@ export type ComboImageStyle = {
   convertIcons: boolean;
   mergeSameRoleSteps: boolean;
   mergeSameRoleLimit: number;
+  mergeSameMoveSteps: boolean;
   iconMappings: ComboIconMapping[];
   basePresets: ComboBasePreset[];
   avatarPresets: ComboAvatarPreset[];

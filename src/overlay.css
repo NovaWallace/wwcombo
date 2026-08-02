@@ -12,7 +12,13 @@ html, body, #overlay-root { margin: 0; width: 100%; height: 100%; background: rg
 .overlay-shell.vertical.next-indicator-right { padding-left: 72px; padding-right: 42px; }
 .overlay-drag-surface { width: 100%; height: 100%; position: relative; overflow: visible; }
 .overlay-background { position: absolute; inset: 0; z-index: -1; background-position: center; background-repeat: no-repeat; opacity: .92; }
-.overlay-period-label { position: absolute; left: 6px; top: 4px; z-index: 6; padding: 2px 7px; border: 1px solid rgba(255,255,255,.26); background: rgba(0,0,0,.58); color: #fff; font-size: 13px; font-weight: 900; pointer-events: none; }
+.overlay-period-label { position: absolute; z-index: 9; padding: 0; border: 0; background: transparent; color: #fff; font-size: 14px; line-height: 1.1; font-weight: 950; white-space: nowrap; text-shadow: 0 2px 6px rgba(0,0,0,.92), 0 0 2px rgba(0,0,0,.9); pointer-events: none; }
+.overlay-period-label.inline.horizontal { left: 50%; transform: translateX(-50%); text-align: center; }
+.overlay-period-label.inline.horizontal.above { top: -31px; }
+.overlay-period-label.inline.horizontal.below { bottom: -31px; }
+.overlay-period-label.inline.vertical { top: -24px; }
+.overlay-period-label.inline.vertical.left { left: 0; text-align: left; }
+.overlay-period-label.inline.vertical.right { right: 0; text-align: right; }
 .overlay-action-prompt { z-index: 9; max-width: min(360px, 72vw); padding: 0; border: 0; background: transparent; box-shadow: none; color: #fff; font-size: 20px; line-height: 1.1; font-weight: 950; white-space: nowrap; overflow: visible; text-overflow: clip; text-shadow: 0 2px 6px rgba(0,0,0,.92); pointer-events: none; }
 .overlay-action-prompt.horizontal { position: absolute; left: 50%; transform: translateX(-50%); }
 .overlay-action-prompt.horizontal.above { top: -31px; }
@@ -133,3 +139,132 @@ html, body, #overlay-root { margin: 0; width: 100%; height: 100%; background: rg
 .rhythm-overlay-resize-handle.e, .rhythm-overlay-resize-handle.w { top: 50%; transform: translateY(-50%); cursor: ew-resize; }
 .rhythm-overlay-resize-handle.n { top: 3px; } .rhythm-overlay-resize-handle.s { bottom: 3px; } .rhythm-overlay-resize-handle.e { right: 3px; } .rhythm-overlay-resize-handle.w { left: 3px; }
 .rhythm-overlay-resize-handle.ne { top: 3px; right: 3px; cursor: nesw-resize; } .rhythm-overlay-resize-handle.nw { top: 3px; left: 3px; cursor: nwse-resize; } .rhythm-overlay-resize-handle.se { right: 3px; bottom: 3px; cursor: nwse-resize; } .rhythm-overlay-resize-handle.sw { left: 3px; bottom: 3px; cursor: nesw-resize; }
+
+@font-face {
+  font-family: "优设标题黑";
+  src: url("./assets/youshe-biaotihei-keys.ttf") format("truetype");
+  font-display: swap;
+}
+.combo-merged-move { position: relative; display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: .07em; min-width: 0; line-height: 1; }
+.combo-merged-move-body { display: inline-flex; align-items: center; justify-content: center; gap: .16em; min-width: 0; white-space: nowrap; }
+.combo-merged-move-count { display: inline-block; flex: 0 0 auto; font-size: 1.08em; font-weight: 400; line-height: .9; white-space: nowrap; }
+.combo-merged-move-progress { display: inline-flex; align-items: center; justify-content: center; gap: .12em; min-height: .28em; white-space: nowrap; }
+.combo-merged-move-marker { display: block; flex: 0 0 auto; background: #fff; box-shadow: 0 0 0 1px #050505, 0 0 2px rgba(0,0,0,.95); transition: background-color .12s linear, box-shadow .12s linear; }
+.combo-merged-move-marker.dot { width: .22em; height: .22em; border-radius: 50%; }
+.combo-merged-move-marker.line { width: .72em; height: .16em; border-radius: .08em; }
+.combo-merged-move-marker.active { background: #ffe037; box-shadow: 0 0 0 1px #050505, 0 0 4px rgba(255,224,55,.75); }
+.combo-merged-move.error .combo-merged-move-marker { background: #ff4747; }
+.combo-merged-move.error .combo-merged-move-marker.active { background: #ffe037; }
+
+.combo-chip .combo-chip-content .combo-merged-move, .combo-preview-chip .combo-preview-content .combo-merged-move { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: .07em; }
+.combo-chip .combo-chip-content .combo-merged-move-body, .combo-preview-chip .combo-preview-content .combo-merged-move-body { display: inline-flex; align-items: center; justify-content: center; gap: .16em; }
+.combo-chip .combo-chip-content .combo-merged-move-progress, .combo-preview-chip .combo-preview-content .combo-merged-move-progress { display: inline-flex; align-items: center; justify-content: center; gap: .12em; }
+
+/* Merged move markers sit below the normal-height icon row. */
+.combo-merged-move, .combo-chip .combo-chip-content .combo-merged-move, .combo-preview-chip .combo-preview-content .combo-merged-move {
+  position: relative;
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  height: 1.62em;
+  min-height: 1.62em;
+  gap: 0;
+  vertical-align: middle;
+  overflow: visible;
+}
+.combo-merged-move-body, .combo-chip .combo-chip-content .combo-merged-move-body, .combo-preview-chip .combo-preview-content .combo-merged-move-body {
+  display: inline-flex;
+  height: 100%;
+  align-items: center;
+}
+.combo-merged-move-progress, .combo-chip .combo-chip-content .combo-merged-move-progress, .combo-preview-chip .combo-preview-content .combo-merged-move-progress {
+  position: absolute;
+  left: 50%;
+  top: calc(100% + .12em);
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .12em;
+  min-height: .22em;
+  height: .22em;
+  white-space: nowrap;
+  z-index: 10;
+  pointer-events: none;
+}
+.combo-merged-move-marker.dot, .combo-merged-move-marker.line {
+  display: block;
+  width: .22em;
+  height: .22em;
+  border-radius: 50%;
+}
+.combo-chip:has(.combo-merged-move-progress), .combo-preview-chip:has(.combo-merged-move-progress) {
+  overflow: visible;
+}
+
+/* The overlay has a generic span reset above; keep merged moves as real flex items. */
+.combo-chip .combo-chip-content span.combo-merged-move {
+  position: relative;
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  height: 1.62em;
+  min-height: 1.62em;
+  gap: 0;
+  vertical-align: middle;
+  overflow: visible;
+}
+.combo-chip .combo-chip-content span.combo-merged-move-body {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-width: 0;
+  gap: .16em;
+  white-space: nowrap;
+}
+.combo-chip .combo-chip-content span.combo-merged-move-count {
+  display: inline-block;
+  flex: 0 0 auto;
+  font-size: 1.32em;
+  font-weight: 400;
+  line-height: .92;
+  white-space: nowrap;
+}
+.combo-chip .combo-chip-content span.combo-merged-move-progress {
+  position: absolute;
+  left: 0;
+  top: calc(100% + .12em);
+  transform: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .12em;
+  min-height: .44em;
+  height: .44em;
+  white-space: nowrap;
+  z-index: 10;
+  pointer-events: none;
+}
+.combo-chip .combo-chip-content span.combo-merged-move-marker {
+  display: block;
+  flex: 0 0 auto;
+  width: .44em;
+  height: .44em;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 0 1px #050505, 0 0 2px rgba(0,0,0,.95);
+  transition: background-color .12s linear, box-shadow .12s linear;
+}
+.combo-chip .combo-chip-content span.combo-merged-move-marker.active {
+  background: #ffe037;
+  box-shadow: 0 0 0 1px #050505, 0 0 4px rgba(255,224,55,.75);
+}
+.combo-chip .combo-chip-content span.combo-merged-move.error .combo-merged-move-marker {
+  background: #ff4747;
+}
+.combo-chip .combo-chip-content span.combo-merged-move.error .combo-merged-move-marker.active {
+  background: #ffe037;
+}

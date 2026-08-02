@@ -16,10 +16,11 @@ type TauriGlobalInputPayload = {
   type?: DesktopInputEvent['type'];
   code: string;
   time: number;
+  shiftKey?: boolean;
 };
 
 type OverlayBounds = { x: number; y: number; width: number; height: number };
-type DisplaySize = { width: number; height: number };
+type DisplaySize = { width: number; height: number; scaleFactor?: number };
 type OverlayPosition = { x: number; y: number };
 type ResizeDirection = 'East' | 'North' | 'NorthEast' | 'NorthWest' | 'South' | 'SouthEast' | 'SouthWest' | 'West';
 
@@ -111,14 +112,23 @@ export function createDesktopBridge(): DesktopBridge | null {
     onVideoExportProgress: (callback: (progress: { progress: number; processedMs: number; durationMs: number }) => void) => listenUntilDisposed('video-export-progress', callback),
     saveExportFile: (directory: string, filename: string, bytes: Uint8Array) => invoke<{ path: string }>('save_export_file', { directory, filename, bytes: Array.from(bytes) }),
     saveExportMp4: (directory: string, filename: string, bytes: Uint8Array) => invoke<{ path: string }>('save_export_mp4', { directory, filename, bytes: Array.from(bytes) }),
-    onGlobalInput: (callback: (event: DesktopInputEvent) => void) => listenUntilDisposed<TauriGlobalInputPayload>('global-input', (payload) => {
-      callback({
-        source: 'desktop',
-        type: payload.type ?? payload.event_type ?? 'keydown',
-        code: payload.code,
-        time: tauriEventTimeToPerformance(payload.time)
+    onGlobalInput: (callback: (event: DesktopInputEvent) => void) => {
+      const pressedShiftCodes = new Set<string>();
+      return listenUntilDisposed<TauriGlobalInputPayload>('global-input', (payload) => {
+        const type = payload.type ?? payload.event_type ?? 'keydown';
+        if (payload.code === 'ShiftLeft' || payload.code === 'ShiftRight') {
+          if (type === 'keydown') pressedShiftCodes.add(payload.code);
+          else if (type === 'keyup') pressedShiftCodes.delete(payload.code);
+        }
+        callback({
+          source: 'desktop',
+          type,
+          code: payload.code,
+          time: tauriEventTimeToPerformance(payload.time),
+          shiftKey: payload.shiftKey ?? pressedShiftCodes.size > 0
+        });
       });
-    })
+    }
   };
   window.trainerDesktop = bridge;
   return bridge;
@@ -129,6 +139,7 @@ export function createOverlayBridge() {
   if (!isTauriRuntime()) return null;
 
   return {
+    getState: () => invoke<unknown>('get_overlay_state'),
     setOverlayBounds: (bounds: OverlayBounds) => invoke('set_overlay_bounds', { bounds }),
     setOverlayPosition: (position: OverlayPosition) => invoke('set_overlay_position', { position }),
     requestOverlayMoveMode: (enabled: boolean) => invoke('request_overlay_move_mode', { enabled }),

@@ -11,6 +11,7 @@ export type ComboImageItem = {
   showAvatar: boolean;
   characterSlot: CharacterSlot;
   mergedParts?: ComboImageMergedPart[];
+  mergedMoveGroups?: ComboImageMergedMove[];
   mergedStepIds?: string[];
   sourceStartIndex?: number;
   sourceEndIndex?: number;
@@ -24,6 +25,20 @@ export type ComboImageMergedPart = {
   iconId?: string;
   centerPercent: number;
   spanPercent: number;
+};
+
+export type ComboImageMergedMove = {
+  moveId: string;
+  displayText: string;
+  iconId: string;
+  iconLabel: string;
+  iconSrc: string;
+  iconScale: number;
+  iconWidthScale: number;
+  count: number;
+  stepIds: string[];
+  startMs: number;
+  endMs: number;
 };
 
 type ComboImageMergeGroup = {
@@ -191,6 +206,7 @@ export function createDefaultComboImageStyle(): ComboImageStyle {
     textStrokeColor: '#050505',
     fontSize: 22,
     fontFamily: 'Microsoft YaHei, Inter, system-ui, sans-serif',
+    promptFontFamily: 'Microsoft YaHei, Inter, system-ui, sans-serif',
     avatarSize: 70,
     avatarOffsetX: -20,
     avatarOffsetY: 0,
@@ -208,6 +224,7 @@ export function createDefaultComboImageStyle(): ComboImageStyle {
     convertIcons: true,
     mergeSameRoleSteps: true,
     mergeSameRoleLimit: 10,
+    mergeSameMoveSteps: false,
     iconMappings: DEFAULT_ICON_MAPPINGS,
     basePresets: [],
     avatarPresets: [],
@@ -257,6 +274,7 @@ export function normalizeComboImageStyle(value: Partial<ComboImageStyle> | null 
     textStrokeColor: typeof value?.textStrokeColor === 'string' && /^#[0-9a-f]{6}$/i.test(value.textStrokeColor) ? value.textStrokeColor : fallback.textStrokeColor,
     fontSize: clampNumber(value?.fontSize, 12, 72, fallback.fontSize),
     fontFamily: typeof value?.fontFamily === 'string' && value.fontFamily.trim() ? value.fontFamily.trim() : fallback.fontFamily,
+    promptFontFamily: typeof value?.promptFontFamily === 'string' && value.promptFontFamily.trim() ? value.promptFontFamily.trim() : fallback.promptFontFamily,
     avatarSize: clampNumber(value?.avatarSize, 16, 240, fallback.avatarSize),
     avatarOffsetX: clampNumber(value?.avatarOffsetX, -300, 300, fallback.avatarOffsetX),
     avatarOffsetY: clampNumber(value?.avatarOffsetY, -300, 300, fallback.avatarOffsetY),
@@ -275,6 +293,7 @@ export function normalizeComboImageStyle(value: Partial<ComboImageStyle> | null 
     convertIcons: value?.convertIcons !== false,
     mergeSameRoleSteps: value?.mergeSameRoleSteps !== false,
     mergeSameRoleLimit: clampNumber(value?.mergeSameRoleLimit, 1, 30, fallback.mergeSameRoleLimit),
+    mergeSameMoveSteps: Boolean(value?.mergeSameMoveSteps),
     iconMappings: normalizeIconMappings(value?.iconMappings),
     basePresets: normalizeStoredBasePresets(value?.basePresets),
     avatarPresets: normalizeStoredAvatarPresets(value?.avatarPresets),
@@ -391,7 +410,10 @@ export function comboImageItemSizeForDisplayItem(style: ComboImageStyle, item: C
   const base = comboImageItemSize(style, roleStyle);
   if (style.capsuleWidthMode !== 'auto') return base;
   const mappings = effectiveIconMappings(style, roleStyle ?? item.characterSlot);
-  const contentUnits = item.mergedParts.reduce((sum, part) => sum + comboTextDisplayUnits(part.displayText, Boolean(part.iconId), mappings), 0);
+  const mergedMoveGroups = item.mergedMoveGroups?.length ? item.mergedMoveGroups : undefined;
+  const contentUnits = mergedMoveGroups
+    ? mergedMoveGroups.reduce((sum, group) => sum + 1.62 * group.iconScale * group.iconWidthScale + (group.count > 1 ? 1.7 : 0.2), 0)
+    : item.mergedParts.reduce((sum, part) => sum + comboTextDisplayUnits(part.displayText, Boolean(part.iconId), mappings), 0);
   const avatarSpace = item.showAvatar ? Math.max(30, base.height * 0.62) : 0;
   const sidePadding = style.blockMode === 'image' ? Math.max(52, style.autoWidthPadding * 0.84) : Math.max(36, style.autoWidthPadding * 0.66);
   const minWidth = style.blockMode === 'image' ? comboImageStretchMinWidth(style, base.height, roleStyle) : 64;
@@ -441,7 +463,10 @@ function estimatedMergedContentWidth(item: ComboImageItem, style: ComboImageStyl
   if (!item.mergedParts?.length) return comboImageItemSizeForText(style, item.displayText, item.showAvatar, roleStyle).width;
   const base = comboImageItemSize(style, roleStyle);
   const mappings = effectiveIconMappings(style, roleStyle ?? item.characterSlot);
-  const contentUnits = item.mergedParts.reduce((sum, part) => sum + comboTextDisplayUnits(part.displayText, Boolean(part.iconId), mappings), 0);
+  const mergedMoveGroups = item.mergedMoveGroups?.length ? item.mergedMoveGroups : undefined;
+  const contentUnits = mergedMoveGroups
+    ? mergedMoveGroups.reduce((sum, group) => sum + 1.62 * group.iconScale * group.iconWidthScale + (group.count > 1 ? 1.25 : 0.2), 0)
+    : item.mergedParts.reduce((sum, part) => sum + comboTextDisplayUnits(part.displayText, Boolean(part.iconId), mappings), 0);
   const avatarSpace = item.showAvatar ? Math.max(30, base.height * 0.62) : 0;
   const sidePadding = style.blockMode === 'image' ? Math.max(52, style.autoWidthPadding * 0.84) : Math.max(36, style.autoWidthPadding * 0.66);
   const mergedIconBuffer = Math.max(0, item.mergedParts.length - 1) * style.fontSize * 0.22;
@@ -451,7 +476,8 @@ function estimatedMergedContentWidth(item: ComboImageItem, style: ComboImageStyl
 function mergeGroupToItem(group: ComboImageMergeGroup, style: ComboImageStyle): ComboImageItem {
   const items = [...group.items].sort((left, right) => left.step.startMin - right.step.startMin || left.index - right.index);
   const base = items.find((item) => item.isSwitch) ?? items[0];
-  if (items.length === 1) return { ...base, mergedStepIds: [base.step.id], mergedParts: createMergedParts(base), sourceStartIndex: base.index, sourceEndIndex: base.index };
+  const mergedMoveGroups = style.mergeSameMoveSteps ? createMergedMoveGroups(items, style) : undefined;
+  if (items.length === 1) return { ...base, mergedStepIds: [base.step.id], mergedParts: createMergedParts(base), mergedMoveGroups, sourceStartIndex: base.index, sourceEndIndex: base.index };
   const labels = items.map((item) => item.displayText).filter(Boolean);
   const displayText = labels.join('');
   const mergedStepIds = items.map((item) => item.step.id);
@@ -467,6 +493,7 @@ function mergeGroupToItem(group: ComboImageMergeGroup, style: ComboImageStyle): 
     showAvatar: items.some((item) => item.showAvatar),
     mergedStepIds,
     mergedParts,
+    mergedMoveGroups,
     sourceStartIndex: Math.min(...items.map((item) => item.index)),
     sourceEndIndex: Math.max(...items.map((item) => item.index)),
     step: {
@@ -479,6 +506,38 @@ function mergeGroupToItem(group: ComboImageMergeGroup, style: ComboImageStyle): 
       durationMax: Math.max(1, group.endMs - group.startMs)
     }
   };
+}
+
+function createMergedMoveGroups(items: ComboImageItem[], style: ComboImageStyle): ComboImageMergedMove[] | undefined {
+  const groups: ComboImageMergedMove[] = [];
+  for (const item of items) {
+    const mappings = effectiveIconMappings(style, item.characterSlot);
+    const parts = comboTextParts(item.displayText, style.convertIcons, mappings);
+    const icon = parts.length === 1 && parts[0].kind === 'icon' ? parts[0] : undefined;
+    if (!icon) return undefined;
+    const { startMs, endMs } = comboItemMergeRange(item);
+    const previous = groups[groups.length - 1];
+    if (previous && previous.moveId === item.step.moveId && previous.iconId === icon.iconId) {
+      previous.count += 1;
+      previous.stepIds.push(item.step.id);
+      previous.endMs = Math.max(previous.endMs, endMs);
+      continue;
+    }
+    groups.push({
+      moveId: item.step.moveId,
+      displayText: item.displayText,
+      iconId: icon.iconId,
+      iconLabel: icon.label,
+      iconSrc: icon.src,
+      iconScale: icon.iconScale,
+      iconWidthScale: icon.iconWidthScale,
+      count: 1,
+      stepIds: [item.step.id],
+      startMs,
+      endMs
+    });
+  }
+  return groups.some((group) => group.count > 1) ? groups : undefined;
 }
 
 function createMergedPart(item: ComboImageItem): ComboImageMergedPart {
@@ -544,6 +603,35 @@ export function capsuleEdgeSourceRange(naturalHeightInput: number, cropYInput: n
   const height = Math.min(naturalHeight, cropHeight + naturalHeight * edgePercent / 100);
   const centeredY = cropY - (height - cropHeight) / 2;
   return { y: Math.min(naturalHeight - height, Math.max(0, centeredY)), height };
+}
+
+export function capsuleImageVerticalOverflow(style: ComboImageStyle, targetHeightInput: number, roleStyle?: RoleStyle): { top: number; bottom: number } {
+  const capsule = effectiveCapsuleImageFields(style, roleStyle);
+  if (style.blockMode !== 'image' || !capsule.image) return { top: 0, bottom: 0 };
+  const naturalHeight = Math.max(1, capsule.height ?? style.capsuleHeight ?? 80);
+  const crop = normalizeRectPercent(capsule.crop, fullRectPercent());
+  const cropY = (crop.y / 100) * naturalHeight;
+  const cropHeight = Math.max(1, (crop.h / 100) * naturalHeight);
+  const heightScale = Math.max(1, targetHeightInput) / cropHeight;
+  const edgeSource = capsuleEdgeSourceRange(naturalHeight, cropY, cropHeight, capsule.edge);
+  return {
+    top: Math.max(0, (cropY - edgeSource.y) * heightScale),
+    bottom: Math.max(0, (edgeSource.y + edgeSource.height - cropY - cropHeight) * heightScale)
+  };
+}
+
+export function verticalComboTrackClipCompensation(
+  style: ComboImageStyle,
+  item: ComboImageItem | undefined,
+  itemStart: number,
+  trackOffset: number,
+  minimumTopClearance = 0
+): number {
+  if (!item) return 0;
+  const roleStyle = style.roleStyles[item.characterSlot];
+  const size = comboImageItemSizeForDisplayItem(style, item, roleStyle);
+  const overflow = capsuleImageVerticalOverflow(style, size.height, roleStyle).top;
+  return Math.max(0, Math.ceil(Math.max(overflow, minimumTopClearance) - (itemStart + trackOffset)));
 }
 
 export function comboImageItemSize(style: ComboImageStyle, roleStyle?: RoleStyle): { width: number; height: number } {

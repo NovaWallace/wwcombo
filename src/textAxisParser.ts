@@ -1,7 +1,7 @@
 import type { CharacterSlot, ComboChart, ComboPeriod, ComboStep, MoveDefinition } from '../combo-core';
 
 export const TEXT_AXIS_EXAMPLE = '启动轴：\n达 eqraa 爱 a 露 ra 爱 ae 达 aa 露 aaa 达 aae 爱 aa 露 a 达 ar 爱 变奏 a 露 e 达 aaa 爱 a 露 跳eeq 爱 变奏 r1efaaqezr';
-export const TEXT_AXIS_EXAMPLE_EN = 'Startup Axis:\n1 eqraa 2 a 3 ra 2 ae 1 aa 3 aaa 1 aae 2 aa 3 a 1 ar 2 Intro a 3 e 1 aaa 2 a 3 Jumpeeq 2 Intro r1efaaqezr Outro';
+export const TEXT_AXIS_EXAMPLE_EN = 'Opener:\n1 eqraa 2 a 3 ra 2 ae 1 aa 3 aaa 1 aae 2 aa 3 a 1 ar 2 Intro a 3 e 1 aaa 2 a 3 Jumpeeq 2 Intro r1efaaqezr Outro';
 
 export function textAxisExampleForLanguage(language: string): string {
   return language === 'zh-CN' ? TEXT_AXIS_EXAMPLE : TEXT_AXIS_EXAMPLE_EN;
@@ -265,7 +265,7 @@ export function parseTextAxis(source: string, options: TextAxisParserOptions): T
       consume(separator[0].length);
       continue;
     }
-    const startupAxisMatch = /^(?:startup|start)\s+axis/iu.exec(rest);
+    const startupAxisMatch = /^(?:(?:startup|start)\s+axis|opener)\b/iu.exec(rest);
     if (startupAxisMatch) {
       startupMarkerSeen = true;
       consume(startupAxisMatch[0].length);
@@ -281,7 +281,7 @@ export function parseTextAxis(source: string, options: TextAxisParserOptions): T
       consume(2);
       continue;
     }
-    const loopMatch = /^loop\s+axis(?:\s*\d+)?/iu.exec(rest) ?? /^循环轴(?:\d+)?/u.exec(rest) ?? /^循环/u.exec(rest);
+    const loopMatch = /^loop(?:\s+axis)?(?:\s*\d+)?\b/iu.exec(rest) ?? /^循环轴(?:\d+)?/u.exec(rest) ?? /^循环/u.exec(rest);
     if (loopMatch) {
       flushSwitch();
       loopMarkers.push({ stepIndex: steps.length });

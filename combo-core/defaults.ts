@@ -1,5 +1,7 @@
 import type { KeyBinding, MoveDefinition } from './types';
 
+export const FINISHER_ICON_BINDING_MOVE_ID = 'finisher';
+
 export const DEFAULT_MOVES: MoveDefinition[] = [
   {
     id: 'start_challenge',
@@ -174,7 +176,8 @@ export const DEFAULT_BINDINGS: KeyBinding[] = [
   { moveId: 'jump_hold', inputs: [{ code: 'SpaceHold', label: '空格长按' }] },
   { moveId: 'switch_1', inputs: [{ code: 'Digit1', label: '1' }] },
   { moveId: 'switch_2', inputs: [{ code: 'Digit2', label: '2' }] },
-  { moveId: 'switch_3', inputs: [{ code: 'Digit3', label: '3' }] }
+  { moveId: 'switch_3', inputs: [{ code: 'Digit3', label: '3' }] },
+  { moveId: FINISHER_ICON_BINDING_MOVE_ID, inputs: [{ code: 'KeyF', label: 'F' }] }
 ];
 
 export const DEFAULT_GAMEPAD_BINDINGS: KeyBinding[] = [
@@ -195,5 +198,6 @@ export const DEFAULT_GAMEPAD_BINDINGS: KeyBinding[] = [
   { moveId: 'jump_hold', inputs: [{ code: 'GamepadAHold', label: 'A长按' }] },
   { moveId: 'switch_1', inputs: [{ code: 'GamepadDPadUp', label: '十字上' }] },
   { moveId: 'switch_2', inputs: [{ code: 'GamepadDPadRight', label: '十字右' }] },
-  { moveId: 'switch_3', inputs: [{ code: 'GamepadDPadDown', label: '十字下' }] }
+  { moveId: 'switch_3', inputs: [{ code: 'GamepadDPadDown', label: '十字下' }] },
+  { moveId: FINISHER_ICON_BINDING_MOVE_ID, inputs: [{ code: 'GamepadB', label: 'B' }] }
 ];

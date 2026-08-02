@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "WW Combo Trainer",
-  "version": "0.6.0",
+  "version": "0.61.0",
   "identifier": "com.novawallace.wwcombo",
   "build": {
     "beforeDevCommand": "npm.cmd run dev",
@@ -20,64 +20,6 @@
         "minHeight": 680,
         "resizable": true,
         "center": true
-      },
-      {
-        "label": "overlay",
-        "title": "Combo Overlay",
-        "url": "overlay.html",
-        "width": 980,
-        "height": 118,
-        "x": 160,
-        "y": 36,
-        "decorations": false,
-        "transparent": true,
-        "alwaysOnTop": true,
-        "skipTaskbar": true,
-        "resizable": true,
-        "visible": false
-      },
-      {
-        "label": "rhythm-feedback",
-        "title": "Rhythm Feedback",
-        "url": "rhythm-feedback.html",
-        "width": 260,
-        "height": 96,
-        "x": 520,
-        "y": 320,
-        "decorations": false,
-        "transparent": true,
-        "alwaysOnTop": true,
-        "skipTaskbar": true,
-        "resizable": true,
-        "visible": false
-      },
-      {
-        "label": "key-mapping",
-        "title": "Key Mapping Overlay",
-        "url": "key-mapping.html",
-        "width": 620,
-        "height": 514,
-        "x": 520,
-        "y": 220,
-        "decorations": false,
-        "transparent": true,
-        "alwaysOnTop": true,
-        "skipTaskbar": true,
-        "resizable": true,
-        "visible": false
-      },
-      {
-        "label": "recording-indicator",
-        "title": "Recording Status",
-        "url": "recording-indicator.html",
-        "width": 48,
-        "height": 48,
-        "decorations": false,
-        "transparent": true,
-        "alwaysOnTop": true,
-        "skipTaskbar": true,
-        "resizable": false,
-        "visible": false
       }
     ],
     "security": {

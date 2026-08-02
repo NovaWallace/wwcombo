@@ -22,7 +22,6 @@ export const JAPANESE_TRANSLATIONS: Record<string, string> = {
   "Add community metadata and export a JSON file.": "コミュニティのメタデータを追加し、JSON ファイルをエクスポートします。",
   "Add Custom Icon": "カスタム アイコンを追加",
   "Add Key": "添加 Key",
-  "Add Zoom Frame": "ズーム フレームを追加",
   "Add: {0}; press X for periods": "追加: {0};ピリオドの場合は X を押します",
   "Adjust the appearance and layout of the always-on-top combo display.": "ALWAYS - ON - TOPコンボディスプレイの外観とレイアウトを調整します。",
   "Adjust the position, size, and spacing of all three character avatars on the stage.": "ステージ上の3つのキャラクターアバターすべての位置、サイズ、間隔を調整します。",
@@ -487,8 +486,6 @@ export const JAPANESE_TRANSLATIONS: Record<string, string> = {
   "Window": "ウインドウ",
   "Wuthering Waves Trainer": "嵐の波トレーナー",
   "Zoom": "ズーム",
-  "Zoom Frame {0} {1}": "ズームフレーム {0} {1}",
-  "Zoom Frames": "ズーム フレーム"
 };
 
 export const KOREAN_TRANSLATIONS: Record<string, string> = {
@@ -513,7 +510,6 @@ export const KOREAN_TRANSLATIONS: Record<string, string> = {
   "Add community metadata and export a JSON file.": "커뮤니티 메타데이터를 추가하고 JSON 파일을 내보냅니다.",
   "Add Custom Icon": "사용자 정의 아이콘 추가",
   "Add Key": "키 추가",
-  "Add Zoom Frame": "줌 프레임 추가",
   "Add: {0}; press X for periods": "추가: {0}; 기간 동안 X를 누르십시오.",
   "Adjust the appearance and layout of the always-on-top combo display.": "상시 작동 콤보 디스플레이의 모양과 레이아웃을 조정합니다.",
   "Adjust the position, size, and spacing of all three character avatars on the stage.": "스테이지에서 세 문자 아바타의 위치, 크기 및 간격을 조정합니다.",
@@ -978,6 +974,4 @@ export const KOREAN_TRANSLATIONS: Record<string, string> = {
   "Window": "윈도우",
   "Wuthering Waves Trainer": "폭풍의 파도 트레이너",
   "Zoom": "줌",
-  "Zoom Frame {0} {1}": "확대/축소 프레임 {0} {1}",
-  "Zoom Frames": "줌 프레임"
 };

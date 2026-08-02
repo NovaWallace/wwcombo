@@ -141,10 +141,10 @@ export class ComboRecorder {
     return this.snapshot(releaseTime);
   }
 
-  toChart(title = 'Untitled Combo'): ComboChart {
+  toChart(title = 'Untitled Combo', snapshot?: Pick<RecordingSnapshot, 'units'>): ComboChart {
     const now = Date.now();
     const chartId = crypto.randomUUID();
-    const steps = this.units.map((unit): ComboStep => {
+    const steps = (snapshot?.units ?? this.units).map((unit): ComboStep => {
       const move = this.options.moves.find((candidate) => candidate.id === unit.moveId);
       return {
         id: `${chartId}_${unit.id}`,
@@ -258,11 +258,11 @@ export class ComboRecorder {
   private convertActiveHold(sourceMove: MoveDefinition, holdMove: MoveDefinition, pressTime: number, holdStartTime: number, releaseTime: number): void {
     if (sourceMove.independent) {
       const unit = this.activeIndependent.get(sourceMove.id) ?? this.findOpenUnit(sourceMove.id, pressTime);
-      if (unit) this.splitUnitForHold(unit, holdMove, holdStartTime, releaseTime);
+      if (unit) this.replaceUnitWithHold(unit, holdMove, holdStartTime, releaseTime);
       return;
     }
     const unit = this.activeMain?.moveId === sourceMove.id ? this.activeMain : this.findOpenUnit(sourceMove.id, pressTime);
-    if (unit) this.splitUnitForHold(unit, holdMove, holdStartTime, releaseTime);
+    if (unit) this.replaceUnitWithHold(unit, holdMove, holdStartTime, releaseTime);
   }
 
   private closePressedUnit(sourceMove: MoveDefinition, pressTime: number, releaseTime: number): void {
@@ -306,33 +306,28 @@ export class ComboRecorder {
     return [...this.activeIndependent.values()].find((unit) => unit.moveId === moveId && time >= unit.startTime && time <= Math.max(unit.endTime, time)) ?? null;
   }
 
-  private splitUnitForHold(unit: RecordedUnit, holdMove: MoveDefinition, holdStartTime: number, releaseTime: number): void {
-    const splitAt = Math.max(unit.startTime + MIN_UNIT_MS, holdStartTime);
-    const holdEnd = Math.max(splitAt + MIN_UNIT_MS, releaseTime);
-    const originalEnd = Math.max(unit.endTime, holdEnd);
-    unit.endTime = Math.min(splitAt, originalEnd);
-    unit.duration = Math.max(MIN_UNIT_MS, unit.endTime - unit.startTime);
+  private replaceUnitWithHold(unit: RecordedUnit, holdMove: MoveDefinition, holdStartTime: number, releaseTime: number): void {
+    const holdEnd = Math.max(unit.startTime + MIN_UNIT_MS, holdStartTime, releaseTime);
     const holdLane: RecordedUnit['lane'] = holdMove.independent ? 'independent' : 'main';
-    const holdUnit = this.createUnit(holdMove, { type: 'keydown', code: holdMove.id, time: splitAt }, holdLane);
+    const holdUnit = this.createUnit(holdMove, { type: 'keydown', code: holdMove.id, time: unit.startTime }, holdLane);
     holdUnit.characterSlot = unit.characterSlot;
-    holdUnit.startTime = splitAt;
+    holdUnit.startTime = unit.startTime;
     holdUnit.endTime = holdEnd;
-    holdUnit.duration = Math.max(MIN_UNIT_MS, holdEnd - splitAt);
+    holdUnit.duration = Math.max(MIN_UNIT_MS, holdEnd - unit.startTime);
     holdUnit.sourceCodes = [...unit.sourceCodes];
     if (this.activeMain === unit) {
-      this.closeUnit(unit, unit.endTime);
+      this.activeMain = null;
       if (holdMove.independent) this.activeIndependent.set(holdMove.id, holdUnit);
       else this.activeMain = holdUnit;
       return;
     }
     for (const [moveId, current] of this.activeIndependent) {
       if (current !== unit) continue;
-      this.closeUnit(unit, unit.endTime);
       this.activeIndependent.delete(moveId);
       if (holdMove.independent) this.activeIndependent.set(holdMove.id, holdUnit);
       else {
         if (this.activeMain) {
-          this.closeUnit(this.activeMain, Math.min(this.activeMain.endTime, splitAt));
+          this.closeUnit(this.activeMain, Math.min(this.activeMain.endTime, holdStartTime));
           this.activeMain = null;
         }
         this.activeMain = holdUnit;

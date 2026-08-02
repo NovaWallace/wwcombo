@@ -7,15 +7,23 @@ type HomeSpineStageProps = {
   scale?: number;
   offsetX?: number;
   offsetY?: number;
+  shiftX?: number;
   active?: boolean;
 };
 
-export function HomeSpineStage({ skeletonUrl, scale = 2, offsetX = 0, offsetY = 0, active = true }: HomeSpineStageProps) {
+function relatedSpineAssetUrls(skeletonUrl: string): string[] {
+  const stem = skeletonUrl.replace(/\.skel$/i, '');
+  return [skeletonUrl, `${stem}.atlas`, `${stem}.webp`];
+}
+
+export function HomeSpineStage({ skeletonUrl, scale = 2, offsetX = 0, offsetY = 0, shiftX = 0, active = true }: HomeSpineStageProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const applicationRef = useRef<import('pixi.js').Application | null>(null);
   const activeRef = useRef(active);
+  const shiftXRef = useRef(shiftX);
   const [loadState, setLoadState] = useState<LoadState>('loading');
   activeRef.current = active;
+  shiftXRef.current = shiftX;
 
   useEffect(() => {
     const updatePlayback = () => {
@@ -43,9 +51,12 @@ export function HomeSpineStage({ skeletonUrl, scale = 2, offsetX = 0, offsetY = 
     let assetLoaded = false;
 
     const releaseAsset = () => {
-      if (!assets || !assetLoaded) return;
+      if (!assets) return;
       assetLoaded = false;
-      void assets.unload(skeletonUrl).catch(() => undefined);
+      const loadedAssets = assets;
+      void (async () => {
+        for (const url of relatedSpineAssetUrls(skeletonUrl)) await loadedAssets.unload(url).catch(() => undefined);
+      })();
     };
 
     async function initialize() {
@@ -57,13 +68,13 @@ export function HomeSpineStage({ skeletonUrl, scale = 2, offsetX = 0, offsetY = 
       assets = Assets;
 
       const nextApplication = new Application({
-        antialias: true,
+        antialias: false,
         autoDensity: true,
         backgroundAlpha: 0,
-        powerPreference: 'high-performance',
-        resolution: Math.min(window.devicePixelRatio || 1, 1.5)
+        powerPreference: 'low-power',
+        resolution: 1
       });
-      nextApplication.ticker.maxFPS = 45;
+      nextApplication.ticker.maxFPS = 30;
       application = nextApplication;
       applicationRef.current = nextApplication;
       const canvas = nextApplication.view as HTMLCanvasElement;
@@ -88,6 +99,17 @@ export function HomeSpineStage({ skeletonUrl, scale = 2, offsetX = 0, offsetY = 
       nextApplication.stage.addChild(model);
 
       const bounds = model.getLocalBounds();
+      let modelBaseX = 0;
+      let modelViewportWidth = 1;
+      let renderedShiftX = shiftXRef.current;
+      const updateShift = (delta: number) => {
+        const targetShiftX = shiftXRef.current;
+        const blend = 1 - Math.pow(0.76, Math.max(0.1, delta));
+        renderedShiftX += (targetShiftX - renderedShiftX) * blend;
+        if (Math.abs(targetShiftX - renderedShiftX) < 0.0001) renderedShiftX = targetShiftX;
+        model.x = modelBaseX + modelViewportWidth * renderedShiftX;
+      };
+      nextApplication.ticker.add(updateShift);
       const fitModel = () => {
         const width = Math.max(1, stageHost.clientWidth);
         const height = Math.max(1, stageHost.clientHeight);
@@ -96,8 +118,10 @@ export function HomeSpineStage({ skeletonUrl, scale = 2, offsetX = 0, offsetY = 
 
         const fittedScale = Math.min(width / bounds.width, height / bounds.height) * scale;
         model.scale.set(fittedScale);
+        modelBaseX = width * (0.5 + offsetX) - (bounds.x + bounds.width / 2) * fittedScale;
+        modelViewportWidth = width;
         model.position.set(
-          width * (0.5 + offsetX) - (bounds.x + bounds.width / 2) * fittedScale,
+          modelBaseX + width * renderedShiftX,
           height * (0.5 + offsetY) - (bounds.y + bounds.height / 2) * fittedScale
         );
       };

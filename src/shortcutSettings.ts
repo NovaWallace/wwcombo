@@ -7,6 +7,7 @@ export type ShortcutAction =
   | 'timelineStartAdd'
   | 'timelineTogglePeriod'
   | 'timelineAdaptiveSwitch'
+  | 'timelineAppendIntro'
   | 'timelineAppendOutro'
   | 'timelinePlaceBasic'
   | 'timelinePlaceHeavy'
@@ -39,6 +40,11 @@ export type ShortcutDefinition = {
   english: string;
 };
 
+const NON_PLACEMENT_CONTENT_ACTIONS = new Set<ShortcutAction>([
+  'timelineAppendIntro',
+  'timelineAppendOutro'
+]);
+
 export const DEFAULT_SHORTCUT_SETTINGS: ShortcutSettings = {
   timelineDelete: 'Delete',
   timelineSplit: 'KeyC',
@@ -46,6 +52,7 @@ export const DEFAULT_SHORTCUT_SETTINGS: ShortcutSettings = {
   timelineStartAdd: 'Shift',
   timelineTogglePeriod: 'KeyX',
   timelineAdaptiveSwitch: 'Tab',
+  timelineAppendIntro: 'KeyB',
   timelineAppendOutro: 'KeyY',
   timelinePlaceBasic: 'KeyA',
   timelinePlaceHeavy: 'KeyZ',
@@ -75,9 +82,10 @@ export const SHORTCUT_DEFINITIONS: readonly ShortcutDefinition[] = [
   { id: 'timelineSplit', group: 'timeline', chinese: '分割选择 / 分割模式', english: 'Split Selection / Split Mode' },
   { id: 'timelineMerge', group: 'timeline', chinese: '合并选中块', english: 'Merge Selected Blocks' },
   { id: 'timelineStartAdd', group: 'timeline', chinese: '进入添加模式', english: 'Enter Add Mode' },
-  { id: 'timelineTogglePeriod', group: 'timeline', chinese: '切换时段放置', english: 'Toggle Period Placement' },
+  { id: 'timelineTogglePeriod', group: 'timeline', chinese: '设置时段分界 / 切换时段放置', english: 'Set Period Boundary / Toggle Period Placement' },
   { id: 'timelineAdaptiveSwitch', group: 'timeline', chinese: '自适应切人', english: 'Adaptive Character Switch' },
-  { id: 'timelineAppendOutro', group: 'timeline', chinese: '为选中块追加延奏', english: 'Append Outro to Selected Blocks' },
+  { id: 'timelineAppendIntro', group: 'timeline', chinese: '为单个选中块追加变奏', english: 'Append Intro to Selected Block' },
+  { id: 'timelineAppendOutro', group: 'timeline', chinese: '为单个选中块追加延奏', english: 'Append Outro to Selected Block' },
   { id: 'timelinePlaceBasic', group: 'placement', chinese: '普攻', english: 'Basic Attack' },
   { id: 'timelinePlaceHeavy', group: 'placement', chinese: '重击', english: 'Heavy Attack' },
   { id: 'timelinePlaceHeavyAlternate', group: 'placement', chinese: '重击（备用）', english: 'Heavy Attack (Alternate)' },
@@ -128,6 +136,14 @@ export function shortcutMatchesCode(code: string, shiftKey: boolean, configured:
 
 export function shortcutMatches(event: KeyboardEvent, configured: string): boolean {
   return shortcutChordFromKeyboardEvent(event) === configured;
+}
+
+export function shortcutActionsCanShareChord(left: ShortcutAction, right: ShortcutAction): boolean {
+  const leftDefinition = SHORTCUT_DEFINITIONS.find((definition) => definition.id === left);
+  const rightDefinition = SHORTCUT_DEFINITIONS.find((definition) => definition.id === right);
+  if (!leftDefinition || !rightDefinition) return false;
+  return (NON_PLACEMENT_CONTENT_ACTIONS.has(left) && rightDefinition.group === 'placement')
+    || (NON_PLACEMENT_CONTENT_ACTIONS.has(right) && leftDefinition.group === 'placement');
 }
 
 export function shortcutDisplayLabel(chord: string): string {

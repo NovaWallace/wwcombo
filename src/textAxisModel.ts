@@ -1,5 +1,6 @@
 import type { CharacterSlot, ComboChart, ComboStep } from '../combo-core';
 import type { AppLanguage } from './i18n';
+import { localizedPeriodLabel } from './periodLabels';
 import { defaultTextAxisCodeForMove } from './textAxisParser';
 import type { TextAxisCharacter, TextAxisParseResult } from './textAxisParser';
 
@@ -109,11 +110,7 @@ export function serializeTextAxis(
       if (insertedPeriods.has(period.id) || period.startMs > beforeMs) return;
       if (segments.length) appendLinebreak();
       const loopAxisCount = periods.filter((item) => item.kind === 'loop_axis').length;
-      const label = period.kind === 'startup_axis'
-        ? (chinese ? '启动轴：' : 'Startup Axis:')
-        : chinese
-          ? `${period.label || (loopAxisCount === 1 ? '循环轴' : `循环轴${period.loopIndex ?? 1 }`) }：`
-          : `${loopAxisCount === 1 ? 'Loop Axis' : `Loop Axis ${period.loopIndex ?? 1 }` }:`;
+      const label = `${localizedPeriodLabel(period, language, loopAxisCount) }${chinese ? '：' : ':' }`;
       segments.push({ key: `period-${period.id }`, kind: 'marker', text: label });
       appendLinebreak();
       insertedPeriods.add(period.id);

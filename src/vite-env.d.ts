@@ -17,7 +17,7 @@ declare global {
       setOverlayBounds(bounds: { x: number; y: number; width: number; height: number }): Promise<void>;
       setOverlayPosition?(position: { x: number; y: number }): Promise<void>;
       getOverlayBounds?(): Promise<{ x: number; y: number; width: number; height: number }>;
-      getDisplaySize?(): Promise<{ width: number; height: number }>;
+      getDisplaySize?(): Promise<{ width: number; height: number; scaleFactor?: number }>;
       updateOverlay(payload: unknown): Promise<void>;
       setRhythmFeedbackVisible?(visible: boolean): Promise<void>;
       updateRhythmFeedback?(payload: unknown): Promise<void>;
@@ -49,6 +49,7 @@ declare global {
       onGlobalInput(callback: (event: DesktopInputEvent) => void): () => void;
     };
     trainerOverlay?: {
+      getState(): Promise<unknown>;
       setOverlayBounds(bounds: { x: number; y: number; width: number; height: number }): Promise<void>;
       setOverlayPosition?(position: { x: number; y: number }): Promise<void>;
       requestOverlayMoveMode(enabled: boolean): Promise<void>;
@@ -86,9 +87,10 @@ declare global {
 
 export type DesktopInputEvent = {
   source: 'desktop';
-  type: 'keydown' | 'keyup' | 'mousedown' | 'mouseup';
+  type: 'keydown' | 'keyup' | 'mousedown' | 'mouseup' | 'gamepadbuttondown' | 'gamepadbuttonup';
   code: string;
   time: number;
+  shiftKey?: boolean;
 };
 
 export {};

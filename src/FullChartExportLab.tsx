@@ -13,9 +13,10 @@ import {
   normalizeComboImageStyle,
   normalizeRectPercent
 } from './combo-image/comboImage';
-import { localizeCharacterName, localizeDefaultCharacterName, localizeEnglish, useI18n } from './i18n';
+import { localizeCharacterName, localizeDefaultCharacterName, useI18n } from './i18n';
 import type { AppLanguage } from './i18n';
 import { NumericDraftInput } from './NumericDraftInput';
+import { localizedPeriodLabel } from './periodLabels';
 import './fullChartExport.css';
 
 type ExportBlock = {
@@ -109,14 +110,7 @@ function loadImage(src: string | undefined): Promise<HTMLImageElement | null> {
 }
 
 function axisBlockLabel(period: Pick<ComboPeriod, 'kind' | 'label' | 'loopIndex'>, language: AppLanguage, loopAxisCount: number): string {
-  const source = period.label.trim();
-  if (period.kind === 'startup_axis') {
-    if (source && !/^启动轴$|^startup axis$/i.test(source)) return source;
-    return language === 'zh-CN' ? '启动轴' : localizeEnglish('Startup Axis', language);
-  }
-  if (source && !/^循环轴\s*\d*$|^loop axis\s*\d*$/i.test(source)) return source;
-  const suffix = loopAxisCount > 1 ? String(period.loopIndex ?? 1) : '';
-  return language === 'zh-CN' ? `循环轴${suffix}` : localizeEnglish(`Loop Axis${suffix ? ` ${suffix}` : ''}`, language);
+  return localizedPeriodLabel(period, language, loopAxisCount);
 }
 
 function sortedLoopPeriods(chart: ComboChart | null): Array<ComboPeriod & { kind: 'loop_axis' }> {
@@ -1037,8 +1031,8 @@ export function FullChartExportLab({ chart, library, style, basePresets, onSelec
         ) : (
           <div className="full-chart-content-editor">
             <div className="full-chart-round-selector"><strong>{text('展示轮', 'Displayed Rounds')}</strong><div>
-              {hasStartupAxis ? <label><input type="checkbox" checked disabled /><span>{text('启动轴', 'Startup Axis')}</span></label> : <span>{text('没有启动轴', 'No startup axis')}</span>}
-              {loopPeriods.length ? loopPeriods.map((period, index) => <label key={period.id}><input type="checkbox" checked={visibleLoopIds.includes(period.id)} disabled={index === 0} onChange={() => toggleVisibleLoop(period.id)} /><span>{axisBlockLabel(period, language, loopPeriods.length)}</span></label>) : <span>{text('没有循环轴', 'No loop axes')}</span>}
+              {hasStartupAxis ? <label><input type="checkbox" checked disabled /><span>{text('启动轴', 'Opener')}</span></label> : <span>{text('没有启动轴', 'No opener')}</span>}
+              {loopPeriods.length ? loopPeriods.map((period, index) => <label key={period.id}><input type="checkbox" checked={visibleLoopIds.includes(period.id)} disabled={index === 0} onChange={() => toggleVisibleLoop(period.id)} /><span>{axisBlockLabel(period, language, loopPeriods.length)}</span></label>) : <span>{text('没有循环轴', 'No loops')}</span>}
             </div></div>
             <div className="full-chart-block-editor">
             <div className="full-chart-block-strip">{blocks.map((block, index) => <button key={block.id} className={`${selectedBlock?.id === block.id ? 'active' : ''} ${block.kind === 'axis' ? 'axis' : ''}`} style={{ '--block-role-color': draftStyle.roleStyles[block.role].color } as React.CSSProperties} onClick={() => setSelectedBlockId(block.id)}><span>{block.kind === 'axis' ? text('轴', 'Axis') : index + 1}</span><strong>{block.text}</strong></button>)}</div>
