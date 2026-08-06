@@ -1,5 +1,9 @@
 # WW Combo Trainer / 鸣潮训练场
 
+![访问量](https://count.getloli.com/@NovaWallace.wwcombo?name=wwcombo&theme=booru-jaypee&padding=6&offset=0&align=top&scale=1&pixelated=1&darkmode=auto)
+
+![License](https://img.shields.io/badge/license-MIT-blue.svg) 
+
 [中文](README.md) | [English](README_EN.md) | [日本語](README_JA.md) | [한국어](README_KO.md)
 
 WW Combo Trainer 是一个用于《鸣潮》连段录制、编辑、练习和图片/视频输出的 Windows 桌面工具。它只读取输入用于记录与判定，不会替玩家向游戏发送按键。本项目是非官方粉丝项目，与库洛游戏无隶属关系。
@@ -189,3 +193,15 @@ npm run tauri:build
 ```
 
 安装包输出到 `src-tauri/target/release/bundle/`。`scripts` 是独立社区站点工具，不属于桌面本体安装包。
+
+## 许可证
+
+本项目基于 [MIT 许可证](LICENSE) 开源。Copyright © 2026 NovaWallace。
+
+本项目为非官方粉丝项目，与库洛游戏无隶属关系。《鸣潮》及相关素材的版权归其各自的权利所有者所有。
+
+## 致谢
+
+- 感谢所有使用、测试并提交反馈的玩家与贡献者，你们的 issue 和建议让项目不断变好。
+- 感谢 [Kuro Games](https://www.kurogames.com/) 开发的《鸣潮》。
+- 感谢本应用依赖的开源项目：Tauri、React、Vite、TypeScript、PixiJS / pixi-spine、lucide-react、FFmpeg 等。

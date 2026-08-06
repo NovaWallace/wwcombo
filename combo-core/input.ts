@@ -70,6 +70,18 @@ export function normalizeInputCode(code: string): string {
   return normalized;
 }
 
+export function isHoldMove(moveId: string): boolean {
+  return moveId === 'heavy_attack' || moveId.endsWith('_hold');
+}
+
+export function inputCodeForMove(moveId: string, code: string): string {
+  const normalized = normalizeInputCode(code);
+  if (!normalized || !isHoldMove(moveId)) return normalized;
+  const parts = normalized.split('+');
+  if (!parts.some((part) => part.endsWith('Hold'))) parts[parts.length - 1] = `${parts[parts.length - 1]}Hold`;
+  return parts.join('+');
+}
+
 export function resolveActivation(
   event: TrainerInputEvent,
   moves: MoveDefinition[],

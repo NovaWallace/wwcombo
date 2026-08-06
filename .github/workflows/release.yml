@@ -1,0 +1,68 @@
+name: Build and Publish Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build and publish (e.g. v0.62). Leave empty to build without uploading."
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+env:
+  RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Build Windows app
+        run: npm run tauri:build
+
+      - name: Stage portable package
+        shell: pwsh
+        run: |
+          $stage = "portable"
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item "src-tauri\target\release\wwcombo.exe" $stage
+          Copy-Item "src-tauri\resources\ffmpeg.exe" $stage
+          $zipName = "wwcombo-$env:RELEASE_TAG-Windows-x64-portable.zip"
+          Compress-Archive -Path "$stage\*" -DestinationPath $zipName -CompressionLevel Optimal
+          $hash = (Get-FileHash $zipName -Algorithm SHA256).Hash.ToLower()
+          Set-Content -Path "$zipName.sha256.txt" -Value "$hash  $zipName"
+
+      - name: Upload assets to GitHub Release
+        if: env.RELEASE_TAG != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          files: |
+            wwcombo-*.zip
+            wwcombo-*.zip.sha256.txt
+            src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/bundle/msi/*.msi

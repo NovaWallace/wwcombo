@@ -1103,6 +1103,9 @@ html[lang='ko-KR'] .role-mode-control { width: auto; min-width: 64px; }
 .settings-row.capturing { border-color: #ff4b3d; background: rgba(90,8,8,.34); }
 .settings-action-cell { min-width: 0; display: flex; align-items: center; padding-left: 8px; }
 .settings-action-cell > strong { min-width: 0; line-height: 1.25; overflow-wrap: anywhere; }
+.settings-row-hold .settings-action-cell { flex-direction: column; align-items: flex-start; gap: 2px; }
+.settings-hold-source-note { font-style: normal; color: #8fa3b1; font-size: 12px; line-height: 1.2; }
+.settings-binding-slot-readonly input { background: transparent; border-style: dashed; color: #9fb2be; cursor: default; }
 .settings-binding-slot { min-width: 0; display: grid; grid-template-columns: minmax(0,1fr) 36px; gap: 6px; align-items: center; }
 .settings-binding-slot.has-input-preview { grid-template-columns: calc(40px * var(--input-icon-width-scale, 1)) minmax(0,1fr) 36px; }
 .settings-input-icon-control { position: relative; width: calc(40px * var(--input-icon-width-scale, 1)); height: 40px; display: grid; place-items: center; }

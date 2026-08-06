@@ -27,7 +27,7 @@ import {
   normalizeDomKeyboardEvent,
   normalizeDomMouseEvent
  } from '../combo-core';
-import { normalizeInputCode  } from '../combo-core/input';
+import { inputCodeForMove, normalizeInputCode  } from '../combo-core/input';
 import { createDesktopBridge, openExternalUrl  } from './desktopBridge';
 import {
   chartToComboImageItems,
@@ -54,6 +54,7 @@ import { AxisRhythmGame  } from './AxisRhythmGame';
 import { FullChartExportLab  } from './FullChartExportLab';
 import { defaultKeyboardMouseIconSource, gamepadCodeLabel, gamepadIconSource, iconMappingCustomizationKey, inputIconCustomizationKey, keyboardMouseCodeLabel, keyboardMouseIconSource, keyboardMouseIconToneForMove, keyboardMouseIconWidthScale, withGamepadIconMappings, withKeyboardMouseIconMappings  } from './gamepadIcons';
 import type { GamepadIconSet, KeyboardIconMode  } from './gamepadIcons';
+import { GAMEPAD_COMBO_MODIFIER, readPressedGamepadCodes  } from './gamepadInput';
 import { HomeSpineStage  } from './HomeSpineStage';
 import { HOME_SPINE_OPTIONS, homeSpineOption, normalizeHomeSpineId  } from './homeSpineOptions';
 import type { HomeSpineId  } from './homeSpineOptions';
@@ -336,8 +337,14 @@ const AXIS_PLACEMENT_WINDOW = 30_000;
 const HEAVY_ATTACK_HOLD_MS = 200;
 const STANDARD_HOLD_MS = 300;
 const GAMEPAD_HOLD_MS = 500;
-const GAMEPAD_BUTTON_CODES = ['GamepadA', 'GamepadB', 'GamepadX', 'GamepadY', 'GamepadLB', 'GamepadRB', 'GamepadLT', 'GamepadRT', 'GamepadView', 'GamepadMenu', 'GamepadLeftStick', 'GamepadRightStick', 'GamepadDPadUp', 'GamepadDPadDown', 'GamepadDPadLeft', 'GamepadDPadRight'];
-const GAMEPAD_COMBO_MODIFIER = 'GamepadLB';
+const HOLD_MOVE_PAIRS: ReadonlyArray<readonly [sourceMoveId: string, holdMoveId: string]> = [
+  ['basic_attack', 'heavy_attack'],
+  ['skill', 'skill_hold'],
+  ['echo', 'echo_hold'],
+  ['liberation', 'liberation_hold'],
+  ['dodge', 'dodge_hold'],
+  ['jump', 'jump_hold']
+] as const;
 const DEFAULT_EXPORT_DIRECTORY = '';
 const FINISHER_ICON_BINDING_MOVE: MoveDefinition = {
   id: FINISHER_ICON_BINDING_MOVE_ID,
@@ -1317,8 +1324,8 @@ function loadSavedState() {
     const comboImageStyle = normalizeComboImageStyle(parsed.comboImageStyle);
     return {
       moves: normalizeMoves(parsed.moves?.length ? parsed.moves : DEFAULT_MOVES),
-      bindings: normalizeBindings(parsed.bindings?.length ? parsed.bindings : DEFAULT_BINDINGS),
-      gamepadBindings: normalizeBindings(parsed.gamepadBindings?.length ? parsed.gamepadBindings : DEFAULT_GAMEPAD_BINDINGS, DEFAULT_GAMEPAD_BINDINGS),
+      bindings: normalizeBindings(normalizeHoldBindings(parsed.bindings?.length ? parsed.bindings : DEFAULT_BINDINGS), DEFAULT_BINDINGS),
+      gamepadBindings: normalizeBindings(normalizeHoldBindings(parsed.gamepadBindings?.length ? parsed.gamepadBindings : DEFAULT_GAMEPAD_BINDINGS), DEFAULT_GAMEPAD_BINDINGS),
       inputMode: parsed.inputMode === 'gamepad' ? 'gamepad' as InputMode : 'keyboard' as InputMode,
       gamepadIconSet: parsed.gamepadIconSet === 'playstation' ? 'playstation' as GamepadIconSet : 'xbox' as GamepadIconSet,
       keyboardIconMode: 'actual' as KeyboardIconMode,
@@ -1358,18 +1365,6 @@ function bindingCodesForMove(bindings: KeyBinding[], moveId: string): string[] {
   return bindings.find((binding) => binding.moveId === moveId)?.inputs.map((input) => normalizeInputCode(input.code)) ?? [];
  }
 
-function isHoldMove(moveId: string): boolean {
-  return moveId === 'heavy_attack' || moveId.endsWith('_hold');
- }
-
-function inputCodeForMove(moveId: string, code: string): string {
-  const normalized = normalizeInputCode(code);
-  if (!normalized || !isHoldMove(moveId)) return normalized;
-  const parts = normalized.split('+');
-  if (!parts.some((part) => part.endsWith('Hold'))) parts[parts.length - 1] = `${parts[parts.length - 1] }Hold`;
-  return parts.join('+');
- }
-
 function holdBindingPairs(bindings: KeyBinding[]): Map<string, { holdCode: string; thresholdMs: number  }> {
   const pairs = new Map<string, { holdCode: string; thresholdMs: number  }>();
   const movePairs = [
@@ -1390,26 +1385,23 @@ function holdBindingPairs(bindings: KeyBinding[]): Map<string, { holdCode: strin
     });
   }
   return pairs;
- }
+}
+
+function normalizeHoldBindings(bindings: KeyBinding[]): KeyBinding[] {
+  return bindings.map((binding) => {
+    const sourceMoveId = HOLD_MOVE_PAIRS.find(([, holdMoveId]) => holdMoveId === binding.moveId)?.[0];
+    if (!sourceMoveId) return binding;
+    const source = bindings.find((item) => item.moveId === sourceMoveId);
+    const inputs = (source?.inputs ?? []).map((input) => ({
+      code: inputCodeForMove(binding.moveId, input.code),
+      label: input.label
+    }));
+    return { ...binding, inputs };
+  });
+}
 
 function isGamepadEvent(event: TrainerLikeInputEvent): boolean {
   return event.type === 'gamepadbuttondown' || event.type === 'gamepadbuttonup';
- }
-
-function gamepadButtonCode(index: number): string {
-  return GAMEPAD_BUTTON_CODES[index] ?? `GamepadButton${index }`;
- }
-
-function readPressedGamepadCodes(): Set<string> {
-  const current = new Set<string>();
-  const pads = navigator.getGamepads?.() ?? [];
-  for (const pad of pads) {
-    if (!pad) continue;
-    pad.buttons.forEach((button, index) => {
-      if (button.pressed) current.add(gamepadButtonCode(index));
-     });
-   }
-  return current;
  }
 
 function loadAppearanceMode(): AppearanceMode {
@@ -2569,6 +2561,10 @@ export default function App() {
       return [{ code, label  }];
      });
     setter((current) => current.some((binding) => binding.moveId === moveId) ? current.map((binding) => binding.moveId === moveId ? { moveId, inputs  } : binding) : [...current, { moveId, inputs  }]);
+    const holdMoveId = HOLD_MOVE_PAIRS.find(([sourceMoveId]) => sourceMoveId === moveId)?.[1];
+    if (!holdMoveId) return;
+    const holdInputs = inputs.map((input) => ({ code: inputCodeForMove(holdMoveId, input.code), label: input.label }));
+    setter((current) => current.some((binding) => binding.moveId === holdMoveId) ? current.map((binding) => binding.moveId === holdMoveId ? { moveId: holdMoveId, inputs: holdInputs  } : binding) : [...current, { moveId: holdMoveId, inputs: holdInputs  }]);
    }
 
   function updateBinding(moveId: string, value: string) {
@@ -2857,8 +2853,8 @@ export default function App() {
       const source = await file.text();
       const imported = parseInputSettingsPackage(JSON.parse(source.replace(/^\uFEFF/, '')));
       setMoves(normalizeMoves(imported.moves));
-      setBindings(normalizeBindings(imported.keyboardMouseBindings, DEFAULT_BINDINGS));
-      setGamepadBindings(normalizeBindings(imported.gamepadBindings, DEFAULT_GAMEPAD_BINDINGS));
+      setBindings(normalizeBindings(normalizeHoldBindings(imported.keyboardMouseBindings), DEFAULT_BINDINGS));
+      setGamepadBindings(normalizeBindings(normalizeHoldBindings(imported.gamepadBindings), DEFAULT_GAMEPAD_BINDINGS));
       setInputMode(imported.preferences.inputMode);
       setGamepadIconSet(imported.preferences.gamepadIconSet);
       if (imported.shortcutSettings) setShortcutSettings(imported.shortcutSettings);
@@ -6820,12 +6816,24 @@ function SettingsPanel({ view, helpTab, moves, bindings, gamepadBindings, inputM
           const rowCapturing = capture?.mode === inputMode && capture.moveId === move.id;
           const moveLabel = localizedDefaultMoveLabel(move.id, move.label, language, false);
           const displayBindingOnly = move.id === FINISHER_ICON_BINDING_MOVE_ID;
+          const holdSourceMoveId = HOLD_MOVE_PAIRS.find(([, holdMoveId]) => holdMoveId === move.id)?.[0];
+          const holdSourceMove = holdSourceMoveId ? moves.find((item) => item.id === holdSourceMoveId) : undefined;
+          const isHoldDisplayRow = Boolean(holdSourceMoveId);
           return (
-            <div className={`settings-row ${rowCapturing ? 'capturing' : '' }` } key={move.id }>
+            <div className={`settings-row ${rowCapturing ? 'capturing' : '' } ${isHoldDisplayRow ? 'settings-row-hold' : '' }` } key={move.id }>
               <div className="settings-action-cell">
                 <strong style={{ color: move.color  } }>{moveLabel}</strong>
+                {isHoldDisplayRow && holdSourceMove && <em className="settings-hold-source-note">{text(`跟随${localizedDefaultMoveLabel(holdSourceMove.id, holdSourceMove.label, language, false) }`, `Follows ${localizedDefaultMoveLabel(holdSourceMove.id, holdSourceMove.label, language, false) }`)}</em>}
               </div>
               {([0, 1] as const).map((slot) => {
+                if (isHoldDisplayRow) {
+                  const sourceKey = draftKey(inputMode, holdSourceMoveId!, slot);
+                  const sourceDraft = bindingDrafts[sourceKey] ?? '';
+                  const displayCode = inputCodeForMove(move.id, sourceDraft);
+                  return <div className="settings-binding-slot settings-binding-slot-readonly" key={slot}>
+                    <input aria-label={`${moveLabel } ${text('按键', 'Binding') } ${slot + 1 }` } value={displayCode } readOnly placeholder={text('跟随主按键', 'Follows the main binding') } />
+                  </div>;
+                 }
                 const isCapturing = capture?.mode === inputMode && capture.moveId === move.id && capture.slot === slot;
                 const key = draftKey(inputMode, move.id, slot);
                 const inputLabel = text(`${move.label } 按键 ${slot + 1 }`, `${moveLabel } Binding ${slot + 1 }`);

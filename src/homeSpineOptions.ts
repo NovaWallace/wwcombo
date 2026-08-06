@@ -47,7 +47,7 @@ export const HOME_SPINE_OPTIONS: readonly HomeSpineOption[] = [
   { id: 'changli', names: { 'zh-CN': '长离', 'en-US': 'Changli', 'ja-JP': 'チョウリ', 'ko-KR': '장리' }, skeletonUrl: '/theme/day-1205-spine/changli.skel', scale: 2, offsetY: 0 },
   { id: 'zhezhi', names: { 'zh-CN': '折枝', 'en-US': 'Zhezhi', 'ja-JP': 'ゼジ', 'ko-KR': '절지' }, skeletonUrl: '/theme/day-1105-spine/zhezhi.skel', scale: 2, offsetY: 0 },
   { id: 'xuanling', names: { 'zh-CN': '秧秧·玄翎', 'en-US': 'Yangyang: Xuanling', 'ja-JP': '秧秧・玄翎', 'ko-KR': '양양·현령' }, skeletonUrl: '/theme/day-1610-spine/xuanling.skel', scale: 2, offsetY: 0 },
-  { id: 'suisui', names: { 'zh-CN': '岁岁', 'en-US': 'Suisui', 'ja-JP': 'スイスイ', 'ko-KR': '수이수이' }, skeletonUrl: '/theme/day-1110-spine/suisui.skel', scale: 2, offsetY: 0 },
+  { id: 'suisui', names: { 'zh-CN': '穗穗', 'en-US': 'Suisui', 'ja-JP': 'スイスイ', 'ko-KR': '수이수이' }, skeletonUrl: '/theme/day-1110-spine/suisui.skel', scale: 2, offsetY: 0 },
   { id: 'qiuyuan', names: { 'zh-CN': '仇远', 'en-US': 'Qiuyuan', 'ja-JP': 'キュウエン', 'ko-KR': '구원' }, skeletonUrl: '/theme/day2-1411-spine/qiuyuan.skel', scale: 2, offsetY: 0 },
   { id: 'xiangli-yao', names: { 'zh-CN': '相里要', 'en-US': 'Xiangli Yao', 'ja-JP': 'シャンリ・ヤオ', 'ko-KR': '상리요' }, skeletonUrl: '/theme/day2-1305-spine/xiangliyao.skel', scale: 2, offsetY: 0.1 },
   { id: 'luuk-herssen', names: { 'zh-CN': '陆·赫森', 'en-US': 'Luuk Herssen', 'ja-JP': 'リューク・ヘルセン', 'ko-KR': '루크 헤르센' }, skeletonUrl: '/theme/day2-1510-spine/luhesi.skel', scale: 2, offsetY: 0 },

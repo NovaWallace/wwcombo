@@ -1,5 +1,9 @@
 # WW Combo Trainer / 鳴潮トレーナー
 
+![訪問者数](https://count.getloli.com/@NovaWallace.wwcombo?name=wwcombo&theme=booru-jaypee&padding=6&offset=0&align=top&scale=1&pixelated=1&darkmode=auto)
+
+![License](https://img.shields.io/badge/license-MIT-blue.svg) 
+
 [中文](README.md) | [English](README_EN.md) | [日本語](README_JA.md) | [한국어](README_KO.md)
 
 WW Combo Trainer は、『鳴潮』のコンボを記録・編集・練習し、画像や動画として出力する Windows デスクトップツールです。入力は記録と判定のために読み取るだけで、ゲームへ自動入力を送信しません。本プロジェクトは非公式のファンプロジェクトであり、KURO GAMES とは関係ありません。
@@ -188,3 +192,15 @@ npm run tauri:build
 ```
 
 インストーラーは `src-tauri/target/release/bundle/` に生成されます。`scripts` は独立したコミュニティサイト用ツールであり、デスクトップ本体には含まれません。
+
+## ライセンス
+
+本プロジェクトは [MIT ライセンス](LICENSE) で公開されています。Copyright © 2026 NovaWallace。
+
+本プロジェクトは非公式のファンプロジェクトであり、KURO GAMES とは関係ありません。『鳴潮』および関連素材の権利は各権利者に帰属します。
+
+## 謝辞
+
+- テストや提案をしてくださったすべてのプレイヤーとコントリビューターに感謝します。
+- 『鳴潮』を開発した [Kuro Games](https://www.kurogames.com/) に感謝します。
+- 本アプリが依存するオープンソースプロジェクト（Tauri、React、Vite、TypeScript、PixiJS / pixi-spine、lucide-react、FFmpeg など）に感謝します。

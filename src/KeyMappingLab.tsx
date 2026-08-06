@@ -2,8 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 import { Image as ImageIcon, Keyboard, Layers, Move, Plus, RotateCcw, Save, Settings, Trash2, Upload, X } from 'lucide-react';
 import type { KeyBinding } from '../combo-core/types';
-import { mouseButtonToCode, normalizeInputCode } from '../combo-core/input';
+import { inputCodeForMove, mouseButtonToCode, normalizeInputCode } from '../combo-core/input';
 import { createDesktopBridge } from './desktopBridge';
+import { GAMEPAD_COMBO_MODIFIER, readPressedGamepadCodes } from './gamepadInput';
 import { useI18n } from './i18n';
 import { NumericDraftInput } from './NumericDraftInput';
 import {
@@ -352,17 +353,55 @@ export function KeyMappingLab({ inputSignal, inputMode, bindings, onBindingChang
         .find((binding) => binding.id === captureBindingId);
       if (capturedBinding?.moveId && onBindingChange) {
         const currentCodes = bindings.find((binding) => binding.moveId === capturedBinding.moveId)?.inputs.map((input) => normalizeInputCode(input.code)) ?? [];
-        const codes = [normalized, ...currentCodes.slice(1)].filter((item, index, items) => item && items.indexOf(item) === index).slice(0, 2);
-        updateBinding(captureBindingId, { code: codes[0] ?? normalized, codes });
+        const commitCode = inputCodeForMove(capturedBinding.moveId, normalized);
+        const codes = [commitCode, ...currentCodes.slice(1)].filter((item, index, items) => item && items.indexOf(item) === index).slice(0, 2);
+        updateBinding(captureBindingId, { code: codes[0] ?? commitCode, codes });
         onBindingChange(capturedBinding.moveId, codes.join(', '));
       } else {
         updateBinding(captureBindingId, { code: normalized, codes: [normalized], name: keyMappingCodeLabel(normalized, text) });
       }
       setCaptureBindingId(null);
     };
+    const cancelCapture = (event: KeyboardEvent) => {
+      if (event.code !== 'Backspace' && event.code !== 'Escape') return;
+      event.preventDefault();
+      setCaptureBindingId(null);
+    };
+    if (inputMode === 'gamepad') {
+      let frame = 0;
+      let previous = readPressedGamepadCodes();
+      let modifierPressedAt: number | null = null;
+      const tick = () => {
+        const current = readPressedGamepadCodes();
+        const newlyPressed = [...current].filter((code) => !previous.has(code));
+        const modifierJustPressed = newlyPressed.includes(GAMEPAD_COMBO_MODIFIER);
+        const primary = newlyPressed.find((code) => code !== GAMEPAD_COMBO_MODIFIER)
+          ?? (modifierJustPressed ? [...current].find((code) => code !== GAMEPAD_COMBO_MODIFIER) : undefined);
+        if (primary) {
+          const captured = current.has(GAMEPAD_COMBO_MODIFIER) ? `${GAMEPAD_COMBO_MODIFIER}+${primary}` : primary;
+          commit(captured);
+          return;
+        }
+        if (modifierJustPressed) modifierPressedAt = performance.now();
+        if (!current.has(GAMEPAD_COMBO_MODIFIER)) modifierPressedAt = null;
+        if (modifierPressedAt !== null && current.size === 1 && performance.now() - modifierPressedAt >= 280) {
+          commit(GAMEPAD_COMBO_MODIFIER);
+          return;
+        }
+        previous = current;
+        frame = requestAnimationFrame(tick);
+      };
+      frame = requestAnimationFrame(tick);
+      window.addEventListener('keydown', cancelCapture, true);
+      return () => {
+        cancelAnimationFrame(frame);
+        window.removeEventListener('keydown', cancelCapture, true);
+      };
+    }
     const onKeyDown = (event: KeyboardEvent) => {
       event.preventDefault();
       event.stopPropagation();
+      if (event.code === 'Backspace' || event.code === 'Escape') return;
       commit(event.code);
     };
     const onMouseDown = (event: MouseEvent) => {
@@ -377,12 +416,14 @@ export function KeyMappingLab({ inputSignal, inputMode, bindings, onBindingChang
     window.addEventListener('keydown', onKeyDown, true);
     window.addEventListener('mousedown', onMouseDown, true);
     window.addEventListener('contextmenu', onContextMenu, true);
+    window.addEventListener('keydown', cancelCapture, true);
     return () => {
       window.removeEventListener('keydown', onKeyDown, true);
       window.removeEventListener('mousedown', onMouseDown, true);
       window.removeEventListener('contextmenu', onContextMenu, true);
+      window.removeEventListener('keydown', cancelCapture, true);
     };
-  }, [bindings, captureBindingId, onBindingChange, text]);
+  }, [bindings, captureBindingId, inputMode, onBindingChange, text]);
 
   useEffect(() => {
     if (visible) return;
@@ -609,7 +650,7 @@ export function KeyMappingLab({ inputSignal, inputMode, bindings, onBindingChang
     <div className="keymap-lab">
       <section className="panel keymap-main-panel">
         <div className="panel-title experiment-subtitle">
-          <div><h2>{text('按键映射', 'Key Mapping') }</h2><p>{text(`跟随总设置键位。当前为${inputMode === 'gamepad' ? '手柄' : '键鼠'}模式，有动作关联的图片会直接响应总设置绑定。`, `Uses the main bindings. Current mode: ${inputMode === 'gamepad' ? 'Gamepad' : 'Keyboard & Mouse'}. Action-linked images respond to those bindings.`) }</p></div>
+          <div><h2>{text('按键映射', 'Key Mapping') }</h2><p>{text(`跟随总设置键位。当前为${inputMode === 'gamepad' ? '手柄' : '键鼠'}模式，有动作关联的图片会直接响应总设置绑定${inputMode === 'gamepad' ? '，点击下方键位按钮可直接用手柄修改' : ''}。`, `Uses the main bindings. Current mode: ${inputMode === 'gamepad' ? 'Gamepad' : 'Keyboard & Mouse'}. Action-linked images respond to those bindings${inputMode === 'gamepad' ? ', and you can update them directly with your gamepad' : ''}.`) }</p></div>
           <div className="keymap-toolbar">
             <button onClick={toggleVisible}>{text('悬浮', 'Always on Top') }</button>
             <button className={moveMode ? 'active' : ''} onClick={toggleMoveMode}><Move size={16} />{text('移动', 'Move') }</button>
@@ -682,7 +723,7 @@ export function KeyMappingLab({ inputSignal, inputMode, bindings, onBindingChang
             </div>}
 
             {selectedLayer?.kind === 'keys' && <div className="keymap-binding-panel">
-              <div className="keymap-binding-head"><strong>{inputMode === 'gamepad' ? text('手柄映射', 'Gamepad Mapping') : text('键鼠映射', 'Keyboard & Mouse Mapping')}</strong><button onClick={addBinding} disabled={inputMode === 'gamepad'} title={inputMode === 'gamepad' ? text('手柄映射跟随总设置，无需重复新增', 'Gamepad mappings follow the main settings and do not need to be added again') : undefined}><Plus size={16} />{text('新增按键', 'Add Key') }</button></div>
+              <div className="keymap-binding-head"><strong>{inputMode === 'gamepad' ? text('手柄映射', 'Gamepad Mapping') : text('键鼠映射', 'Keyboard & Mouse Mapping')}</strong><button onClick={addBinding} disabled={inputMode === 'gamepad'} title={inputMode === 'gamepad' ? text('手柄模式只显示总设置里的动作键位；新增按键请切换到键鼠模式', 'Gamepad mode only shows action bindings from the main settings. Switch to Keyboard & Mouse mode to add new keys.') : undefined}><Plus size={16} />{text('新增按键', 'Add Key') }</button></div>
               <div className="keymap-binding-list">
                 {(displaySelectedLayer?.kind === 'keys' ? displaySelectedLayer.bindings : []).map((displayBinding) => {
                   const binding = selectedLayer.bindings.find((item) => item.id === displayBinding.id) ?? displayBinding;
@@ -693,13 +734,12 @@ export function KeyMappingLab({ inputSignal, inputMode, bindings, onBindingChang
                     <button
                       className={captureBindingId === binding.id ? 'active' : ''}
                       data-keymap-capture-button="true"
-                      disabled={inputMode === 'gamepad'}
-                      title={inputMode === 'gamepad' ? text('手柄键位请在设置中修改', 'Change controller bindings in Settings') : undefined}
+                      title={inputMode === 'gamepad' ? text('按下手柄按钮，直接修改总设置里的手柄键位', 'Press a gamepad button to update the main gamepad bindings') : undefined}
                       onClick={(event) => {
                         event.stopPropagation();
                         setCaptureBindingId(captureBindingId === binding.id ? null : binding.id);
                       }}
-                    >{captureBindingId === binding.id ? text('按下键位', 'Press a Key') : keyMappingBindingLabel(displayBindingById.get(binding.id) ?? displayBinding, text)}</button>
+                    >{captureBindingId === binding.id ? text(inputMode === 'gamepad' ? '按下手柄键位' : '按下键位', inputMode === 'gamepad' ? 'Press a Gamepad Button' : 'Press a Key') : keyMappingBindingLabel(displayBindingById.get(binding.id) ?? displayBinding, text)}</button>
                     <label className="keymap-file-mini"><Upload size={15} /><input type="file" accept="image/*" onChange={(event) => void pickImageForBinding(binding.id, event.target.files?.[0] ?? null)} /></label>
                     <button className="icon-button danger" onClick={(event) => { event.stopPropagation(); deleteBinding(binding.id); }}><Trash2 size={15} /></button>
                   </div>

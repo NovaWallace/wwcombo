@@ -1,5 +1,9 @@
 # WW Combo Trainer
 
+![Visitors](https://count.getloli.com/@NovaWallace.wwcombo?name=wwcombo&theme=booru-jaypee&padding=6&offset=0&align=top&scale=1&pixelated=1&darkmode=auto)
+
+![License](https://img.shields.io/badge/license-MIT-blue.svg) 
+
 [中文](README.md) | [English](README_EN.md) | [日本語](README_JA.md) | [한국어](README_KO.md)
 
 WW Combo Trainer is a Windows desktop tool for recording, editing, practicing, and exporting Wuthering Waves combos. It only reads input for recording and judgement; it never sends gameplay input for you. This is an unofficial fan project and is not affiliated with Kuro Games.
@@ -188,3 +192,15 @@ npm run tauri:build
 ```
 
 Installers are written to `src-tauri/target/release/bundle/`. `scripts` contains separate community-site tooling and is not part of the desktop application package.
+
+## License
+
+This project is open sourced under the [MIT License](LICENSE). Copyright © 2026 NovaWallace.
+
+This is an unofficial fan project and is not affiliated with Kuro Games. Wuthering Waves and related assets belong to their respective owners.
+
+## Credits
+
+- Thanks to every player and contributor who tested the app, filed issues, and shared suggestions.
+- Thanks to [Kuro Games](https://www.kurogames.com/) for Wuthering Waves.
+- Thanks to the open-source projects this app builds upon: Tauri, React, Vite, TypeScript, PixiJS / pixi-spine, lucide-react, FFmpeg, and more.
