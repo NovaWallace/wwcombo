@@ -6,9 +6,9 @@
   "description": "Desktop combo trainer for Wuthering Waves.",
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 5173",
-    "tauri:dev": "cargo tauri dev",
+    "tauri:dev": "tauri dev",
     "build": "tsc -b && vite build",
-    "tauri:build": "cargo tauri build",
+    "tauri:build": "tauri build",
     "preview": "vite preview --host 127.0.0.1 --port 4173",
     "typecheck": "tsc --noEmit",
     "community:init": "node scripts/community/community-combos.mjs init",
@@ -33,6 +33,7 @@
     "vite": "latest"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.11.4",
     "@types/node": "latest",
     "@types/react": "latest",
     "@types/react-dom": "latest",
