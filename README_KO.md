@@ -1,6 +1,6 @@
 # WW Combo Trainer / 명조 트레이너
 
-![License](https://img.shields.io/badge/license-MIT-blue.svg) ![방문자 수](https://visitor-badge.laobi.icu/badge?page_id=NovaWallace.wwcombo)
+![License](https://img.shields.io/badge/license-MIT-blue.svg) ![방문자 수](https://count.getloli.com/@NovaWallace.wwcombo?name=wwcombo&theme=booru-jaypee&padding=6&offset=0&align=top&scale=1&pixelated=1&darkmode=auto)
 
 [中文](README.md) | [English](README_EN.md) | [日本語](README_JA.md) | [한국어](README_KO.md)
 
