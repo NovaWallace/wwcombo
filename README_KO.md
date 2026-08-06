@@ -1,5 +1,7 @@
 # WW Combo Trainer / 명조 트레이너
 
+![License](https://img.shields.io/badge/license-MIT-blue.svg) ![방문자 수](https://visitor-badge.laobi.icu/badge?page_id=NovaWallace.wwcombo)
+
 [中文](README.md) | [English](README_EN.md) | [日本語](README_JA.md) | [한국어](README_KO.md)
 
 WW Combo Trainer는 명조 콤보를 기록, 편집, 연습하고 이미지나 영상으로 내보내는 Windows 데스크톱 도구입니다. 입력은 기록과 판정을 위해 읽기만 하며 게임에 자동 입력을 보내지 않습니다. 이 프로젝트는 비공식 팬 프로젝트이며 KURO GAMES와 관련이 없습니다.
@@ -188,3 +190,15 @@ npm run tauri:build
 ```
 
 설치 파일은 `src-tauri/target/release/bundle/`에 생성됩니다. `scripts`는 별도의 커뮤니티 사이트 도구이며 데스크톱 앱 패키지에 포함되지 않습니다.
+
+## 라이선스
+
+이 프로젝트는 [MIT 라이선스](LICENSE)로 공개됩니다. Copyright © 2026 NovaWallace.
+
+이 프로젝트는 비공식 팬 프로젝트이며 KURO GAMES와 관련이 없습니다. 《명조》 및 관련 자산의 권리는 각 권리자에게 있습니다.
+
+## 감사
+
+- 앱을 테스트하고 이슈를 올려주신 모든 플레이어와 기여자분들께 감사드립니다.
+- 《명조》를 개발한 [Kuro Games](https://www.kurogames.com/)에 감사드립니다.
+- 이 앱이 사용하는 오픈소스 프로젝트(Tauri, React, Vite, TypeScript, PixiJS / pixi-spine, lucide-react, FFmpeg 등)에 감사드립니다.
