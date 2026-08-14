@@ -7,6 +7,26 @@ export type GamepadIconSet = 'xbox' | 'playstation';
 export type KeyboardIconMode = 'default' | 'actual';
 export type KeyboardMouseIconTone = 'default' | 'accent';
 
+const GAMEPAD_INPUT_ALIASES: Record<string, string> = {
+  A: 'GamepadA', B: 'GamepadB', X: 'GamepadX', Y: 'GamepadY',
+  LB: 'GamepadLB', RB: 'GamepadRB', LT: 'GamepadLT', RT: 'GamepadRT',
+  L1: 'GamepadLB', R1: 'GamepadRB', L2: 'GamepadLT', R2: 'GamepadRT',
+  CROSS: 'GamepadA', CIRCLE: 'GamepadB', SQUARE: 'GamepadX', TRIANGLE: 'GamepadY',
+  MENU: 'GamepadMenu', OPTIONS: 'GamepadMenu', VIEW: 'GamepadView', CREATE: 'GamepadView'
+};
+
+export function normalizeGamepadBindingInput(value: string): string {
+  const parts = String(value || '').split('+').map((part) => part.trim()).filter(Boolean);
+  if (!parts.length) return '';
+  return parts.map((part) => {
+    const hold = /(?:\s*hold|长按)$/iu.test(part);
+    const core = part.replace(/(?:\s*hold|长按)$/iu, '').trim();
+    const mapped = GAMEPAD_INPUT_ALIASES[core.toUpperCase()] ?? normalizeInputCode(core);
+    const normalized = mapped.startsWith('Gamepad') ? mapped : `Gamepad${core.toUpperCase()}`;
+    return hold && !normalized.endsWith('Hold') ? `${normalized}Hold` : normalized;
+  }).join('+');
+}
+
 const ICON_MAPPING_MOVE_IDS: Record<string, string> = {
   'mouse-left': 'basic_attack',
   'mouse-left-hold': 'heavy_attack',
@@ -24,7 +44,8 @@ const ICON_MAPPING_MOVE_IDS: Record<string, string> = {
   finisher: FINISHER_ICON_BINDING_MOVE_ID,
   i: 'switch_1',
   ii: 'switch_2',
-  iii: 'switch_3'
+  iii: 'switch_3',
+  iv: 'switch_4'
 };
 
 const MOVE_ICON_MAPPING_IDS = Object.fromEntries(
@@ -47,7 +68,8 @@ const ORIGINAL_KEYBOARD_MOUSE_ICON_CODES: Record<string, string[]> = {
   'jump-hold': ['SpaceHold'],
   i: ['Digit1'],
   ii: ['Digit2'],
-  iii: ['Digit3']
+  iii: ['Digit3'],
+  iv: ['Digit4']
 };
 
 const DEFAULT_KEYBOARD_MOUSE_MOVE_ICONS: Record<string, string> = {
@@ -96,6 +118,7 @@ export function usesOriginalKeyboardMouseIcon(moveId: string, code: string): boo
 
 export function defaultKeyboardMouseIconSource(moveId: string, code: string): string | undefined {
   if (!usesOriginalKeyboardMouseIcon(moveId, code)) return undefined;
+  if (moveId === 'switch_4') return keyboardMouseIconSource(code, 'accent') ?? '/combo-assets/button-icons/iii.png';
   return DEFAULT_KEYBOARD_MOUSE_MOVE_ICONS[moveId];
 }
 
@@ -448,7 +471,7 @@ function adaptKeyboardMouseMappings(mappings: ComboImageStyle['iconMappings'], b
 
 export function withGamepadIconMappings(style: ComboImageStyle, bindings: KeyBinding[], iconSet: GamepadIconSet, customSources: Record<string, string> = {}): ComboImageStyle {
   const roleStyles = { ...style.roleStyles };
-  ([1, 2, 3] as const).forEach((slot) => {
+  ([1, 2, 3, 4] as const).forEach((slot) => {
     const role = style.roleStyles[slot];
     roleStyles[slot] = role.iconMappings?.length ? { ...role, iconMappings: adaptMappings(role.iconMappings, bindings, iconSet, customSources) } : role;
   });
@@ -457,7 +480,7 @@ export function withGamepadIconMappings(style: ComboImageStyle, bindings: KeyBin
 
 export function withKeyboardMouseIconMappings(style: ComboImageStyle, bindings: KeyBinding[], customSources: Record<string, string> = {}): ComboImageStyle {
   const roleStyles = { ...style.roleStyles };
-  ([1, 2, 3] as const).forEach((slot) => {
+  ([1, 2, 3, 4] as const).forEach((slot) => {
     const role = style.roleStyles[slot];
     roleStyles[slot] = role.iconMappings?.length ? { ...role, iconMappings: adaptKeyboardMouseMappings(role.iconMappings, bindings, customSources) } : role;
   });

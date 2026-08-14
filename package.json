@@ -1,14 +1,16 @@
 {
   "name": "wuthering-combo-trainer",
-  "version": "0.62.0",
+  "version": "0.63.0",
   "private": true,
   "license": "MIT",
   "description": "Desktop combo trainer for Wuthering Waves.",
   "scripts": {
-    "dev": "vite --host 127.0.0.1 --port 5173",
+    "dev": "node tools/dev-server.mjs",
     "tauri:dev": "cargo tauri dev",
     "build": "tsc -b && vite build",
     "tauri:build": "cargo tauri build",
+    "package:dlc": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/package-dlc.ps1",
+    "package:portable": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/package-portable.ps1",
     "preview": "vite preview --host 127.0.0.1 --port 4173",
     "typecheck": "tsc --noEmit",
     "community:init": "node scripts/community/community-combos.mjs init",

@@ -150,6 +150,7 @@ export class ComboRecorder {
         id: `${chartId}_${unit.id}`,
         moveId: unit.moveId,
         label: unit.label,
+        customLabel: move?.customLabel === true,
         characterSlot: unit.characterSlot ?? 1,
         lane: unit.lane,
         independent: unit.independent,
@@ -287,7 +288,7 @@ export class ComboRecorder {
     if (isHoldMoveId(unit.moveId)) return false;
     const previous = this.units[this.units.length - 1];
     if (!previous || previous.moveId !== unit.moveId || previous.characterSlot !== unit.characterSlot) return false;
-    if (unit.startTime - previous.endTime > TAP_SPLIT_MS) return false;
+    if (unit.startTime - previous.endTime > this.options.mergeGapMs) return false;
     previous.endTime = Math.max(previous.endTime, unit.endTime);
     previous.duration = Math.max(MIN_UNIT_MS, previous.endTime - previous.startTime);
     unit.sourceCodes.forEach((code) => addSourceCode(previous, code));
@@ -341,6 +342,7 @@ export class ComboRecorder {
       id: `unit_${++this.sequence}`,
       moveId: move.id,
       label: move.label,
+      customLabel: move.customLabel === true,
       characterSlot: this.currentCharacterSlot,
       lane,
       independent: move.independent,
@@ -371,5 +373,6 @@ function characterSlotForMove(moveId: string): CharacterSlot | null {
   if (moveId === 'switch_1') return 1;
   if (moveId === 'switch_2') return 2;
   if (moveId === 'switch_3') return 3;
+  if (moveId === 'switch_4') return 4;
   return null;
 }

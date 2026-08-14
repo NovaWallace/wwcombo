@@ -24,7 +24,8 @@ export const ENGLISH_MOVE_LABELS: Record<string, string> = {
   empty_action: 'Empty Action',
   switch_1: 'Switch 1',
   switch_2: 'Switch 2',
-  switch_3: 'Switch 3'
+  switch_3: 'Switch 3',
+  switch_4: 'Switch 4'
 };
 
 const JAPANESE_MOVE_LABELS: Record<string, string> = {
@@ -47,7 +48,8 @@ const JAPANESE_MOVE_LABELS: Record<string, string> = {
   empty_action: '空アクション',
   switch_1: 'キャラクター切替 1',
   switch_2: 'キャラクター切替 2',
-  switch_3: 'キャラクター切替 3'
+  switch_3: 'キャラクター切替 3',
+  switch_4: 'キャラクター切替 4'
 };
 
 const KOREAN_MOVE_LABELS: Record<string, string> = {
@@ -70,7 +72,8 @@ const KOREAN_MOVE_LABELS: Record<string, string> = {
   empty_action: '빈 동작',
   switch_1: '캐릭터 전환 1',
   switch_2: '캐릭터 전환 2',
-  switch_3: '캐릭터 전환 3'
+  switch_3: '캐릭터 전환 3',
+  switch_4: '캐릭터 전환 4'
 };
 
 const MOVE_LABELS: Partial<Record<MoveLabelLanguage, Record<string, string>>> = {
@@ -80,6 +83,7 @@ const MOVE_LABELS: Partial<Record<MoveLabelLanguage, Record<string, string>>> = 
 };
 
 const CONTENT_PROMPT_LABELS: Record<string, Record<MoveLabelLanguage, string>> = {
+  iiii: { 'zh-CN': 'Switch 4', 'en-US': 'Switch Character 4', 'ja-JP': 'Switch 4', 'ko-KR': 'Switch 4' },
   a: { 'zh-CN': '普攻', 'en-US': 'Basic Attack', 'ja-JP': '通常攻撃', 'ko-KR': '일반 공격' },
   z: { 'zh-CN': '重击', 'en-US': 'Heavy Attack', 'ja-JP': '重撃', 'ko-KR': '강공격' },
   Z: { 'zh-CN': '重击', 'en-US': 'Heavy Attack', 'ja-JP': '重撃', 'ko-KR': '강공격' },
@@ -106,13 +110,14 @@ const CONTENT_PROMPT_LABELS: Record<string, Record<MoveLabelLanguage, string>> =
 
 export function localizedDefaultMoveLabel(moveId: string, fallback: string, language: MoveLabelLanguage, compactSwitch = true): string {
   if (language === 'zh-CN') return fallback;
-  if (compactSwitch && /^switch_[123]$/.test(moveId)) return fallback;
+  if (compactSwitch && /^switch_[1234]$/.test(moveId)) return fallback;
   const label = MOVE_LABELS[language]?.[moveId] ?? fallback;
   if (language === 'ja-JP') return annotateJapaneseTerminology(label);
   return language === 'ko-KR' ? annotateKoreanTerminology(label) : label;
 }
 
-export function localizedMovePrompt(moveId: string, fallback: string, contentText: string | undefined, language: MoveLabelLanguage): string {
+export function localizedMovePrompt(moveId: string, fallback: string, contentText: string | undefined, language: MoveLabelLanguage, preferFallback = false): string {
+  if (preferFallback && fallback.trim()) return fallback;
   const content = String(contentText ?? '').trim();
   const suffixKey = (['b', 'y', 'f', 'w'] as const).find((key) => content.endsWith(key));
   const prompt = CONTENT_PROMPT_LABELS[content] ?? (suffixKey ? CONTENT_PROMPT_LABELS[suffixKey] : undefined);

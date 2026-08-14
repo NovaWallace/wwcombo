@@ -46,6 +46,7 @@ type Props = {
   onRequestGlobalInput?: () => void | Promise<void>;
   visible?: boolean;
   onVisibleChange?: (visible: boolean) => void;
+  settingsRequestToken?: number;
 };
 
 type EditTarget = 'layer' | 'binding';
@@ -211,7 +212,7 @@ function configFromLiveBounds(bounds: { x: number; y: number; width: number; hei
   });
 }
 
-export function KeyMappingLab({ inputSignal, inputMode, bindings, onBindingChange, onRequestGlobalInput, visible: controlledVisible, onVisibleChange }: Props) {
+export function KeyMappingLab({ inputSignal, inputMode, bindings, onBindingChange, onRequestGlobalInput, visible: controlledVisible, onVisibleChange, settingsRequestToken = 0 }: Props) {
   const { text } = useI18n();
   const desktop = useMemo(createDesktopBridge, []);
   const [config, setConfig] = useState<KeyMappingConfig>(loadConfig);
@@ -254,6 +255,7 @@ export function KeyMappingLab({ inputSignal, inputMode, bindings, onBindingChang
       '跳跃': text('跳跃', 'Jump'),
       '普攻': text('普攻', 'Basic Attack'),
       '闪避': text('闪避', 'Dodge'),
+      '处决': text('处决', 'Tunebreak'),
       '交互': text('交互', 'Interact')
     };
     return direct[name] ?? name;
@@ -291,6 +293,10 @@ export function KeyMappingLab({ inputSignal, inputMode, bindings, onBindingChang
   useEffect(() => {
     setCaptureBindingId(null);
   }, [inputMode]);
+
+  useEffect(() => {
+    if (settingsRequestToken > 0) setSettingsOpen(true);
+  }, [settingsRequestToken]);
 
   useEffect(() => {
     if (displaySelectedLayer?.kind !== 'keys' || !displaySelectedLayer.bindings.length) return;

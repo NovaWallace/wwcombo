@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 import { ArrowDown, ArrowLeft, Eye, EyeOff, GripVertical, Image as ImageIcon, Layers, Mic2, Music2, Play, Plus, RotateCcw, Settings, Square, Trash2, Upload, UserRound } from 'lucide-react';
+import { ALL_CHARACTER_SLOTS, DEFAULT_CHARACTER_SLOTS } from '../combo-core';
 import type { CharacterSlot, ComboChart, ComboIconMapping, ComboImageStyle, ComboStep, KeyBinding, MoveDefinition, TrainerInputEvent } from '../combo-core';
 import { normalizeInputCode, resolveActivation } from '../combo-core/input';
 import { comboTextParts, defaultComboContentLabelForMoveId, effectiveIconMappings, maybeConvertTextToIconLabel, normalizeComboIconMappings } from './combo-image/comboImage';
@@ -38,6 +39,7 @@ type Props = {
   chart: ComboChart | null;
   library: ComboChart[];
   style: ComboImageStyle;
+  customIconSources?: Record<string, string>;
   moves: MoveDefinition[];
   bindings: KeyBinding[];
   inputSignal: AxisRhythmInputSignal | null;
@@ -60,7 +62,8 @@ const DEFAULT_LAYER_TRANSFORM: AxisLayerTransform = { x: 0, y: 0, width: 100, he
 const DEFAULT_LANES: Record<CharacterSlot, AxisLaneGeometry> = {
   1: { startX: 42, startY: 10, endX: 20, endY: 91 },
   2: { startX: 50, startY: 10, endX: 50, endY: 91 },
-  3: { startX: 58, startY: 10, endX: 80, endY: 91 }
+  3: { startX: 58, startY: 10, endX: 80, endY: 91 },
+  4: { startX: 66, startY: 10, endX: 92, endY: 91 }
 };
 const DEFAULT_JUDGE_ZONE: AxisJudgeZone = { x: 5, y: 79, width: 90, height: 14 };
 const DEFAULT_AVATAR_LAYOUT: AxisAvatarLayout = { x: 4, y: 84, width: 92, height: 16, gap: 2 };
@@ -163,7 +166,8 @@ function normalizeAxisLayout(value: unknown): AxisRhythmLayout {
   const lanes = {
     1: normalizeLaneGeometry(laneRecord?.[1], DEFAULT_LANES[1]),
     2: normalizeLaneGeometry(laneRecord?.[2], DEFAULT_LANES[2]),
-    3: normalizeLaneGeometry(laneRecord?.[3], DEFAULT_LANES[3])
+    3: normalizeLaneGeometry(laneRecord?.[3], DEFAULT_LANES[3]),
+    4: normalizeLaneGeometry(laneRecord?.[4], DEFAULT_LANES[4])
   } as Record<CharacterSlot, AxisLaneGeometry>;
   return { layers, layerOrder, lanes, judgeZone: normalizeJudgeZone(record?.judgeZone), avatars: normalizeAvatarLayout(record?.avatars), selectedLayerId };
 }
@@ -317,6 +321,7 @@ function switchSlotForMoveId(moveId: string): CharacterSlot | null {
   if (moveId === 'switch_1') return 1;
   if (moveId === 'switch_2') return 2;
   if (moveId === 'switch_3') return 3;
+  if (moveId === 'switch_4') return 4;
   return null;
 }
 
@@ -391,8 +396,11 @@ function feedbackPositionStyle(item: AxisRhythmFeedback, feedback: AxisRhythmFee
 }
 
 function AxisInlineContent({ step, style, mappings }: { step: ComboStep; style: ComboImageStyle; mappings: ComboIconMapping[] }) {
+  const customText = style.contentLabels[step.id]?.trim();
   const switchText = defaultComboContentLabelForMoveId(step.moveId);
-  const contentText = switchSlotForMoveId(step.moveId) !== null ? switchText ?? displayMoveLabel(step) : style.contentLabels[step.id]?.trim() || displayMoveLabel(step);
+  // A switch with Intro/Outro is stored as ib/iib/... in the content label.
+  // Keep that label; falling back to i/ii/iii is only valid when it is absent.
+  const contentText = customText || (switchSlotForMoveId(step.moveId) !== null ? switchText : undefined) || displayMoveLabel(step);
   const convertIcons = switchSlotForMoveId(step.moveId) !== null || style.convertIcons;
   const iconText = maybeConvertTextToIconLabel(contentText, convertIcons);
   const parts = comboTextParts(iconText, convertIcons, mappings).filter((part) => part.kind === 'icon');
@@ -447,14 +455,29 @@ function useAudioMeter(): [AudioMeterState, () => Promise<void>] {
   return [meter, start];
 }
 
-export function AxisRhythmGame({ chart, library, style, moves, bindings, inputSignal, iconStorageKey, onSelectChart, onExit }: Props) {
+export function AxisRhythmGame({ chart, library, style, customIconSources = {}, moves, bindings, inputSignal, iconStorageKey, onSelectChart, onExit }: Props) {
   const { language, text } = useI18n();
+  const CHARACTER_SLOTS = chart?.characterCount === 4 ? ALL_CHARACTER_SLOTS : DEFAULT_CHARACTER_SLOTS;
   const [view, setView] = useState<'menu' | 'challenge' | 'settings'>('menu');
   const [iconMappings, setIconMappings] = useState<ComboIconMapping[]>(() => loadAxisMappings(iconStorageKey, style));
   const renderedIconMappings = useMemo(() => {
-    const replacements = new Map(style.iconMappings.filter((mapping) => mapping.src.startsWith('data:image/svg+xml')).map((mapping) => [mapping.id, mapping.src]));
-    return replacements.size ? iconMappings.map((mapping) => replacements.has(mapping.id) ? { ...mapping, src: replacements.get(mapping.id)! } : mapping) : iconMappings;
-  }, [iconMappings, style.iconMappings]);
+    // Keep the rhythm-axis snapshot's labels and triggers, while applying
+    // user-uploaded icon sources from the current global settings.
+    const customSources = new Map(
+      style.iconMappings
+        .filter((mapping) => /^data:image\//i.test(mapping.src))
+        .map((mapping) => [mapping.id, mapping.src])
+    );
+    const explicitSources = new Map(
+      Object.entries(customIconSources)
+        .filter(([key, source]) => key.startsWith('mapping:') && /^data:image\//i.test(source))
+        .map(([key, source]) => [key.slice('mapping:'.length), source])
+    );
+    return iconMappings.map((mapping) => {
+      const source = explicitSources.get(mapping.id) ?? customSources.get(mapping.id);
+      return source ? { ...mapping, src: source } : mapping;
+    });
+  }, [customIconSources, iconMappings, style.iconMappings]);
   const [layout, setLayout] = useState<AxisRhythmLayout>(loadAxisLayout);
   const [status, setStatus] = useState<AxisRhythmStatus>('idle');
   const [countdownStartedAt, setCountdownStartedAt] = useState<number | null>(null);
@@ -834,8 +857,8 @@ export function AxisRhythmGame({ chart, library, style, moves, bindings, inputSi
 
   if (view === 'menu') return <div className="axis-game-menu">
     <section className="axis-game-menu-actions">
-      <button className="axis-game-menu-back" onClick={onExit}><ArrowLeft size={18} />{text('返回实验室', 'Back to Labs') }</button>
-      <div className="axis-game-menu-brand"><img src="/theme/experiment-axis.png" alt="" /><div><span>{text('实验玩法', 'Experimental Mode') }</span><h2>{text('节奏合轴', 'Rhythm Axis') }</h2><p>{text('在当前窗口内完成按键挑战。', 'Complete the input challenge in this window.') }</p></div></div>
+      <button className="axis-game-menu-back" onClick={onExit}><ArrowLeft size={18} />{text('返回练习', 'Back to Practice') }</button>
+      <div className="axis-game-menu-brand"><img src="/theme/experiment-axis.png" alt="" /><div><span>{text('练习玩法', 'Practice Mode') }</span><h2>{text('节奏合轴', 'Rhythm Axis') }</h2><p>{text('在当前窗口内完成按键挑战。', 'Complete the input challenge in this window.') }</p></div></div>
       <div className="axis-game-menu-buttons">
         <button className="primary" disabled={!chart} onClick={() => { setView('challenge'); startGame(); }}><Play size={22} />{text('开启挑战', 'Start Challenge') }</button>
         <button onClick={() => changeView('settings')}><Settings size={22} />{text('设置', 'Settings') }</button>

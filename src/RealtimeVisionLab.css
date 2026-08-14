@@ -1,0 +1,745 @@
+.realtime-vision-lab {
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.realtime-vision-lab[hidden] {
+  display: none;
+}
+
+.realtime-vision-heading {
+  min-height: 58px;
+  margin: 0;
+  padding: 0 2px;
+}
+
+.realtime-vision-heading h2 {
+  margin: 0 0 5px;
+  font-size: 22px;
+  font-weight: 950;
+  letter-spacing: 0;
+}
+
+.realtime-vision-heading p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.realtime-vision-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.realtime-vision-status-strip {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  padding: 0 16px;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--red);
+  background: rgba(7, 9, 10, .76);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.realtime-vision-status-strip strong {
+  margin-left: 5px;
+  color: var(--text);
+  font-size: 14px;
+}
+
+.realtime-vision-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text);
+  font-weight: 900;
+}
+
+.realtime-vision-state i {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #6f7472;
+  box-shadow: 0 0 0 1px #050607;
+}
+
+.realtime-vision-state.running i {
+  background: #25d277;
+  animation: realtime-vision-pulse 1.25s ease-in-out infinite;
+}
+
+.realtime-vision-state.selecting i {
+  background: #ffd447;
+}
+
+.realtime-vision-state.error i,
+.realtime-vision-error {
+  color: #ff756b;
+}
+
+.realtime-vision-state.error i {
+  background: #ef3025;
+}
+
+.realtime-vision-error {
+  min-width: 0;
+  margin-left: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 850;
+}
+
+.realtime-vision-combo-clock {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-left: 4px solid #ffd344;
+  background: rgba(7, 9, 10, .76);
+}
+
+.realtime-vision-combo-summary {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 14px;
+}
+
+.realtime-vision-combo-summary > span {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.realtime-vision-combo-summary > strong {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.realtime-vision-combo-summary > strong.running {
+  color: #36df86;
+}
+
+.realtime-vision-combo-summary > strong.armed {
+  color: #ffd344;
+}
+
+.realtime-vision-combo-summary > strong.failed {
+  color: #ff756b;
+}
+
+.realtime-vision-combo-summary time {
+  color: var(--text);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 900;
+}
+
+.realtime-vision-combo-progress {
+  position: relative;
+  height: 4px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, .13);
+}
+
+.realtime-vision-combo-progress > i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: #ffd344;
+  transition: width 80ms linear;
+}
+
+.realtime-vision-combo-details {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.realtime-vision-combo-details > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.realtime-vision-combo-details > span strong {
+  margin-left: 5px;
+  color: var(--text);
+}
+
+.realtime-vision-combo-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-left: auto;
+}
+
+.realtime-vision-combo-actions button {
+  min-height: 31px;
+  padding: 0 10px;
+  font-size: 11px;
+}
+
+.realtime-vision-layout {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(390px, 430px);
+  gap: 14px;
+  align-items: start;
+}
+
+.realtime-vision-stage-column {
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.realtime-vision-region-tabs {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  padding-bottom: 2px;
+}
+
+.realtime-vision-region-tabs button {
+  min-height: 33px;
+  flex: 0 0 auto;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.realtime-vision-stage {
+  position: relative;
+  width: 100%;
+  min-height: 300px;
+  max-height: calc(100vh - 245px);
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, .24);
+  background: #020304;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .55);
+  touch-action: none;
+  user-select: none;
+}
+
+.realtime-vision-stage video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: fill;
+  pointer-events: none;
+}
+
+.realtime-vision-stage-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 12px;
+  color: rgba(255, 255, 255, .38);
+  background: repeating-linear-gradient(0deg, rgba(255, 255, 255, .025) 0 1px, transparent 1px 9px), #050708;
+}
+
+.realtime-vision-stage-empty strong {
+  font-size: 14px;
+  letter-spacing: 0;
+}
+
+.realtime-vision-analysis-canvas {
+  display: none;
+}
+
+.realtime-vision-region {
+  position: absolute;
+  z-index: 3;
+  min-width: 9px;
+  min-height: 9px;
+  border: 2px solid rgba(255, 211, 68, .9);
+  background: rgba(255, 211, 68, .05);
+  cursor: move;
+  touch-action: none;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .78), inset 0 0 0 1px rgba(0, 0, 0, .45);
+}
+
+.realtime-vision-region.buff {
+  border-color: rgba(58, 206, 226, .92);
+  background: rgba(58, 206, 226, .05);
+}
+
+.realtime-vision-region.active {
+  border-color: #39e68b;
+  background: rgba(57, 230, 139, .13);
+}
+
+.realtime-vision-region.selected {
+  border-width: 3px;
+  filter: brightness(1.18);
+}
+
+.realtime-vision-region > span {
+  position: absolute;
+  left: -2px;
+  bottom: calc(100% + 4px);
+  max-width: 150px;
+  padding: 2px 6px;
+  overflow: hidden;
+  color: #080a0a;
+  background: #ffd344;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  font-weight: 950;
+  line-height: 16px;
+  pointer-events: none;
+}
+
+.realtime-vision-region.buff > span {
+  background: #4fd8e9;
+}
+
+.realtime-vision-region.active > span {
+  background: #39e68b;
+}
+
+.realtime-vision-region > i {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border: 1px solid #050607;
+  background: currentColor;
+  color: inherit;
+  cursor: nwse-resize;
+}
+
+.realtime-vision-region > i.nw { left: -6px; top: -6px; }
+.realtime-vision-region > i.ne { right: -6px; top: -6px; cursor: nesw-resize; }
+.realtime-vision-region > i.sw { left: -6px; bottom: -6px; cursor: nesw-resize; }
+.realtime-vision-region > i.se { right: -6px; bottom: -6px; }
+
+.realtime-vision-monitor-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 7px;
+}
+
+.realtime-vision-monitor {
+  min-width: 0;
+  min-height: 42px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  align-items: center;
+  gap: 2px 8px;
+  padding: 7px 10px;
+  border-left: 3px solid rgba(255, 255, 255, .2);
+  background: rgba(8, 10, 11, .78);
+  color: var(--muted);
+}
+
+.realtime-vision-monitor span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.realtime-vision-monitor strong {
+  font-size: 11px;
+}
+
+.realtime-vision-monitor-timing {
+  grid-column: 2;
+  grid-row: 1 / 3;
+  min-width: 0;
+  display: grid;
+  justify-items: end;
+  gap: 1px;
+}
+
+.realtime-vision-monitor-timing em {
+  color: var(--text);
+  font-size: 14px;
+  font-style: normal;
+  font-weight: 950;
+  white-space: nowrap;
+}
+
+.realtime-vision-monitor-timing small {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.realtime-vision-monitor.present {
+  border-left-color: #2add7d;
+}
+
+.realtime-vision-monitor.warning {
+  border-left-color: #ef3025;
+  background: rgba(110, 8, 5, .58);
+}
+
+.realtime-vision-monitor.empty {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  font-size: 12px;
+}
+
+.realtime-vision-controls {
+  min-width: 0;
+  max-height: calc(100vh - 146px);
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  background: rgba(8, 10, 11, .78);
+  scrollbar-width: thin;
+}
+
+.realtime-vision-control-section {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.realtime-vision-control-section.selected {
+  box-shadow: inset 3px 0 0 var(--red);
+}
+
+.realtime-vision-section-heading {
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.realtime-vision-section-heading > div {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.realtime-vision-section-heading strong {
+  font-size: 14px;
+  font-weight: 950;
+}
+
+.realtime-vision-section-heading .icon-button {
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  min-height: 30px;
+}
+
+.realtime-vision-field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.realtime-vision-field-grid.three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.realtime-vision-schedule-grid {
+  grid-template-columns: minmax(0, 1.6fr) minmax(120px, .7fr);
+}
+
+.realtime-vision-field-grid label,
+.realtime-vision-name-field {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 850;
+}
+
+.realtime-vision-field-grid input,
+.realtime-vision-field-grid select,
+.realtime-vision-name-field input,
+.realtime-vision-field-grid output {
+  width: 100%;
+  min-width: 0;
+  height: 34px;
+  padding: 6px 8px;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.realtime-vision-field-grid output {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--line);
+  background: rgba(4, 6, 7, .82);
+  font-weight: 900;
+}
+
+.realtime-vision-toggle-row,
+.realtime-vision-toggle-row label {
+  display: flex;
+  align-items: center;
+}
+
+.realtime-vision-toggle-row {
+  gap: 16px;
+}
+
+.realtime-vision-toggle-row label {
+  gap: 6px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.realtime-vision-switch {
+  position: relative;
+  width: 34px;
+  height: 18px;
+  display: inline-block;
+  flex: 0 0 auto;
+}
+
+.realtime-vision-switch input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.realtime-vision-switch span {
+  position: absolute;
+  inset: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: rgba(80, 82, 82, .75);
+  cursor: pointer;
+}
+
+.realtime-vision-switch span::after {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform .15s ease;
+}
+
+.realtime-vision-switch input:checked + span {
+  border-color: var(--red);
+  background: var(--red);
+}
+
+.realtime-vision-switch input:checked + span::after {
+  transform: translateX(16px);
+}
+
+.realtime-vision-buff-section {
+  padding-bottom: 0;
+}
+
+.realtime-vision-buff-list {
+  display: grid;
+  gap: 8px;
+  margin: 0 -14px;
+}
+
+.realtime-vision-buff-row {
+  display: grid;
+  gap: 9px;
+  padding: 11px 14px 12px;
+  border-left: 3px solid transparent;
+  border-top: 1px solid var(--line);
+  background: rgba(255, 255, 255, .025);
+  cursor: default;
+}
+
+.realtime-vision-buff-row.selected {
+  border-left-color: var(--red);
+  background: rgba(255, 255, 255, .055);
+}
+
+.realtime-vision-buff-main {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) 34px 32px;
+  align-items: end;
+  gap: 8px;
+}
+
+.realtime-vision-template-preview {
+  width: 42px;
+  min-width: 42px;
+  height: 42px;
+  min-height: 42px;
+  padding: 0;
+  overflow: hidden;
+  background: #050708;
+}
+
+.realtime-vision-template-preview img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.realtime-vision-buff-main .icon-button {
+  width: 32px;
+  min-width: 32px;
+  height: 34px;
+  min-height: 34px;
+}
+
+.realtime-vision-template-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.realtime-vision-template-actions button,
+.realtime-vision-template-actions .button-like {
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: rgba(38, 40, 40, .9);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.realtime-vision-template-actions .button-like input {
+  display: none;
+}
+
+.realtime-vision-template-actions > span {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 850;
+}
+
+.realtime-vision-template-actions > span.ready {
+  color: #42de8c;
+}
+
+.realtime-vision-template-actions > strong {
+  min-width: 32px;
+  text-align: right;
+  font-size: 11px;
+}
+
+.realtime-vision-selection-summary,
+.realtime-vision-warning-log {
+  margin: 12px 14px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, .045);
+}
+
+.realtime-vision-selection-summary {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+}
+
+.realtime-vision-selection-summary span,
+.realtime-vision-selection-summary em {
+  color: var(--muted);
+  font-style: normal;
+}
+
+.realtime-vision-selection-summary strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.realtime-vision-warning-log {
+  display: grid;
+  gap: 7px;
+}
+
+.realtime-vision-warning-log > strong {
+  margin-bottom: 2px;
+  font-size: 12px;
+}
+
+.realtime-vision-warning-log > span {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  color: #ff756b;
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.realtime-vision-warning-log time {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.theme-day .realtime-vision-status-strip,
+.theme-day .realtime-vision-combo-clock,
+.theme-day .realtime-vision-controls,
+.theme-day .realtime-vision-monitor,
+.theme-coast .realtime-vision-status-strip,
+.theme-coast .realtime-vision-combo-clock,
+.theme-coast .realtime-vision-controls,
+.theme-coast .realtime-vision-monitor {
+  background: rgba(255, 255, 255, .9);
+}
+
+.theme-day .realtime-vision-field-grid output,
+.theme-coast .realtime-vision-field-grid output {
+  background: rgba(239, 247, 243, .9);
+}
+
+.theme-day .realtime-vision-buff-row.selected,
+.theme-coast .realtime-vision-buff-row.selected {
+  background: rgba(16, 166, 103, .08);
+}
+
+@keyframes realtime-vision-pulse {
+  50% { opacity: .42; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .realtime-vision-state.running i { animation: none; }
+}

@@ -155,6 +155,14 @@ export const DEFAULT_MOVES: MoveDefinition[] = [
     independent: false,
     priority: 65,
     advancesStep: true
+  },
+  {
+    id: 'switch_4',
+    label: '4',
+    color: '#8064a2',
+    independent: false,
+    priority: 65,
+    advancesStep: true
   }
 ];
 
@@ -177,6 +185,7 @@ export const DEFAULT_BINDINGS: KeyBinding[] = [
   { moveId: 'switch_1', inputs: [{ code: 'Digit1', label: '1' }] },
   { moveId: 'switch_2', inputs: [{ code: 'Digit2', label: '2' }] },
   { moveId: 'switch_3', inputs: [{ code: 'Digit3', label: '3' }] },
+  { moveId: 'switch_4', inputs: [{ code: 'Digit4', label: '4' }] },
   { moveId: FINISHER_ICON_BINDING_MOVE_ID, inputs: [{ code: 'KeyF', label: 'F' }] }
 ];
 
@@ -190,14 +199,15 @@ export const DEFAULT_GAMEPAD_BINDINGS: KeyBinding[] = [
   { moveId: 'echo', inputs: [{ code: 'GamepadLT', label: 'LT' }] },
   { moveId: 'echo_hold', inputs: [{ code: 'GamepadLTHold', label: 'LT长按' }] },
   { moveId: 'tool', inputs: [{ code: 'GamepadLB+GamepadX', label: 'LB+X' }] },
-  { moveId: 'liberation', inputs: [{ code: 'GamepadRB', label: 'RB' }] },
-  { moveId: 'liberation_hold', inputs: [{ code: 'GamepadRBHold', label: 'RB长按' }] },
-  { moveId: 'dodge', inputs: [{ code: 'GamepadRT', label: 'RT' }] },
-  { moveId: 'dodge_hold', inputs: [{ code: 'GamepadRTHold', label: 'RT长按' }] },
+  { moveId: 'dodge', inputs: [{ code: 'GamepadRB', label: 'RB' }] },
+  { moveId: 'dodge_hold', inputs: [{ code: 'GamepadRBHold', label: 'RB长按' }] },
+  { moveId: 'liberation', inputs: [{ code: 'GamepadRT', label: 'RT' }] },
+  { moveId: 'liberation_hold', inputs: [{ code: 'GamepadRTHold', label: 'RT长按' }] },
   { moveId: 'jump', inputs: [{ code: 'GamepadA', label: 'A' }] },
   { moveId: 'jump_hold', inputs: [{ code: 'GamepadAHold', label: 'A长按' }] },
   { moveId: 'switch_1', inputs: [{ code: 'GamepadDPadUp', label: '十字上' }] },
   { moveId: 'switch_2', inputs: [{ code: 'GamepadDPadRight', label: '十字右' }] },
   { moveId: 'switch_3', inputs: [{ code: 'GamepadDPadDown', label: '十字下' }] },
+  { moveId: 'switch_4', inputs: [{ code: 'GamepadDPadLeft', label: 'D-pad Left' }] },
   { moveId: FINISHER_ICON_BINDING_MOVE_ID, inputs: [{ code: 'GamepadB', label: 'B' }] }
 ];

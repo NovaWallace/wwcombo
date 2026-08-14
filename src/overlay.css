@@ -1,16 +1,18 @@
 :root { color-scheme: dark; font-family: "Microsoft YaHei", Inter, system-ui, sans-serif; background: transparent; color: #eef3f7; }
 * { box-sizing: border-box; }
-html, body, #overlay-root { margin: 0; width: 100%; height: 100%; background: rgba(0,0,0,.003); overflow: hidden; }
+html, body, #overlay-root { margin: 0; width: 100%; height: 100%; background: transparent !important; overflow: hidden; }
 .overlay-shell { width: 100%; height: 100%; padding: 10px 12px; background: transparent; border: 0; border-radius: 0; box-shadow: none; backdrop-filter: none; position: relative; opacity: 1 !important; }
 .overlay-shell.next-indicator-above { padding-top: 28px; }
 .overlay-shell.next-indicator-below { padding-bottom: 28px; }
 .overlay-shell.next-indicator-left { padding-left: 34px; }
 .overlay-shell.next-indicator-right { padding-right: 34px; }
 .overlay-shell.horizontal.next-indicator-above, .overlay-shell.horizontal.next-indicator-below { padding-top: 44px; padding-bottom: 44px; }
+.overlay-shell.stair.next-indicator-above, .overlay-shell.stair.next-indicator-below { padding-top: 44px; padding-bottom: 44px; }
 .overlay-shell.vertical { display: block; padding-left: 58px; padding-right: 42px; }
 .overlay-shell.vertical.next-indicator-left { padding-left: 58px; padding-right: 48px; }
 .overlay-shell.vertical.next-indicator-right { padding-left: 72px; padding-right: 42px; }
 .overlay-drag-surface { width: 100%; height: 100%; position: relative; overflow: visible; }
+.combo-overall-scale-frame { position: relative; transform-origin: left top; overflow: visible; }
 .overlay-background { position: absolute; inset: 0; z-index: -1; background-position: center; background-repeat: no-repeat; opacity: .92; }
 .overlay-period-label { position: absolute; z-index: 9; padding: 0; border: 0; background: transparent; color: #fff; font-size: 14px; line-height: 1.1; font-weight: 950; white-space: nowrap; text-shadow: 0 2px 6px rgba(0,0,0,.92), 0 0 2px rgba(0,0,0,.9); pointer-events: none; }
 .overlay-period-label.inline.horizontal { left: 50%; transform: translateX(-50%); text-align: center; }
@@ -26,6 +28,8 @@ html, body, #overlay-root { margin: 0; width: 100%; height: 100%; background: rg
 .overlay-action-prompt.vertical { position: absolute; top: 50%; transform: translateY(-50%); }
 .overlay-action-prompt.vertical.right { left: calc(100% + 26px); text-align: left; }
 .overlay-action-prompt.vertical.left { right: calc(100% + 26px); text-align: right; }
+.overlay-action-prompt-ruby { ruby-align: center; ruby-position: over; line-height: 1; }
+.overlay-action-prompt-ruby rt { margin-bottom: .18em; color: #fff; font-size: .68em; font-weight: 950; line-height: 1; text-shadow: 0 2px 6px rgba(0,0,0,.92), 0 0 2px rgba(0,0,0,.9); white-space: nowrap; }
 .combo-row { display: flex; gap: 10px; align-items: center; min-height: 100%; overflow: visible; }
 .combo-row { will-change: transform; transition: transform .18s ease; }
 .overlay-shell.vertical .combo-row { flex-direction: column; align-items: flex-start; min-height: 100%; height: 100%; }
@@ -53,11 +57,11 @@ html, body, #overlay-root { margin: 0; width: 100%; height: 100%; background: rg
 .combo-chip.image-block.with-avatar { padding-left: 0; }
 .combo-chip.image-block strong { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; z-index: 3; padding: 0 14px; line-height: 1.05; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .combo-chip.image-block strong.combo-chip-content { overflow: visible; }
-.combo-chip.image-block.with-avatar strong { left: 44px; padding-left: 4px; padding-right: 14px; justify-content: flex-start; }
+.combo-chip.image-block.with-avatar strong { left: var(--combo-avatar-content-inset, 44px); padding-left: 4px; padding-right: 14px; justify-content: flex-start; }
 .combo-chip-content { position: relative; z-index: 4; display: inline-flex; align-items: center; justify-content: center; gap: .18em; max-width: 100%; min-width: 0; }
 .combo-chip-content:has(.combo-merged-part) { max-width: none; }
 .combo-merged-part { display: inline-flex; align-items: center; gap: .18em; min-width: 0; }
-.combo-inline-icon-mark { display: inline-grid; place-items: center; width: calc(1.62em * var(--icon-scale, 1) * var(--icon-width-scale, 1)); height: calc(1.62em * var(--icon-scale, 1)); border-radius: .18em; flex: 0 0 auto; background: transparent; }
+.combo-inline-icon-mark { display: inline-grid; place-items: center; width: calc(1.62em * var(--icon-scale, 1) * var(--icon-width-scale, 1)); min-width: calc(1.62em * var(--icon-scale, 1) * var(--icon-width-scale, 1)); height: calc(1.62em * var(--icon-scale, 1)); border-radius: .18em; flex: 0 0 calc(1.62em * var(--icon-scale, 1) * var(--icon-width-scale, 1)); background: transparent; }
 .combo-inline-icon-mark.active { position: relative; overflow: visible; z-index: 8; background: rgba(255,224,55,.98); box-shadow: 0 0 0 2px rgba(0,0,0,.92), 0 0 0 3px rgba(255,255,255,.28), 0 0 10px rgba(255,215,0,.45); }
 .combo-merged-part.active { position: relative; overflow: visible; }
 .combo-merged-part.active::before, .combo-merged-part.active::after { content: ''; position: absolute; pointer-events: none; z-index: 9; }
@@ -72,7 +76,7 @@ html, body, #overlay-root { margin: 0; width: 100%; height: 100%; background: rg
 .combo-inline-icon { width: calc(1.45em * var(--icon-scale, 1) * var(--icon-width-scale, 1)); height: calc(1.45em * var(--icon-scale, 1)); object-fit: contain; flex: 0 0 auto; vertical-align: -.26em; pointer-events: none; }
 .combo-chip-content > span:not(.combo-merged-part):not(.combo-inline-icon-mark), .combo-merged-part > span:not(.combo-inline-icon-mark) { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .combo-chip .combo-chip-content span:not(.combo-inline-icon-mark) { width: auto; height: auto; border-radius: 0; display: inline; place-items: initial; background: transparent; font-size: inherit; flex: 0 1 auto; }
-.combo-chip .combo-chip-content .combo-inline-icon-mark { display: inline-grid; width: calc(1.62em * var(--icon-scale, 1)); height: calc(1.62em * var(--icon-scale, 1)); border-radius: .18em; place-items: center; flex: 0 0 auto; }
+.combo-chip .combo-chip-content .combo-inline-icon-mark { display: inline-grid; width: calc(1.62em * var(--icon-scale, 1) * var(--icon-width-scale, 1)); height: calc(1.62em * var(--icon-scale, 1)); border-radius: .18em; place-items: center; flex: 0 0 auto; }
 .combo-chip.image-block > span:not(.avatar-slot) { position: absolute; left: 18px; top: 50%; transform: translateY(-50%); z-index: 4; }
 .combo-chip.image-block .avatar-slot { z-index: 5; }
 .combo-chip.image-block.active, .combo-chip.image-block.next, .combo-chip.image-block.error { outline: 0; border-color: transparent; }
@@ -84,6 +88,38 @@ html, body, #overlay-root { margin: 0; width: 100%; height: 100%; background: rg
 .overlay-shell.next-indicator-below .combo-chip.next::before { left: var(--next-indicator-x, 50%); bottom: calc(var(--active-frame-bottom, -3px) - 15px); transform: translateX(-50%); border-left: 9px solid transparent; border-right: 9px solid transparent; border-bottom: 14px solid rgba(255,255,255,.96); }
 .overlay-shell.next-indicator-left .combo-chip.next::before { left: calc(var(--active-frame-left, -3px) - 17px); top: calc((100% + var(--active-frame-top, -3px) - var(--active-frame-bottom, -3px)) / 2); transform: translateY(-50%); border-top: 9px solid transparent; border-bottom: 9px solid transparent; border-left: 14px solid rgba(255,255,255,.96); }
 .overlay-shell.next-indicator-right .combo-chip.next::before { right: calc(var(--active-frame-right, -3px) - 17px); top: calc((100% + var(--active-frame-top, -3px) - var(--active-frame-bottom, -3px)) / 2); transform: translateY(-50%); border-top: 9px solid transparent; border-bottom: 9px solid transparent; border-right: 14px solid rgba(255,255,255,.96); }
+.combo-note-marker { position: absolute; z-index: 11; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 32px; color: #ffe037; font-size: 12px; font-weight: 950; line-height: 1; pointer-events: none; filter: drop-shadow(0 0 4px rgba(0,0,0,.9)); }
+.combo-note-marker::before { content: ''; position: absolute; width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent; }
+.combo-note-marker-number { position: absolute; z-index: 1; min-width: 12px; text-align: center; color: #ffe037; text-shadow: 0 1px 2px #050505; }
+.combo-note-marker { width: 32px; height: 38px; color: #fff; background: #ff3030; border: 3px solid #050505; border-radius: 4px; box-shadow: 0 0 0 1px rgba(255,48,48,.9), 0 0 9px rgba(255,48,48,.75); }
+.combo-note-marker::before { border-left-width: 8px; border-right-width: 8px; border-top-color: #ff3030; border-bottom-color: #ff3030; filter: drop-shadow(0 3px 0 #050505); }
+.combo-note-marker-number { color: #fff; text-shadow: 0 1px 2px #050505; }
+.overlay-shell.next-indicator-above .combo-note-marker, .overlay-shell.vertical .combo-note-marker { left: 50%; bottom: calc(100% + 2px); transform: translateX(-50%); }
+.overlay-shell.next-indicator-above .combo-note-marker::before, .overlay-shell.vertical .combo-note-marker::before { top: 0; border-top: 9px solid #ffe037; }
+.overlay-shell.next-indicator-above .combo-note-marker-number, .overlay-shell.vertical .combo-note-marker-number { bottom: 3px; }
+.overlay-shell.next-indicator-below:not(.vertical) .combo-note-marker { left: 50%; top: calc(100% + 2px); transform: translateX(-50%); }
+.overlay-shell.next-indicator-below:not(.vertical) .combo-note-marker::before { bottom: 0; border-bottom: 9px solid #ffe037; }
+.overlay-shell.next-indicator-below:not(.vertical) .combo-note-marker-number { top: 3px; }
+.overlay-shell.next-indicator-left:not(.vertical) .combo-note-marker { right: calc(100% + 2px); top: 50%; transform: translateY(-50%); }
+.overlay-shell.next-indicator-left:not(.vertical) .combo-note-marker::before { right: 0; border-top: 6px solid transparent; border-bottom: 6px solid transparent; border-right: 9px solid #ffe037; }
+.overlay-shell.next-indicator-left:not(.vertical) .combo-note-marker-number { left: 2px; }
+.overlay-shell.next-indicator-right:not(.vertical) .combo-note-marker { left: calc(100% + 2px); top: 50%; transform: translateY(-50%); }
+.overlay-shell.next-indicator-right:not(.vertical) .combo-note-marker::before { left: 0; border-top: 6px solid transparent; border-bottom: 6px solid transparent; border-left: 9px solid #ffe037; }
+.overlay-shell.next-indicator-right:not(.vertical) .combo-note-marker-number { right: 2px; }
+.combo-merged-part .combo-note-marker, .combo-merged-move .combo-note-marker { position: absolute; }
+.combo-merged-part, .combo-merged-move { overflow: visible; }
+.overlay-note-panel { position: absolute; z-index: 20; display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-start; gap: 4px; overflow: hidden; padding: 4px 8px; color: #fff; font-size: 18px; font-weight: 900; line-height: 1.25; text-align: left; text-shadow: 0 2px 5px rgba(0,0,0,.95), 0 0 2px rgba(0,0,0,.9); pointer-events: none; }
+.overlay-note-panel.note-move-mode, .note-move-mode .overlay-note-panel { pointer-events: auto; outline: 2px dashed rgba(255,224,55,.88); outline-offset: -2px; background: rgba(0,0,0,.12); cursor: move; }
+.overlay-note-row { width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; pointer-events: none; }
+.overlay-note-resize-handle { position: absolute; z-index: 22; width: 14px; height: 14px; border: 2px solid #ffe037; background: #050505; pointer-events: auto; }
+.overlay-note-resize-handle.n { left: 50%; top: -7px; transform: translateX(-50%); cursor: ns-resize; }
+.overlay-note-resize-handle.s { left: 50%; bottom: -7px; transform: translateX(-50%); cursor: ns-resize; }
+.overlay-note-resize-handle.e { right: -7px; top: 50%; transform: translateY(-50%); cursor: ew-resize; }
+.overlay-note-resize-handle.w { left: -7px; top: 50%; transform: translateY(-50%); cursor: ew-resize; }
+.overlay-note-resize-handle.ne { right: -7px; top: -7px; cursor: nesw-resize; }
+.overlay-note-resize-handle.nw { left: -7px; top: -7px; cursor: nwse-resize; }
+.overlay-note-resize-handle.se { right: -7px; bottom: -7px; cursor: nwse-resize; }
+.overlay-note-resize-handle.sw { left: -7px; bottom: -7px; cursor: nesw-resize; }
 .avatar-slot { position: absolute; left: -14px; top: 50%; transform: translateY(-50%); width: 46px; height: 46px; flex: 0 0 46px; overflow: hidden; border-radius: 50%; border: 2px solid rgba(255,255,255,.72); background-color: rgba(0,0,0,.45); background-position: center; background-repeat: no-repeat; z-index: 2; }
 .combo-chip strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 900; }
 .combo-chip.active { outline: 2px solid #fff; border-color: #ff4b3d; }
@@ -268,3 +304,9 @@ html, body, #overlay-root { margin: 0; width: 100%; height: 100%; background: rg
 .combo-chip .combo-chip-content span.combo-merged-move.error .combo-merged-move-marker.active {
   background: #ffe037;
 }
+.combo-merged-move.has-special-note .combo-inline-icon-mark,
+.combo-merged-move.has-special-note .combo-merged-move-fallback { background: #ff3030; box-shadow: 0 0 0 2px #050505, 0 0 10px rgba(255,48,48,.78); }
+.combo-merged-move.has-special-note.note-started .combo-inline-icon-mark,
+.combo-merged-move.has-special-note.note-started .combo-merged-move-fallback { background: #ffe037; box-shadow: 0 0 0 2px #050505, 0 0 10px rgba(255,224,55,.72); }
+.combo-merged-move-marker.special-note { width: .62em !important; height: .62em !important; border-radius: .08em !important; transform: rotate(45deg); background: #ff3030 !important; box-shadow: 0 0 0 2px #050505, 0 0 8px rgba(255,48,48,.9) !important; }
+.combo-merged-move-marker.special-note.active { background: #ff3030 !important; }

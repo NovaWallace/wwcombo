@@ -9,6 +9,8 @@ release-test-*/
 .DS_Store
 *.log
 *.local
+*.py[cod]
+__pycache__/
 .env
 .env.*
 /community/
@@ -31,9 +33,20 @@ hifi/
 public/hifi/
 docs/
 release-packages/
+/live2d-optional/
 verification-screenshots/
 Bongo Cat Mver鸣潮/
 wwcombo-v0.1.zip
+
+# Local development instances, previews, and auxiliary worktrees
+/src-tauri/.codex-dev-*.json
+/*-runtime*/
+/*-deployment/
+/community-comments-preview*/
+/community-publish-base-*/
+/icon-previews/
+/icon-set-preview.html
+/wwcombo-repository-worktree/
 
 # Separate community tooling and local migration helpers
 /scripts/

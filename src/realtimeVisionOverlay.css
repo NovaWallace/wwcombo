@@ -1,0 +1,147 @@
+html,
+body,
+#realtime-vision-root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+  font-family: Inter, "Microsoft YaHei", system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+.realtime-vision-overlay {
+  width: 100%;
+  min-height: 100%;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, .25);
+  border-left: 4px solid #ffd344;
+  background: rgba(5, 7, 8, .88);
+  color: #f5f7f4;
+  pointer-events: none;
+  user-select: none;
+}
+
+.realtime-vision-overlay.has-warning {
+  border-color: rgba(255, 83, 70, .9);
+  border-left-color: #ff3024;
+  background: rgba(91, 7, 4, .95);
+  animation: realtime-vision-warning-pulse .72s ease-in-out infinite alternate;
+}
+
+.realtime-vision-overlay header {
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, .14);
+}
+
+.realtime-vision-overlay header span,
+.realtime-vision-overlay-buffs span {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 900;
+}
+
+.realtime-vision-overlay header span {
+  color: #ffd344;
+  font-size: 12px;
+}
+
+.realtime-vision-overlay header strong {
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+.realtime-vision-overlay header strong.stale {
+  color: #a7aaa7;
+}
+
+.realtime-vision-overlay-buffs {
+  display: grid;
+  gap: 5px;
+  padding-top: 8px;
+}
+
+.realtime-vision-overlay-buffs > div {
+  min-height: 43px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 0 8px;
+  border-left: 2px solid #29d87c;
+  background: rgba(255, 255, 255, .055);
+}
+
+.realtime-vision-overlay-buffs > div.warning {
+  border-left-color: #f1362b;
+  background: rgba(255, 63, 45, .28);
+  outline: 1px solid rgba(255, 111, 91, .72);
+}
+
+.realtime-vision-overlay-buffs span {
+  font-size: 13px;
+}
+
+.realtime-vision-overlay-buffs span i {
+  width: 8px;
+  height: 8px;
+  border: 1px solid rgba(0, 0, 0, .72);
+  transform: rotate(45deg);
+  background: #39e68b;
+  flex: 0 0 auto;
+}
+
+.realtime-vision-overlay-buffs strong {
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+.realtime-vision-overlay-buffs .realtime-vision-overlay-deadline {
+  display: grid;
+  justify-items: end;
+  gap: 1px;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.realtime-vision-overlay-deadline strong {
+  color: #fff;
+  font-size: 15px;
+  white-space: nowrap;
+}
+
+.realtime-vision-overlay-deadline small {
+  color: rgba(255, 255, 255, .68);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.realtime-vision-overlay-buffs p {
+  margin: 8px 0 0;
+  color: rgba(255, 255, 255, .52);
+  text-align: center;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+@keyframes realtime-vision-warning-pulse {
+  from { filter: brightness(.88); }
+  to { filter: brightness(1.2); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .realtime-vision-overlay.has-warning { animation: none; }
+}

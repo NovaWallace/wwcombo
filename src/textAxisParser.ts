@@ -117,7 +117,7 @@ function characterAliases(characters: TextAxisCharacter[]): RoleAlias[] {
   for (const character of characters) {
     const fullNames = Array.from(new Set(character.names.map((name) => name.trim()).filter(Boolean)));
     for (const name of fullNames) {
-      if (!/^角色\s*[123]$/u.test(name)) candidates.push({ value: name, slot: character.slot });
+      if (!/^角色\s*[1234]$/u.test(name)) candidates.push({ value: name, slot: character.slot });
       const first = firstChineseCharacter(name);
       if (first) candidates.push({ value: first, slot: character.slot });
     }
@@ -138,6 +138,7 @@ function switchSlotFromToken(token: string): CharacterSlot | null {
   if (normalized === 'i' || normalized === '1') return 1;
   if (normalized === 'ii' || normalized === '2') return 2;
   if (normalized === 'iii' || normalized === '3') return 3;
+  if (normalized === 'iiii' || normalized === '4') return 4;
   return null;
 }
 
@@ -147,7 +148,7 @@ function switchContent(slot: CharacterSlot, intro: boolean): string {
 
 function actionDuration(moveId: string): number {
   if (moveId === 'liberation' || moveId === 'liberation_hold') return 3000;
-  if (/^switch_[123]$/u.test(moveId)) return 500;
+  if (/^switch_[1234]$/u.test(moveId)) return 500;
   return 1000;
 }
 
@@ -178,7 +179,7 @@ export function parseTextAxis(source: string, options: TextAxisParserOptions): T
       warnings.add(`“${suffix }”前没有可修改的招式块`);
       return;
     }
-    const fallback = /^switch_[123]$/u.test(step.moveId)
+    const fallback = /^switch_[1234]$/u.test(step.moveId)
       ? switchContent(Number(step.moveId.slice(-1)) as CharacterSlot, false)
       : defaultTextAxisCodeForMove(step.moveId);
     contentLabels[step.id] = `${contentLabels[step.id] ?? fallback ?? '' }${suffix }`;
@@ -190,7 +191,7 @@ export function parseTextAxis(source: string, options: TextAxisParserOptions): T
       warnings.add(`当前项目缺少招式：${moveId }`);
       return null;
     }
-    const switchSlot = /^switch_[123]$/u.test(moveId) ? Number(moveId.slice(-1)) as CharacterSlot : null;
+    const switchSlot = /^switch_[1234]$/u.test(moveId) ? Number(moveId.slice(-1)) as CharacterSlot : null;
     const slot = switchSlot ?? currentSlot ?? startingCharacterSlot ?? 1;
     const duration = actionDuration(moveId);
     const id = createId();
@@ -281,6 +282,12 @@ export function parseTextAxis(source: string, options: TextAxisParserOptions): T
       consume(2);
       continue;
     }
+    const literalContentMatch = /^\[([^\]\r\n]*)\]/u.exec(rest);
+    if (literalContentMatch) {
+      if (literalContentMatch[1].trim()) appendContent(`[${literalContentMatch[1]}]`);
+      consume(literalContentMatch[0].length);
+      continue;
+    }
     const loopMatch = /^loop(?:\s+axis)?(?:\s*\d+)?\b/iu.exec(rest) ?? /^循环轴(?:\d+)?/u.exec(rest) ?? /^循环/u.exec(rest);
     if (loopMatch) {
       flushSwitch();
@@ -325,7 +332,7 @@ export function parseTextAxis(source: string, options: TextAxisParserOptions): T
         continue;
       }
     }
-    const switchMatch = /^(iiib|iib|ib|iii|ii|i|[123]b?)/iu.exec(rest);
+    const switchMatch = /^(iiiib|iiib|iib|ib|iiii|iii|ii|i|[1234]b?)/iu.exec(rest);
     if (switchMatch) {
       const slot = switchSlotFromToken(switchMatch[0]);
       if (slot) requestSwitch(slot, /b$/iu.test(switchMatch[0]));
@@ -345,7 +352,8 @@ export function parseTextAxis(source: string, options: TextAxisParserOptions): T
     }
     const letterAction = LETTER_ACTIONS[letter];
     if (letterAction) {
-      addAction(letterAction[0], letterAction[1]);
+      // Preserve the typed letter so z/Z remains visibly mapped to Heavy Attack after parsing.
+      addAction(letterAction[0], letterAction[1] ?? letter);
       consume(1);
       continue;
     }
@@ -358,7 +366,7 @@ export function parseTextAxis(source: string, options: TextAxisParserOptions): T
   const finalStartingSlot = startingCharacterSlot ?? (steps[0]?.characterSlot as CharacterSlot | undefined) ?? 1;
   const periods: ComboPeriod[] = [];
   const loopStarts = loopMarkers.map((marker) => {
-    const switchStep = steps.slice(marker.stepIndex).find((step) => /^switch_[123]$/u.test(step.moveId));
+    const switchStep = steps.slice(marker.stepIndex).find((step) => /^switch_[1234]$/u.test(step.moveId));
     return switchStep?.startMin ?? steps[marker.stepIndex]?.startMin ?? cursorMs;
   });
   const startupEndMs = loopStarts[0] ?? cursorMs;
@@ -396,7 +404,9 @@ export function parseTextAxis(source: string, options: TextAxisParserOptions): T
 
 export function defaultTextAxisCodeForMove(moveId: string): string | undefined {
   if (moveId === 'basic_attack') return 'a';
-  if (moveId === 'heavy_attack') return 'A';
+  // z is the canonical heavy-attack code. Uppercase Z is still accepted as
+  // input, but is intentionally preserved by parseTextAxis when it was typed.
+  if (moveId === 'heavy_attack') return 'z';
   if (moveId === 'skill') return 'e';
   if (moveId === 'skill_hold') return 'E';
   if (moveId === 'echo') return 'q';
@@ -411,5 +421,6 @@ export function defaultTextAxisCodeForMove(moveId: string): string | undefined {
   if (moveId === 'switch_1') return 'i';
   if (moveId === 'switch_2') return 'ii';
   if (moveId === 'switch_3') return 'iii';
+  if (moveId === 'switch_4') return 'iiii';
   return undefined;
 }

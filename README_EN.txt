@@ -49,6 +49,8 @@ WW Combo Trainer is a Windows desktop tool for recording, editing, practicing, a
 5. Each action accepts two bindings. For example, Dodge can use both `Shift` and the right mouse button.
 6. Enable Global Input at the bottom of the sidebar so the desktop build can receive input while the game is focused. The Windows build requests administrator privileges at launch; approve the UAC prompt.
 
+The core portable package no longer bundles FFmpeg or Live2D. Install the FFmpeg DLC only for video recognition, composition, and MP4 export. Install only the individual Live2D character package you want. Extract a DLC ZIP beside `wwcombo.exe`, then choose Refresh under `Settings > wwcombo DLC`; all extensions stay in the visible `wwcombo dlc` folder beside the executable.
+
 Changing language only changes built-in interface text. It never rewrites custom combo names, character names, notes, or labels.
 
 ## Recommended workflow

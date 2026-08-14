@@ -1,19 +1,24 @@
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{
     AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, PhysicalSize, Size, WebviewUrl,
     WebviewWindow, WebviewWindowBuilder, WindowEvent,
 };
+use tauri_plugin_opener::OpenerExt;
+
+const DLC_DIRECTORY_NAME: &str = "wwcombo dlc";
 
 static INPUT_HOOK_STARTED: AtomicBool = AtomicBool::new(false);
+static GLOBAL_INPUT_ENABLED: AtomicBool = AtomicBool::new(false);
+static GLOBAL_INPUT_MODE: AtomicU8 = AtomicU8::new(GLOBAL_INPUT_MODE_KEYBOARD);
 static VIDEO_EXPORT_CANCELLED: AtomicBool = AtomicBool::new(false);
 static VIDEO_RECOGNITION_CANCELLED: AtomicBool = AtomicBool::new(false);
 static VIDEO_RECOGNITION_RUNNING: AtomicBool = AtomicBool::new(false);
@@ -32,6 +37,16 @@ static OVERLAY_BOUNDS_STATE: Lazy<Mutex<OverlayBounds>> = Lazy::new(|| {
         height: 118.0,
     })
 });
+static OVERLAY_NOTES_STATE: Lazy<Mutex<serde_json::Value>> =
+    Lazy::new(|| Mutex::new(serde_json::json!({ "visible": false, "moveMode": false })));
+static OVERLAY_NOTES_BOUNDS_STATE: Lazy<Mutex<OverlayBounds>> = Lazy::new(|| {
+    Mutex::new(OverlayBounds {
+        x: 210.0,
+        y: 140.0,
+        width: 840.0,
+        height: 300.0,
+    })
+});
 static RHYTHM_FEEDBACK_STATE: Lazy<Mutex<serde_json::Value>> =
     Lazy::new(|| Mutex::new(serde_json::json!({ "visible": false, "moveMode": false })));
 static KEY_MAPPING_STATE: Lazy<Mutex<serde_json::Value>> = Lazy::new(|| {
@@ -40,12 +55,44 @@ static KEY_MAPPING_STATE: Lazy<Mutex<serde_json::Value>> = Lazy::new(|| {
 static RECORDING_INDICATOR_STATE: Lazy<Mutex<serde_json::Value>> = Lazy::new(|| {
     Mutex::new(serde_json::json!({ "visible": false, "recording": false, "corner": "bottom-left" }))
 });
+static REALTIME_VISION_STATE: Lazy<Mutex<serde_json::Value>> = Lazy::new(|| {
+    Mutex::new(
+        serde_json::json!({ "visible": false, "corner": "top-right", "timer": null, "buffs": [] }),
+    )
+});
+
+const GLOBAL_INPUT_MODE_KEYBOARD: u8 = 0;
+const GLOBAL_INPUT_MODE_XBOX: u8 = 1;
+const GLOBAL_INPUT_MODE_PLAYSTATION: u8 = 2;
+
+fn global_input_mode_name(mode: u8) -> &'static str {
+    match mode {
+        GLOBAL_INPUT_MODE_XBOX => "xbox",
+        GLOBAL_INPUT_MODE_PLAYSTATION => "playstation",
+        _ => "keyboard",
+    }
+}
+
+fn parse_global_input_mode(mode: &str) -> Option<u8> {
+    match mode.trim().to_ascii_lowercase().as_str() {
+        "keyboard" => Some(GLOBAL_INPUT_MODE_KEYBOARD),
+        "xbox" => Some(GLOBAL_INPUT_MODE_XBOX),
+        "playstation" | "ps" => Some(GLOBAL_INPUT_MODE_PLAYSTATION),
+        _ => None,
+    }
+}
+
+fn clear_global_input_pressed_state() {
+    INPUT_PRESSED_CODES.lock().clear();
+}
 
 #[derive(Clone, Serialize)]
 struct DesktopInputEvent {
     source: &'static str,
     #[serde(rename = "type")]
     event_type: String,
+    #[serde(rename = "captureMode")]
+    capture_mode: &'static str,
     code: String,
     time: f64,
     #[serde(rename = "shiftKey")]
@@ -167,6 +214,10 @@ const KEY_MAPPING_MAX_WIDTH: u32 = 2400;
 const KEY_MAPPING_MAX_HEIGHT: u32 = 2000;
 const RECORDING_INDICATOR_SIZE: f64 = 18.0;
 const RECORDING_INDICATOR_MARGIN: f64 = 2.0;
+const REALTIME_VISION_WIDTH: f64 = 360.0;
+const REALTIME_VISION_BASE_HEIGHT: f64 = 82.0;
+const REALTIME_VISION_ROW_HEIGHT: f64 = 48.0;
+const REALTIME_VISION_MARGIN: f64 = 24.0;
 const REMOTE_CHARACTER_AVATAR_API: &str =
     "https://wuwa-hpyg-tool.200503.xyz/api/v1/batch-icons/character";
 
@@ -329,6 +380,36 @@ fn ensure_recording_indicator_window(app: &AppHandle) -> Result<WebviewWindow, S
     Ok(window)
 }
 
+fn ensure_realtime_vision_window(app: &AppHandle) -> Result<WebviewWindow, String> {
+    let _creation_guard = AUXILIARY_WINDOW_CREATION_LOCK.lock();
+    if let Some(window) = app.get_webview_window("realtime-vision") {
+        return Ok(window);
+    }
+    let window = WebviewWindowBuilder::new(
+        app,
+        "realtime-vision",
+        WebviewUrl::App("realtime-vision.html".into()),
+    )
+    .title("Real-time Vision Alert")
+    .inner_size(
+        REALTIME_VISION_WIDTH,
+        REALTIME_VISION_BASE_HEIGHT + REALTIME_VISION_ROW_HEIGHT,
+    )
+    .position(40.0, 80.0)
+    .decorations(false)
+    .transparent(true)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .resizable(false)
+    .focusable(false)
+    .shadow(false)
+    .visible(false)
+    .build()
+    .map_err(|error| error.to_string())?;
+    let _ = window.set_ignore_cursor_events(true);
+    Ok(window)
+}
+
 #[tauri::command]
 async fn fetch_remote_character_avatars() -> Result<serde_json::Value, String> {
     let client = reqwest::Client::builder()
@@ -348,6 +429,305 @@ async fn fetch_remote_character_avatars() -> Result<serde_json::Value, String> {
         .json::<serde_json::Value>()
         .await
         .map_err(|error| format!("解析角色头像清单失败：{error}"))
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Live2dDlcAsset {
+    id: String,
+    skeleton_path: String,
+    atlas_path: String,
+    texture_path: String,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DlcStatus {
+    root_path: String,
+    ffmpeg_installed: bool,
+    live2d_assets: Vec<Live2dDlcAsset>,
+}
+
+fn push_unique_path(paths: &mut Vec<PathBuf>, candidate: PathBuf) {
+    if !paths.iter().any(|path| path == &candidate) {
+        paths.push(candidate);
+    }
+}
+
+fn executable_directory() -> Option<PathBuf> {
+    std::env::current_exe()
+        .ok()
+        .and_then(|executable| executable.parent().map(Path::to_path_buf))
+}
+
+fn preferred_dlc_root(app: &AppHandle) -> PathBuf {
+    if let Some(directory) = executable_directory() {
+        return directory.join(DLC_DIRECTORY_NAME);
+    }
+    app.path()
+        .app_data_dir()
+        .unwrap_or_else(|_| PathBuf::from("."))
+        .join(DLC_DIRECTORY_NAME)
+}
+
+fn dlc_search_roots(app: &AppHandle) -> Vec<PathBuf> {
+    let mut roots = Vec::new();
+    push_unique_path(&mut roots, preferred_dlc_root(app));
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        push_unique_path(&mut roots, resource_dir.join(DLC_DIRECTORY_NAME));
+    }
+    if let Ok(app_data_dir) = app.path().app_data_dir() {
+        push_unique_path(&mut roots, app_data_dir.join(DLC_DIRECTORY_NAME));
+    }
+    if let Some(repository_root) = Path::new(env!("CARGO_MANIFEST_DIR")).parent() {
+        push_unique_path(&mut roots, repository_root.join(DLC_DIRECTORY_NAME));
+    }
+    roots
+}
+
+fn safe_relative_asset_path(package_root: &Path, raw_path: &str) -> Option<PathBuf> {
+    let relative = Path::new(raw_path);
+    if relative.is_absolute()
+        || relative.components().any(|component| {
+            matches!(
+                component,
+                std::path::Component::ParentDir
+                    | std::path::Component::Prefix(_)
+                    | std::path::Component::RootDir
+            )
+        })
+    {
+        return None;
+    }
+    let candidate = package_root.join(relative);
+    candidate.is_file().then_some(candidate)
+}
+
+fn live2d_assets_from_manifest(manifest_path: &Path) -> Vec<Live2dDlcAsset> {
+    let Ok(source) = fs::read_to_string(manifest_path) else {
+        return Vec::new();
+    };
+    let source = source.strip_prefix('\u{feff}').unwrap_or(&source);
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(source) else {
+        return Vec::new();
+    };
+    let Some(package_root) = manifest_path.parent() else {
+        return Vec::new();
+    };
+
+    let mut records = Vec::new();
+    if let (Some(id), Some(skeleton)) = (
+        value.get("id").and_then(serde_json::Value::as_str),
+        value.get("skeleton").and_then(serde_json::Value::as_str),
+    ) {
+        if let (Some(path), Some(atlas_path), Some(texture_path)) = (
+            safe_relative_asset_path(package_root, skeleton),
+            value
+                .get("atlas")
+                .and_then(serde_json::Value::as_str)
+                .and_then(|raw_path| safe_relative_asset_path(package_root, raw_path)),
+            value
+                .get("texture")
+                .and_then(serde_json::Value::as_str)
+                .and_then(|raw_path| safe_relative_asset_path(package_root, raw_path)),
+        ) {
+            records.push(Live2dDlcAsset {
+                id: id.to_string(),
+                skeleton_path: path.to_string_lossy().into_owned(),
+                atlas_path: atlas_path.to_string_lossy().into_owned(),
+                texture_path: texture_path.to_string_lossy().into_owned(),
+            });
+        }
+    }
+
+    if let Some(characters) = value
+        .get("characters")
+        .and_then(serde_json::Value::as_array)
+    {
+        for character in characters {
+            let Some(id) = character.get("id").and_then(serde_json::Value::as_str) else {
+                continue;
+            };
+            let Some(skeleton) = character
+                .get("skeleton")
+                .and_then(serde_json::Value::as_str)
+            else {
+                continue;
+            };
+            if let (Some(path), Some(atlas_path), Some(texture_path)) = (
+                safe_relative_asset_path(package_root, skeleton),
+                character
+                    .get("atlas")
+                    .and_then(serde_json::Value::as_str)
+                    .and_then(|raw_path| safe_relative_asset_path(package_root, raw_path)),
+                character
+                    .get("texture")
+                    .and_then(serde_json::Value::as_str)
+                    .and_then(|raw_path| safe_relative_asset_path(package_root, raw_path)),
+            ) {
+                records.push(Live2dDlcAsset {
+                    id: id.to_string(),
+                    skeleton_path: path.to_string_lossy().into_owned(),
+                    atlas_path: atlas_path.to_string_lossy().into_owned(),
+                    texture_path: texture_path.to_string_lossy().into_owned(),
+                });
+            }
+        }
+    }
+    records
+}
+
+fn scan_live2d_package_directory(root: &Path) -> Vec<Live2dDlcAsset> {
+    let live2d_root = root.join("live2d");
+    let Ok(entries) = fs::read_dir(live2d_root) else {
+        return Vec::new();
+    };
+    entries
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false))
+        .flat_map(|entry| live2d_assets_from_manifest(&entry.path().join("manifest.json")))
+        .collect()
+}
+
+fn legacy_live2d_roots(app: &AppHandle) -> Vec<PathBuf> {
+    let mut roots = Vec::new();
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        push_unique_path(&mut roots, resource_dir.join("live2d"));
+        push_unique_path(&mut roots, resource_dir.join("live2d-optional"));
+    }
+    if let Some(directory) = executable_directory() {
+        push_unique_path(&mut roots, directory.join("live2d"));
+        push_unique_path(&mut roots, directory.join("live2d-optional"));
+    }
+    roots
+}
+
+fn installed_live2d_assets(app: &AppHandle) -> Vec<Live2dDlcAsset> {
+    let mut assets = HashMap::<String, Live2dDlcAsset>::new();
+    for root in dlc_search_roots(app) {
+        for asset in scan_live2d_package_directory(&root) {
+            assets.entry(asset.id.clone()).or_insert(asset);
+        }
+    }
+    for root in legacy_live2d_roots(app) {
+        for asset in live2d_assets_from_manifest(&root.join("manifest.json")) {
+            assets.entry(asset.id.clone()).or_insert(asset);
+        }
+    }
+    let mut result = assets.into_values().collect::<Vec<_>>();
+    result.sort_by(|left, right| left.id.cmp(&right.id));
+    result
+}
+
+#[tauri::command]
+fn get_dlc_status(app: AppHandle) -> DlcStatus {
+    DlcStatus {
+        root_path: preferred_dlc_root(&app).to_string_lossy().into_owned(),
+        ffmpeg_installed: find_ffmpeg_in_dlc(&app).is_some(),
+        live2d_assets: installed_live2d_assets(&app),
+    }
+}
+
+#[tauri::command]
+fn open_dlc_folder(app: AppHandle) -> Result<String, String> {
+    let root = preferred_dlc_root(&app);
+    fs::create_dir_all(root.join("ffmpeg"))
+        .map_err(|error| format!("无法创建 DLC 目录：{error}"))?;
+    fs::create_dir_all(root.join("live2d"))
+        .map_err(|error| format!("无法创建 DLC 目录：{error}"))?;
+    let path = root.to_string_lossy().into_owned();
+    app.opener()
+        .open_path(path.clone(), None::<String>)
+        .map_err(|error| format!("无法打开 DLC 目录：{error}"))?;
+    Ok(path)
+}
+
+#[cfg(test)]
+mod dlc_tests {
+    use super::{
+        live2d_assets_from_manifest, safe_relative_asset_path, scan_live2d_package_directory,
+    };
+    use std::fs;
+    use std::path::Path;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_root(label: &str) -> std::path::PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        std::env::temp_dir().join(format!("wwcombo-{label}-{nonce}"))
+    }
+
+    #[test]
+    fn rejects_live2d_assets_outside_the_package() {
+        let root = temp_root("dlc-path");
+        fs::create_dir_all(root.join("assets")).unwrap();
+        fs::write(root.join("assets").join("model.skel"), b"test").unwrap();
+        assert!(safe_relative_asset_path(&root, "assets/model.skel").is_some());
+        assert!(safe_relative_asset_path(&root, "../model.skel").is_none());
+        assert!(safe_relative_asset_path(&root, "C:\\model.skel").is_none());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn discovers_an_individual_live2d_package() {
+        let root = temp_root("dlc-package");
+        let package = root.join("live2d").join("zani-1507");
+        fs::create_dir_all(package.join("assets")).unwrap();
+        fs::write(package.join("assets").join("zani.skel"), b"test").unwrap();
+        fs::write(package.join("assets").join("zani.atlas"), b"test").unwrap();
+        fs::write(package.join("assets").join("zani.webp"), b"test").unwrap();
+        fs::write(
+            package.join("manifest.json"),
+            br#"{"schemaVersion":1,"type":"wwcombo-live2d","id":"zani","skeleton":"assets/zani.skel","atlas":"assets/zani.atlas","texture":"assets/zani.webp"}"#,
+        )
+        .unwrap();
+        let assets = scan_live2d_package_directory(&root);
+        assert_eq!(assets.len(), 1);
+        assert_eq!(assets[0].id, "zani");
+        assert!(Path::new(&assets[0].skeleton_path).is_file());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn discovers_a_live2d_package_with_utf8_bom_manifest() {
+        let root = temp_root("dlc-package-bom");
+        let package = root.join("live2d").join("zani-1507");
+        fs::create_dir_all(package.join("assets")).unwrap();
+        fs::write(package.join("assets").join("zani.skel"), b"test").unwrap();
+        fs::write(package.join("assets").join("zani.atlas"), b"test").unwrap();
+        fs::write(package.join("assets").join("zani.webp"), b"test").unwrap();
+        let mut manifest = vec![0xef, 0xbb, 0xbf];
+        manifest.extend_from_slice(
+            br#"{"schemaVersion":1,"type":"wwcombo-live2d","id":"zani","skeleton":"assets/zani.skel","atlas":"assets/zani.atlas","texture":"assets/zani.webp"}"#,
+        );
+        fs::write(package.join("manifest.json"), manifest).unwrap();
+        let assets = scan_live2d_package_directory(&root);
+        assert_eq!(assets.len(), 1);
+        assert_eq!(assets[0].id, "zani");
+        assert!(Path::new(&assets[0].skeleton_path).is_file());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn keeps_legacy_collection_manifests_compatible() {
+        let root = temp_root("dlc-legacy");
+        fs::create_dir_all(root.join("theme").join("zani")).unwrap();
+        fs::write(root.join("theme").join("zani").join("zani.skel"), b"test").unwrap();
+        fs::write(root.join("theme").join("zani").join("zani.atlas"), b"test").unwrap();
+        fs::write(root.join("theme").join("zani").join("zani.webp"), b"test").unwrap();
+        let manifest = root.join("manifest.json");
+        fs::write(
+            &manifest,
+            br#"{"characters":[{"id":"zani","skeleton":"theme/zani/zani.skel","atlas":"theme/zani/zani.atlas","texture":"theme/zani/zani.webp"}]}"#,
+        )
+        .unwrap();
+        let assets = live2d_assets_from_manifest(&manifest);
+        assert_eq!(assets.len(), 1);
+        assert_eq!(assets[0].id, "zani");
+        fs::remove_dir_all(root).unwrap();
+    }
 }
 
 #[tauri::command]
@@ -569,6 +949,144 @@ fn get_recording_indicator_state() -> serde_json::Value {
     RECORDING_INDICATOR_STATE.lock().clone()
 }
 
+fn apply_realtime_vision_state(app: &AppHandle, payload: &serde_json::Value) -> Result<(), String> {
+    let window = app
+        .get_webview_window("realtime-vision")
+        .ok_or_else(|| String::from("real-time vision window not found"))?;
+    let visible = payload
+        .get("visible")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
+    if !visible {
+        let _ = window.set_ignore_cursor_events(true);
+        return window.hide().map_err(|error| error.to_string());
+    }
+
+    let anchor = app
+        .get_webview_window("main")
+        .unwrap_or_else(|| window.clone());
+    let monitor = anchor
+        .current_monitor()
+        .map_err(|error| error.to_string())?
+        .or_else(|| anchor.primary_monitor().ok().flatten())
+        .ok_or_else(|| String::from("monitor not found"))?;
+    let corner = payload
+        .get("corner")
+        .and_then(|value| value.as_str())
+        .unwrap_or("top-right");
+    let row_count = payload
+        .get("buffs")
+        .and_then(|value| value.as_array())
+        .map(|buffs| buffs.len().clamp(1, 6))
+        .unwrap_or(1);
+    let logical_height =
+        REALTIME_VISION_BASE_HEIGHT + REALTIME_VISION_ROW_HEIGHT * row_count as f64;
+    let scale = monitor.scale_factor().max(0.5);
+    let physical_width = (REALTIME_VISION_WIDTH * scale).round() as i32;
+    let physical_height = (logical_height * scale).round() as i32;
+    let margin = (REALTIME_VISION_MARGIN * scale).round() as i32;
+    let monitor_position = monitor.position();
+    let monitor_size = monitor.size();
+    let left = monitor_position.x + margin;
+    let right = monitor_position.x + monitor_size.width as i32 - physical_width - margin;
+    let top = monitor_position.y + margin;
+    let bottom = monitor_position.y + monitor_size.height as i32 - physical_height - margin;
+    let (x, y) = match corner {
+        "top-left" => (left, top),
+        "bottom-left" => (left, bottom),
+        "bottom-right" => (right, bottom),
+        _ => (right, top),
+    };
+
+    window
+        .set_size(Size::Logical(LogicalSize::new(
+            REALTIME_VISION_WIDTH,
+            logical_height,
+        )))
+        .map_err(|error| error.to_string())?;
+    window
+        .set_position(PhysicalPosition::new(x, y))
+        .map_err(|error| error.to_string())?;
+    let _ = window.set_always_on_top(true);
+    let _ = window.set_shadow(false);
+    let _ = window.set_focusable(false);
+    let _ = window.set_ignore_cursor_events(true);
+    window.show().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn update_realtime_vision(app: AppHandle, payload: serde_json::Value) -> Result<(), String> {
+    let corner = match payload.get("corner").and_then(|value| value.as_str()) {
+        Some("top-left") => "top-left",
+        Some("bottom-left") => "bottom-left",
+        Some("bottom-right") => "bottom-right",
+        _ => "top-right",
+    };
+    let buffs = payload
+        .get("buffs")
+        .and_then(|value| value.as_array())
+        .map(|values| values.iter().take(6).cloned().collect::<Vec<_>>())
+        .unwrap_or_default();
+    let normalized = serde_json::json!({
+        "visible": payload.get("visible").and_then(|value| value.as_bool()).unwrap_or(false),
+        "corner": corner,
+        "timer": payload.get("timer").cloned().unwrap_or(serde_json::Value::Null),
+        "buffs": buffs,
+        "language": payload.get("language").cloned().unwrap_or_else(|| serde_json::Value::String(String::from("zh-CN")))
+    });
+    let previous = REALTIME_VISION_STATE.lock().clone();
+    let previous_visible = previous
+        .get("visible")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
+    let previous_corner = previous
+        .get("corner")
+        .and_then(|value| value.as_str())
+        .unwrap_or("top-right");
+    let previous_rows = previous
+        .get("buffs")
+        .and_then(|value| value.as_array())
+        .map(|values| values.len().clamp(1, 6))
+        .unwrap_or(1);
+    let next_rows = normalized
+        .get("buffs")
+        .and_then(|value| value.as_array())
+        .map(|values| values.len().clamp(1, 6))
+        .unwrap_or(1);
+    *REALTIME_VISION_STATE.lock() = normalized.clone();
+    let visible = normalized
+        .get("visible")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
+    let needs_window = app.get_webview_window("realtime-vision").is_none();
+    if needs_window {
+        if !visible {
+            return Ok(());
+        }
+        ensure_realtime_vision_window(&app)?;
+    }
+    if !visible {
+        if let Some(window) = app.get_webview_window("realtime-vision") {
+            let _ = window.hide();
+            let _ = window.destroy();
+        }
+        return Ok(());
+    }
+    if needs_window || !previous_visible || previous_corner != corner || previous_rows != next_rows
+    {
+        apply_realtime_vision_state(&app, &normalized)?;
+    }
+    app.get_webview_window("realtime-vision")
+        .ok_or_else(|| String::from("real-time vision window not found"))?
+        .emit("realtime-vision:update", normalized)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn get_realtime_vision_state() -> serde_json::Value {
+    REALTIME_VISION_STATE.lock().clone()
+}
+
 #[tauri::command]
 async fn update_overlay(app: AppHandle, payload: serde_json::Value) -> Result<(), String> {
     let visible = payload
@@ -579,23 +1097,69 @@ async fn update_overlay(app: AppHandle, payload: serde_json::Value) -> Result<()
         .get("moveMode")
         .and_then(|value| value.as_bool())
         .unwrap_or(false);
+    let requested_note_move_mode = payload
+        .get("noteMoveMode")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
+    let show_notes_separately = payload
+        .get("showNotesSeparately")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(true);
+    let was_note_move_mode = OVERLAY_NOTES_STATE
+        .lock()
+        .get("noteMoveMode")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
+    let note_move_mode = show_notes_separately && requested_note_move_mode;
+    let mut notes_payload = payload.clone();
+    if let Some(record) = notes_payload.as_object_mut() {
+        record.insert(
+            String::from("noteMoveMode"),
+            serde_json::Value::Bool(note_move_mode),
+        );
+        record.insert(
+            String::from("showNotesSeparately"),
+            serde_json::Value::Bool(show_notes_separately),
+        );
+    }
     *OVERLAY_STATE.lock() = payload.clone();
+    // The notes window may be created lazily. Keep the latest payload so its
+    // React entry can recover the state even when the first emit happens
+    // before the webview listener is attached.
+    *OVERLAY_NOTES_STATE.lock() = notes_payload.clone();
     let window = match app.get_webview_window("overlay") {
         Some(window) => window,
-        None if !visible && !move_mode => return Ok(()),
+        None if !visible && !move_mode => {
+            if let Some(note_window) = app.get_webview_window("overlay-notes") {
+                let _ = note_window.set_ignore_cursor_events(true);
+                let _ = note_window.hide();
+                let _ = note_window.destroy();
+            }
+            if let Some(editor_window) = app.get_webview_window("overlay-notes-editor") {
+                let _ = editor_window.set_ignore_cursor_events(true);
+                let _ = editor_window.hide();
+                let _ = editor_window.destroy();
+            }
+            return Ok(());
+        }
         None => ensure_overlay_window(&app)?,
     };
-    if let Some(settings) = payload.get("settings") {
-        if let Ok(bounds) = serde_json::from_value::<OverlayBounds>(settings.clone()) {
-            *OVERLAY_BOUNDS_STATE.lock() = bounds;
-            let _ = window.set_position(PhysicalPosition::new(
-                bounds.x.round() as i32,
-                bounds.y.round() as i32,
-            ));
-            let _ = window.set_size(PhysicalSize::new(
-                bounds.width.max(1.0).round() as u32,
-                bounds.height.max(1.0).round() as u32,
-            ));
+    // Native move/resize dragging owns the window bounds while move mode is active.
+    // Applying the last React payload here would race the OS drag loop and make the
+    // crop frame visibly jump between the pointer position and the stale settings.
+    if !move_mode {
+        if let Some(settings) = payload.get("settings") {
+            if let Ok(bounds) = serde_json::from_value::<OverlayBounds>(settings.clone()) {
+                *OVERLAY_BOUNDS_STATE.lock() = bounds;
+                let _ = window.set_position(PhysicalPosition::new(
+                    bounds.x.round() as i32,
+                    bounds.y.round() as i32,
+                ));
+                let _ = window.set_size(PhysicalSize::new(
+                    bounds.width.max(1.0).round() as u32,
+                    bounds.height.max(1.0).round() as u32,
+                ));
+            }
         }
     }
     let _ = window.set_ignore_cursor_events(!move_mode);
@@ -609,8 +1173,99 @@ async fn update_overlay(app: AppHandle, payload: serde_json::Value) -> Result<()
         return Ok(());
     }
     window
-        .emit("overlay:update", payload)
+        .emit("overlay:update", payload.clone())
+        .map_err(|error| error.to_string())?;
+
+    let note_visible = show_notes_separately && (visible || note_move_mode);
+    if note_move_mode {
+        if let Some(window) = app.get_webview_window("overlay-notes") {
+            let _ = window.set_ignore_cursor_events(true);
+            let _ = window.hide();
+        }
+        let editor_window = ensure_overlay_notes_editor_window(&app)?;
+        if !was_note_move_mode {
+            if let Some(bounds) = payload.get("noteBounds") {
+                if let Ok(bounds) = serde_json::from_value::<OverlayBounds>(bounds.clone()) {
+                    *OVERLAY_NOTES_BOUNDS_STATE.lock() = bounds;
+                    let _ = editor_window.set_position(PhysicalPosition::new(
+                        bounds.x.round() as i32,
+                        bounds.y.round() as i32,
+                    ));
+                    let _ = editor_window.set_size(PhysicalSize::new(
+                        bounds.width.max(1.0).round() as u32,
+                        bounds.height.max(1.0).round() as u32,
+                    ));
+                }
+            }
+        }
+        let _ = editor_window.set_always_on_top(true);
+        let _ = editor_window.set_shadow(false);
+        let _ = editor_window.show();
+        let _ = editor_window.set_ignore_cursor_events(false);
+        let _ = editor_window.set_focusable(true);
+        let _ = editor_window.set_focus();
+        return editor_window
+            .emit("overlay-notes:update", notes_payload)
+            .map_err(|error| error.to_string());
+    }
+
+    if let Some(editor_window) = app.get_webview_window("overlay-notes-editor") {
+        let _ = editor_window.set_ignore_cursor_events(true);
+        let _ = editor_window.hide();
+    }
+    let note_window = match app.get_webview_window("overlay-notes") {
+        Some(window) => window,
+        None if !note_visible => return Ok(()),
+        None => ensure_overlay_notes_window(&app)?,
+    };
+    if let Some(bounds) = payload.get("noteBounds") {
+        if let Ok(bounds) = serde_json::from_value::<OverlayBounds>(bounds.clone()) {
+            *OVERLAY_NOTES_BOUNDS_STATE.lock() = bounds;
+            let _ = note_window.set_position(PhysicalPosition::new(
+                bounds.x.round() as i32,
+                bounds.y.round() as i32,
+            ));
+            let _ = note_window.set_size(PhysicalSize::new(
+                bounds.width.max(1.0).round() as u32,
+                bounds.height.max(1.0).round() as u32,
+            ));
+        }
+    }
+    if note_visible {
+        let _ = note_window.set_always_on_top(true);
+        let _ = note_window.set_shadow(false);
+        let _ = note_window.show();
+        let _ = note_window.set_ignore_cursor_events(true);
+        let _ = note_window.set_focusable(false);
+    } else {
+        let _ = note_window.set_ignore_cursor_events(true);
+        let _ = note_window.hide();
+        let _ = note_window.destroy();
+        return Ok(());
+    }
+    note_window
+        .emit("overlay-notes:update", notes_payload)
         .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn update_overlay_practice(app: AppHandle, practice: serde_json::Value) -> Result<(), String> {
+    if let Some(record) = OVERLAY_STATE.lock().as_object_mut() {
+        record.insert(String::from("practice"), practice.clone());
+    }
+    if let Some(record) = OVERLAY_NOTES_STATE.lock().as_object_mut() {
+        record.insert(String::from("practice"), practice.clone());
+    }
+    if let Some(window) = app.get_webview_window("overlay") {
+        let _ = window.emit("overlay:practice-update", practice.clone());
+    }
+    if let Some(window) = app.get_webview_window("overlay-notes") {
+        let _ = window.emit("overlay-notes:practice-update", practice.clone());
+    }
+    if let Some(window) = app.get_webview_window("overlay-notes-editor") {
+        let _ = window.emit("overlay-notes:practice-update", practice);
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -630,7 +1285,8 @@ async fn set_rhythm_feedback_visible(app: AppHandle, visible: bool) -> Result<()
         window.show().map_err(|error| error.to_string())?;
     } else {
         let _ = window.set_ignore_cursor_events(true);
-        window.hide().map_err(|error| error.to_string())?;
+        let _ = window.hide();
+        window.destroy().map_err(|error| error.to_string())?;
     }
     Ok(())
 }
@@ -651,9 +1307,11 @@ async fn update_rhythm_feedback(app: AppHandle, payload: serde_json::Value) -> R
         None if !visible && !move_mode => return Ok(()),
         None => ensure_rhythm_feedback_window(&app)?,
     };
-    if let Some(bounds) = payload.get("bounds") {
-        if let Ok(bounds) = serde_json::from_value::<FeedbackBounds>(bounds.clone()) {
-            let _ = apply_rhythm_feedback_bounds(&window, bounds);
+    if !move_mode {
+        if let Some(bounds) = payload.get("bounds") {
+            if let Ok(bounds) = serde_json::from_value::<FeedbackBounds>(bounds.clone()) {
+                let _ = apply_rhythm_feedback_bounds(&window, bounds);
+            }
         }
     }
     if visible || move_mode {
@@ -814,7 +1472,8 @@ async fn set_key_mapping_visible(app: AppHandle, visible: bool) -> Result<(), St
         window.show().map_err(|error| error.to_string())?;
     } else {
         let _ = window.set_ignore_cursor_events(true);
-        window.hide().map_err(|error| error.to_string())?;
+        let _ = window.hide();
+        window.destroy().map_err(|error| error.to_string())?;
     }
     Ok(())
 }
@@ -972,15 +1631,251 @@ fn emit_overlay_window_bounds(app: &AppHandle, window: &WebviewWindow) {
     let Ok(size) = window.outer_size() else {
         return;
     };
+    let bounds = OverlayBounds {
+        x: position.x as f64,
+        y: position.y as f64,
+        width: size.width as f64,
+        height: size.height as f64,
+    };
+    *OVERLAY_BOUNDS_STATE.lock() = bounds;
     let _ = app.emit(
         "overlay:bounds-changed",
         serde_json::json!({
-            "x": position.x,
-            "y": position.y,
-            "width": size.width,
-            "height": size.height
+            "x": bounds.x,
+            "y": bounds.y,
+            "width": bounds.width,
+            "height": bounds.height
         }),
     );
+}
+
+fn emit_overlay_notes_window_bounds(app: &AppHandle, window: &WebviewWindow) {
+    let Ok(position) = window.outer_position() else {
+        return;
+    };
+    let Ok(size) = window.outer_size() else {
+        return;
+    };
+    let bounds = OverlayBounds {
+        x: position.x as f64,
+        y: position.y as f64,
+        width: size.width as f64,
+        height: size.height as f64,
+    };
+    *OVERLAY_NOTES_BOUNDS_STATE.lock() = bounds;
+    let _ = app.emit(
+        "overlay:note-bounds-changed",
+        serde_json::json!({
+            "x": bounds.x.round(),
+            "y": bounds.y.round(),
+            "width": bounds.width.round(),
+            "height": bounds.height.round()
+        }),
+    );
+}
+
+#[tauri::command]
+async fn set_overlay_notes_visible(app: AppHandle, visible: bool) -> Result<(), String> {
+    if let Some(record) = OVERLAY_NOTES_STATE.lock().as_object_mut() {
+        record.insert(String::from("visible"), serde_json::Value::Bool(visible));
+    }
+    if visible {
+        let window = match app.get_webview_window("overlay-notes") {
+            Some(window) => window,
+            None => ensure_overlay_notes_window(&app)?,
+        };
+        let _ = window.set_always_on_top(true);
+        let _ = window.set_shadow(false);
+        let _ = window.set_ignore_cursor_events(true);
+        window.show().map_err(|error| error.to_string())?;
+    } else {
+        if let Some(window) = app.get_webview_window("overlay-notes") {
+            let _ = window.set_ignore_cursor_events(true);
+            let _ = window.hide();
+        }
+        if let Some(window) = app.get_webview_window("overlay-notes-editor") {
+            let _ = window.set_ignore_cursor_events(true);
+            let _ = window.hide();
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn set_overlay_notes_click_through(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let state = {
+        let mut state = OVERLAY_NOTES_STATE.lock();
+        let show_notes_separately = state
+            .get("showNotesSeparately")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(true);
+        if let Some(record) = state.as_object_mut() {
+            record.insert(
+                String::from("noteMoveMode"),
+                serde_json::Value::Bool(!enabled && show_notes_separately),
+            );
+        }
+        state.clone()
+    };
+    let window = if enabled {
+        app.get_webview_window("overlay-notes")
+            .or_else(|| app.get_webview_window("overlay-notes-editor"))
+    } else {
+        app.get_webview_window("overlay-notes-editor")
+            .or_else(|| app.get_webview_window("overlay-notes"))
+    };
+    let window = match window {
+        Some(window) => window,
+        None if enabled => return Ok(()),
+        None => ensure_overlay_notes_window(&app)?,
+    };
+    window
+        .set_ignore_cursor_events(enabled)
+        .map_err(|error| error.to_string())?;
+    window
+        .set_focusable(!enabled)
+        .map_err(|error| error.to_string())?;
+    let _ = window.emit("overlay-notes:update", state);
+    Ok(())
+}
+
+#[tauri::command]
+async fn set_overlay_notes_bounds(app: AppHandle, bounds: OverlayBounds) -> Result<(), String> {
+    *OVERLAY_NOTES_BOUNDS_STATE.lock() = bounds;
+    let Some(window) = active_overlay_notes_window(&app) else {
+        return Ok(());
+    };
+    window
+        .set_position(PhysicalPosition::new(
+            bounds.x.round() as i32,
+            bounds.y.round() as i32,
+        ))
+        .map_err(|error| error.to_string())?;
+    window
+        .set_size(PhysicalSize::new(
+            bounds.width.max(1.0).round() as u32,
+            bounds.height.max(1.0).round() as u32,
+        ))
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn get_overlay_notes_bounds(app: AppHandle) -> Result<OverlayBounds, String> {
+    let Some(window) = active_overlay_notes_window(&app) else {
+        return Ok(*OVERLAY_NOTES_BOUNDS_STATE.lock());
+    };
+    let position = window.outer_position().map_err(|error| error.to_string())?;
+    let size = window.outer_size().map_err(|error| error.to_string())?;
+    let bounds = OverlayBounds {
+        x: position.x as f64,
+        y: position.y as f64,
+        width: size.width as f64,
+        height: size.height as f64,
+    };
+    *OVERLAY_NOTES_BOUNDS_STATE.lock() = bounds;
+    Ok(bounds)
+}
+
+#[tauri::command]
+fn get_overlay_notes_state() -> serde_json::Value {
+    OVERLAY_NOTES_STATE.lock().clone()
+}
+
+fn configure_overlay_notes_window(app: &AppHandle, window: &WebviewWindow) {
+    let _ = window.set_always_on_top(true);
+    let _ = window.set_shadow(false);
+    let _ = window.set_ignore_cursor_events(true);
+    let app_handle = app.clone();
+    let window_for_event = window.clone();
+    window.on_window_event(move |event| match event {
+        WindowEvent::Moved(_) | WindowEvent::Resized(_) => {
+            emit_overlay_notes_window_bounds(&app_handle, &window_for_event);
+        }
+        _ => {}
+    });
+}
+
+fn ensure_overlay_notes_window(app: &AppHandle) -> Result<WebviewWindow, String> {
+    let _creation_guard = AUXILIARY_WINDOW_CREATION_LOCK.lock();
+    if let Some(window) = app.get_webview_window("overlay-notes") {
+        return Ok(window);
+    }
+    let bounds = *OVERLAY_NOTES_BOUNDS_STATE.lock();
+    let window = WebviewWindowBuilder::new(
+        app,
+        "overlay-notes",
+        WebviewUrl::App("overlay-notes.html".into()),
+    )
+    .title("Combo Notes")
+    .inner_size(bounds.width.max(1.0), bounds.height.max(1.0))
+    .position(bounds.x, bounds.y)
+    .decorations(false)
+    .transparent(true)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .resizable(true)
+    .shadow(false)
+    .visible(false)
+    .build()
+    .map_err(|error| error.to_string())?;
+    configure_overlay_notes_window(app, &window);
+    Ok(window)
+}
+
+fn ensure_overlay_notes_editor_window(app: &AppHandle) -> Result<WebviewWindow, String> {
+    let _creation_guard = AUXILIARY_WINDOW_CREATION_LOCK.lock();
+    if let Some(window) = app.get_webview_window("overlay-notes-editor") {
+        return Ok(window);
+    }
+    let bounds = *OVERLAY_NOTES_BOUNDS_STATE.lock();
+    let window = WebviewWindowBuilder::new(
+        app,
+        "overlay-notes-editor",
+        WebviewUrl::App("overlay-notes.html".into()),
+    )
+    .title("Combo Notes Editor")
+    .inner_size(bounds.width.max(1.0), bounds.height.max(1.0))
+    .position(bounds.x, bounds.y)
+    .decorations(false)
+    .transparent(true)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .resizable(true)
+    .shadow(false)
+    .visible(false)
+    .build()
+    .map_err(|error| error.to_string())?;
+    configure_overlay_notes_window(app, &window);
+    Ok(window)
+}
+
+fn active_overlay_notes_window(app: &AppHandle) -> Option<WebviewWindow> {
+    let move_mode = OVERLAY_NOTES_STATE
+        .lock()
+        .get("noteMoveMode")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
+    if move_mode {
+        app.get_webview_window("overlay-notes-editor")
+            .or_else(|| app.get_webview_window("overlay-notes"))
+    } else {
+        app.get_webview_window("overlay-notes")
+            .or_else(|| app.get_webview_window("overlay-notes-editor"))
+    }
+}
+
+#[tauri::command]
+fn notify_overlay_note_bounds_changed(app: AppHandle, bounds: OverlayBounds) -> Result<(), String> {
+    app.emit(
+        "overlay:note-bounds-changed",
+        serde_json::json!({
+            "x": bounds.x.round(),
+            "y": bounds.y.round(),
+            "width": bounds.width.round(),
+            "height": bounds.height.round()
+        }),
+    )
+    .map_err(|error| error.to_string())
 }
 
 fn emit_rhythm_feedback_window_bounds(app: &AppHandle, window: &WebviewWindow) {
@@ -1032,8 +1927,13 @@ fn request_overlay_move_mode(app: AppHandle, enabled: bool) -> Result<(), String
 #[tauri::command]
 fn start_global_input(app: AppHandle) -> serde_json::Value {
     *APP_HANDLE.lock() = Some(app.clone());
+    GLOBAL_INPUT_ENABLED.store(true, Ordering::SeqCst);
 
     if INPUT_HOOK_STARTED.swap(true, Ordering::SeqCst) {
+        *INPUT_HOOK_STATUS.lock() = format!(
+            "running: {}",
+            global_input_mode_name(GLOBAL_INPUT_MODE.load(Ordering::SeqCst))
+        );
         return serde_json::json!({ "ok": true });
     }
 
@@ -1047,6 +1947,7 @@ fn start_global_input(app: AppHandle) -> serde_json::Value {
         }
         Err(error) => {
             INPUT_HOOK_STARTED.store(false, Ordering::SeqCst);
+            GLOBAL_INPUT_ENABLED.store(false, Ordering::SeqCst);
             *INPUT_HOOK_STATUS.lock() = format!("failed: {error}");
             serde_json::json!({ "ok": false, "reason": error })
         }
@@ -1054,13 +1955,36 @@ fn start_global_input(app: AppHandle) -> serde_json::Value {
 }
 
 #[tauri::command]
+fn stop_global_input() {
+    GLOBAL_INPUT_ENABLED.store(false, Ordering::SeqCst);
+    clear_global_input_pressed_state();
+    *INPUT_HOOK_STATUS.lock() = String::from("paused");
+}
+
+#[tauri::command]
+fn set_global_input_mode(mode: String) -> Result<(), String> {
+    let next_mode = parse_global_input_mode(&mode)
+        .ok_or_else(|| format!("unsupported global input mode: {mode}"))?;
+    let previous_mode = GLOBAL_INPUT_MODE.swap(next_mode, Ordering::SeqCst);
+    if previous_mode != next_mode {
+        clear_global_input_pressed_state();
+    }
+    if GLOBAL_INPUT_ENABLED.load(Ordering::SeqCst) {
+        *INPUT_HOOK_STATUS.lock() = format!("running: {}", global_input_mode_name(next_mode));
+    }
+    Ok(())
+}
+
+#[tauri::command]
 fn global_input_status() -> serde_json::Value {
     let status = INPUT_HOOK_STATUS.lock().clone();
     let event_count = *INPUT_EVENT_COUNT.lock();
     serde_json::json!({
-        "started": INPUT_HOOK_STARTED.load(Ordering::SeqCst),
+        "started": INPUT_HOOK_STARTED.load(Ordering::SeqCst)
+            && GLOBAL_INPUT_ENABLED.load(Ordering::SeqCst),
         "status": status,
-        "eventCount": event_count
+        "eventCount": event_count,
+        "mode": global_input_mode_name(GLOBAL_INPUT_MODE.load(Ordering::SeqCst))
     })
 }
 
@@ -1101,7 +2025,11 @@ fn pick_video_file() -> Option<PickedVideoFile> {
         .add_filter("视频文件", &["mp4", "mov", "mkv", "webm", "avi", "m4v"])
         .pick_file()
         .map(|path| PickedVideoFile {
-            name: path.file_name().and_then(|name| name.to_str()).unwrap_or("video").to_string(),
+            name: path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("video")
+                .to_string(),
             path: path.to_string_lossy().to_string(),
         })
 }
@@ -1272,15 +2200,17 @@ fn recognition_events_for_hotspot(
             let group_start = run_index;
             run_index += 1;
             while run_index < runs.len()
-                && runs[run_index].0.saturating_sub(runs[run_index - 1].1)
-                    <= max_repeat_gap_frames
+                && runs[run_index].0.saturating_sub(runs[run_index - 1].1) <= max_repeat_gap_frames
             {
                 run_index += 1;
             }
             let group = &runs[group_start..run_index];
             let span_frames = group.last().unwrap().1 - group[0].0;
             if group.len() >= 3 && span_frames >= minimum_hold_frames {
-                let active_frames = group.iter().map(|(start, end, _)| end - start).sum::<usize>();
+                let active_frames = group
+                    .iter()
+                    .map(|(start, end, _)| end - start)
+                    .sum::<usize>();
                 let confidence = group
                     .iter()
                     .map(|(start, end, confidence)| confidence * (end - start) as f64)
@@ -1353,7 +2283,13 @@ mod video_recognition_tests {
     fn coalesces_keyboard_repeat_pulses_into_one_hold() {
         let mut samples = Vec::new();
         for _ in 0..4 {
-            samples.extend([sample(true), sample(true), sample(false), sample(false), sample(false)]);
+            samples.extend([
+                sample(true),
+                sample(true),
+                sample(false),
+                sample(false),
+                sample(false),
+            ]);
         }
         let events = recognition_events_for_hotspot("skill", &samples, 30, true, false);
         assert_eq!(events.len(), 1);
@@ -1365,7 +2301,13 @@ mod video_recognition_tests {
     fn keeps_repeated_basic_attack_pulses_separate() {
         let mut samples = Vec::new();
         for _ in 0..4 {
-            samples.extend([sample(true), sample(true), sample(false), sample(false), sample(false)]);
+            samples.extend([
+                sample(true),
+                sample(true),
+                sample(false),
+                sample(false),
+                sample(false),
+            ]);
         }
         let events = recognition_events_for_hotspot("basic-attack", &samples, 30, false, true);
         assert_eq!(events.len(), 4);
@@ -1375,7 +2317,13 @@ mod video_recognition_tests {
     fn does_not_fill_a_basic_attack_tap_gap() {
         let events = recognition_events_for_hotspot(
             "basic-attack",
-            &[sample(true), sample(true), sample(false), sample(true), sample(true)],
+            &[
+                sample(true),
+                sample(true),
+                sample(false),
+                sample(true),
+                sample(true),
+            ],
             30,
             false,
             true,
@@ -1431,11 +2379,7 @@ async fn analyze_video_key_mapping(
         let duration_seconds = format!("{:.3}", request.duration_ms.max(1) as f64 / 1000.0);
         let filter = format!(
             "crop={}:{}:{}:{},fps={}",
-            crop_width,
-            crop_height,
-            crop_x,
-            crop_y,
-            fps
+            crop_width, crop_height, crop_x, crop_y, fps
         );
         let mut child = Command::new(ffmpeg)
             .arg("-hide_banner")
@@ -1708,7 +2652,7 @@ fn save_export_mp4(
     let output_path = unique_export_path(export_file_path(&app, &directory, &filename)?);
     let temp_webm_path = output_path.with_extension("exporting.webm");
     fs::write(&temp_webm_path, bytes).map_err(|error| error.to_string())?;
-    let ffmpeg = find_ffmpeg(&app).ok_or_else(|| String::from("未找到 ffmpeg，无法转出 MP4。请把 ffmpeg.exe 放到 src-tauri/resources/ffmpeg.exe 后重新打包，或安装 ffmpeg 到 PATH。"))?;
+    let ffmpeg = find_ffmpeg(&app).ok_or_else(|| String::from("未安装视频扩展，无法转出 MP4。请将 FFmpeg DLC 解压到 wwcombo.exe 同级的 wwcombo dlc/ffmpeg 目录，或安装 ffmpeg 到 PATH。"))?;
     let status = Command::new(ffmpeg)
         .arg("-y")
         .arg("-i")
@@ -1765,7 +2709,10 @@ fn unique_export_path(path: PathBuf) -> PathBuf {
         return path;
     }
     let parent = path.parent().unwrap_or_else(|| Path::new(""));
-    let stem = path.file_stem().and_then(|value| value.to_str()).unwrap_or("video");
+    let stem = path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("video");
     let extension = path.extension().and_then(|value| value.to_str());
     for index in 1..10_000 {
         let name = match extension {
@@ -1777,7 +2724,13 @@ fn unique_export_path(path: PathBuf) -> PathBuf {
             return candidate;
         }
     }
-    parent.join(format!("{stem}-{}{}", current_time_ms() as u64, extension.map(|value| format!(".{value}")).unwrap_or_default()))
+    parent.join(format!(
+        "{stem}-{}{}",
+        current_time_ms() as u64,
+        extension
+            .map(|value| format!(".{value}"))
+            .unwrap_or_default()
+    ))
 }
 
 fn ffmpeg_error_summary(path: &Path) -> String {
@@ -1820,7 +2773,17 @@ mod export_path_tests {
     }
 }
 
+fn find_ffmpeg_in_dlc(app: &AppHandle) -> Option<PathBuf> {
+    dlc_search_roots(app)
+        .into_iter()
+        .map(|root| root.join("ffmpeg").join("ffmpeg.exe"))
+        .find(|candidate| candidate.is_file())
+}
+
 fn find_ffmpeg(app: &AppHandle) -> Option<PathBuf> {
+    if let Some(ffmpeg) = find_ffmpeg_in_dlc(app) {
+        return Some(ffmpeg);
+    }
     if let Ok(dir) = app.path().resource_dir() {
         let bundled = dir.join("ffmpeg.exe");
         if bundled.is_file() {
@@ -1832,6 +2795,7 @@ fn find_ffmpeg(app: &AppHandle) -> Option<PathBuf> {
             for bundled in [
                 directory.join("ffmpeg.exe"),
                 directory.join("resources").join("ffmpeg.exe"),
+                directory.join(DLC_DIRECTORY_NAME).join("ffmpeg.exe"),
             ] {
                 if bundled.is_file() {
                     return Some(bundled);
@@ -1853,7 +2817,12 @@ fn find_ffmpeg(app: &AppHandle) -> Option<PathBuf> {
         .map(|_| PathBuf::from("ffmpeg"))
 }
 
-fn emit_input(event_type: &str, code: String) {
+fn emit_input(event_type: &str, code: String, capture_mode: u8) {
+    if !GLOBAL_INPUT_ENABLED.load(Ordering::Relaxed)
+        || GLOBAL_INPUT_MODE.load(Ordering::Relaxed) != capture_mode
+    {
+        return;
+    }
     let shift_key = {
         let mut pressed_codes = INPUT_PRESSED_CODES.lock();
         let Some(shift_key) = update_pressed_input_state(&mut pressed_codes, event_type, &code)
@@ -1867,6 +2836,7 @@ fn emit_input(event_type: &str, code: String) {
     let event = DesktopInputEvent {
         source: "desktop",
         event_type: event_type.to_string(),
+        capture_mode: global_input_mode_name(capture_mode),
         code,
         time: current_time_ms(),
         shift_key,
@@ -1882,12 +2852,10 @@ fn update_pressed_input_state(
     event_type: &str,
     code: &str,
 ) -> Option<bool> {
-    let is_pressed = event_type == "keydown"
-        || event_type == "mousedown"
-        || event_type == "gamepadbuttondown";
-    let is_released = event_type == "keyup"
-        || event_type == "mouseup"
-        || event_type == "gamepadbuttonup";
+    let is_pressed =
+        event_type == "keydown" || event_type == "mousedown" || event_type == "gamepadbuttondown";
+    let is_released =
+        event_type == "keyup" || event_type == "mouseup" || event_type == "gamepadbuttonup";
     if !is_pressed && !is_released {
         return None;
     }
@@ -1903,26 +2871,77 @@ fn update_pressed_input_state(
 
 #[cfg(test)]
 mod input_state_tests {
-    use super::update_pressed_input_state;
+    use super::{
+        global_input_mode_name, parse_global_input_mode, update_pressed_input_state,
+        GLOBAL_INPUT_MODE_KEYBOARD, GLOBAL_INPUT_MODE_PLAYSTATION, GLOBAL_INPUT_MODE_XBOX,
+    };
     use std::collections::HashSet;
 
     #[test]
     fn carries_shift_state_through_the_following_key_event() {
         let mut pressed = HashSet::new();
-        assert_eq!(update_pressed_input_state(&mut pressed, "keydown", "ShiftLeft"), Some(true));
-        assert_eq!(update_pressed_input_state(&mut pressed, "keydown", "KeyE"), Some(true));
-        assert_eq!(update_pressed_input_state(&mut pressed, "keyup", "KeyE"), Some(true));
-        assert_eq!(update_pressed_input_state(&mut pressed, "keyup", "ShiftLeft"), Some(false));
-        assert_eq!(update_pressed_input_state(&mut pressed, "keydown", "KeyE"), Some(false));
+        assert_eq!(
+            update_pressed_input_state(&mut pressed, "keydown", "ShiftLeft"),
+            Some(true)
+        );
+        assert_eq!(
+            update_pressed_input_state(&mut pressed, "keydown", "KeyE"),
+            Some(true)
+        );
+        assert_eq!(
+            update_pressed_input_state(&mut pressed, "keyup", "KeyE"),
+            Some(true)
+        );
+        assert_eq!(
+            update_pressed_input_state(&mut pressed, "keyup", "ShiftLeft"),
+            Some(false)
+        );
+        assert_eq!(
+            update_pressed_input_state(&mut pressed, "keydown", "KeyE"),
+            Some(false)
+        );
     }
 
     #[test]
     fn supports_right_shift_and_ignores_duplicate_transitions() {
         let mut pressed = HashSet::new();
-        assert_eq!(update_pressed_input_state(&mut pressed, "keydown", "ShiftRight"), Some(true));
-        assert_eq!(update_pressed_input_state(&mut pressed, "keydown", "ShiftRight"), None);
-        assert_eq!(update_pressed_input_state(&mut pressed, "keyup", "ShiftRight"), Some(false));
-        assert_eq!(update_pressed_input_state(&mut pressed, "keyup", "ShiftRight"), None);
+        assert_eq!(
+            update_pressed_input_state(&mut pressed, "keydown", "ShiftRight"),
+            Some(true)
+        );
+        assert_eq!(
+            update_pressed_input_state(&mut pressed, "keydown", "ShiftRight"),
+            None
+        );
+        assert_eq!(
+            update_pressed_input_state(&mut pressed, "keyup", "ShiftRight"),
+            Some(false)
+        );
+        assert_eq!(
+            update_pressed_input_state(&mut pressed, "keyup", "ShiftRight"),
+            None
+        );
+    }
+
+    #[test]
+    fn parses_the_three_mutually_exclusive_capture_modes() {
+        assert_eq!(
+            parse_global_input_mode("keyboard"),
+            Some(GLOBAL_INPUT_MODE_KEYBOARD)
+        );
+        assert_eq!(
+            parse_global_input_mode("xbox"),
+            Some(GLOBAL_INPUT_MODE_XBOX)
+        );
+        assert_eq!(
+            parse_global_input_mode("PlayStation"),
+            Some(GLOBAL_INPUT_MODE_PLAYSTATION)
+        );
+        assert_eq!(parse_global_input_mode("unknown"), None);
+        assert_eq!(
+            global_input_mode_name(GLOBAL_INPUT_MODE_PLAYSTATION),
+            "playstation"
+        );
     }
 }
 
@@ -1935,12 +2954,24 @@ fn current_time_ms() -> f64 {
 
 #[cfg(windows)]
 mod winhook {
-    use super::{emit_input, INPUT_HOOK_STARTED, INPUT_HOOK_STATUS};
+    use super::{
+        emit_input, GLOBAL_INPUT_ENABLED, GLOBAL_INPUT_MODE, GLOBAL_INPUT_MODE_KEYBOARD,
+        GLOBAL_INPUT_MODE_PLAYSTATION, GLOBAL_INPUT_MODE_XBOX, INPUT_HOOK_STARTED,
+        INPUT_HOOK_STATUS,
+    };
     use std::collections::HashSet;
     use std::ffi::c_void;
     use std::io;
-    use std::sync::atomic::Ordering;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::OnceLock;
+    use std::time::{Duration, Instant};
+    use windows::Gaming::Input::{
+        GameControllerButtonLabel, GameControllerSwitchPosition, Gamepad, GamepadButtons,
+        GamepadReading, RawGameController,
+    };
+    use windows::Win32::System::WinRT::{RoInitialize, RO_INIT_MULTITHREADED};
+
+    static KEYBOARD_MOUSE_HOOKS_ACTIVE: AtomicBool = AtomicBool::new(false);
 
     type Hhook = isize;
     type Hinstance = isize;
@@ -1983,6 +3014,8 @@ mod winhook {
     const XINPUT_GAMEPAD_X: u16 = 0x4000;
     const XINPUT_GAMEPAD_Y: u16 = 0x8000;
     const XINPUT_TRIGGER_THRESHOLD: u8 = 128;
+    const PLAYSTATION_TRIGGER_THRESHOLD: f64 = 0.5;
+    const SONY_VENDOR_ID: u16 = 0x054c;
     const GAMEPAD_COMBO_MODIFIER: &str = "GamepadLB";
     const GAMEPAD_CODE_ORDER: [&str; 16] = [
         "GamepadA",
@@ -2038,6 +3071,64 @@ mod winhook {
     struct XInputState {
         packet_number: u32,
         gamepad: XInputGamepad,
+    }
+
+    struct PlaystationGamepadController {
+        raw: RawGameController,
+        gamepad: Option<Gamepad>,
+    }
+
+    struct PlaystationGamepadPoller {
+        controllers: Vec<PlaystationGamepadController>,
+        next_refresh: Instant,
+    }
+
+    impl PlaystationGamepadPoller {
+        fn new() -> Result<Self, String> {
+            static WINDOWS_GAMING_INPUT_INITIALIZED: OnceLock<Result<(), String>> = OnceLock::new();
+            if let Err(error) = WINDOWS_GAMING_INPUT_INITIALIZED.get_or_init(|| {
+                unsafe { RoInitialize(RO_INIT_MULTITHREADED) }.map_err(|error| error.to_string())
+            }) {
+                return Err(error.clone());
+            }
+            let mut poller = Self {
+                controllers: Vec::new(),
+                next_refresh: Instant::now(),
+            };
+            poller.refresh_devices();
+            Ok(poller)
+        }
+
+        fn refresh_devices(&mut self) {
+            self.controllers = RawGameController::RawGameControllers()
+                .ok()
+                .into_iter()
+                .flat_map(|controllers| controllers.into_iter())
+                .filter(|controller| controller.HardwareVendorId().ok() == Some(SONY_VENDOR_ID))
+                .map(|raw| PlaystationGamepadController {
+                    gamepad: Gamepad::FromGameController(&raw).ok(),
+                    raw,
+                })
+                .collect();
+            self.next_refresh = Instant::now() + Duration::from_secs(2);
+        }
+
+        fn read_codes(&mut self) -> HashSet<&'static str> {
+            if Instant::now() >= self.next_refresh {
+                self.refresh_devices();
+            }
+            let mut codes = HashSet::new();
+            for controller in &self.controllers {
+                if let Some(gamepad) = &controller.gamepad {
+                    if let Ok(reading) = gamepad.GetCurrentReading() {
+                        codes.extend(playstation_gamepad_codes(&reading));
+                        continue;
+                    }
+                }
+                codes.extend(playstation_raw_controller_codes(&controller.raw));
+            }
+            codes
+        }
     }
 
     #[repr(C)]
@@ -2104,14 +3195,15 @@ mod winhook {
                     return;
                 }
 
-                *INPUT_HOOK_STATUS.lock() =
-                    String::from("windows hooks installed; keyboard, mouse and XInput polling active");
+                KEYBOARD_MOUSE_HOOKS_ACTIVE.store(true, Ordering::SeqCst);
+                *INPUT_HOOK_STATUS.lock() = String::from("windows input capture ready");
 
                 let mut msg = Msg::default();
                 while GetMessageW(&mut msg, 0, 0, 0) > 0 {
                     let _ = TranslateMessage(&msg);
                     let _ = DispatchMessageW(&msg);
                 }
+                KEYBOARD_MOUSE_HOOKS_ACTIVE.store(false, Ordering::SeqCst);
             })
         {
             *INPUT_HOOK_STATUS.lock() = format!("polling fallback active; hook thread unavailable: {error}");
@@ -2128,27 +3220,71 @@ mod winhook {
                 let keys = polled_keys();
                 let mut previous = vec![false; keys.len()];
                 let mut previous_gamepad = HashSet::new();
+                let mut playstation_gamepad: Option<PlaystationGamepadPoller> = None;
+                let mut playstation_retry_at = Instant::now();
+                let mut previous_mode = u8::MAX;
                 loop {
-                    for (index, (vk, code)) in keys.iter().enumerate() {
-                        let pressed = (GetAsyncKeyState(*vk) as u16 & 0x8000) != 0;
-                        if pressed != previous[index] {
-                            previous[index] = pressed;
-                            let is_mouse = code.starts_with("Mouse");
-                            let event_type = match (is_mouse, pressed) {
-                                (true, true) => "mousedown",
-                                (true, false) => "mouseup",
-                                (false, true) => "keydown",
-                                (false, false) => "keyup",
-                            };
-                            emit_input(event_type, String::from(*code));
+                    if !GLOBAL_INPUT_ENABLED.load(Ordering::Relaxed) {
+                        previous.fill(false);
+                        previous_gamepad.clear();
+                        playstation_gamepad = None;
+                        previous_mode = u8::MAX;
+                        std::thread::sleep(Duration::from_millis(50));
+                        continue;
+                    }
+
+                    let mode = GLOBAL_INPUT_MODE.load(Ordering::Relaxed);
+                    if mode != previous_mode {
+                        previous.fill(false);
+                        previous_gamepad.clear();
+                        if mode != GLOBAL_INPUT_MODE_PLAYSTATION {
+                            playstation_gamepad = None;
                         }
+                        previous_mode = mode;
                     }
-                    let current_gamepad = read_xinput_codes();
-                    for (event_type, code) in gamepad_transitions(&previous_gamepad, &current_gamepad) {
-                        emit_input(event_type, code);
+
+                    if mode == GLOBAL_INPUT_MODE_KEYBOARD
+                        && !KEYBOARD_MOUSE_HOOKS_ACTIVE.load(Ordering::Relaxed)
+                    {
+                        for (index, (vk, code)) in keys.iter().enumerate() {
+                            let pressed = (GetAsyncKeyState(*vk) as u16 & 0x8000) != 0;
+                            if pressed != previous[index] {
+                                previous[index] = pressed;
+                                let is_mouse = code.starts_with("Mouse");
+                                let event_type = match (is_mouse, pressed) {
+                                    (true, true) => "mousedown",
+                                    (true, false) => "mouseup",
+                                    (false, true) => "keydown",
+                                    (false, false) => "keyup",
+                                };
+                                emit_input(event_type, String::from(*code), mode);
+                            }
+                        }
+                    } else {
+                        let current_gamepad = if mode == GLOBAL_INPUT_MODE_XBOX {
+                            read_xinput_codes()
+                        } else if mode == GLOBAL_INPUT_MODE_PLAYSTATION {
+                            if playstation_gamepad.is_none()
+                                && Instant::now() >= playstation_retry_at
+                            {
+                                playstation_gamepad = PlaystationGamepadPoller::new().ok();
+                                playstation_retry_at = Instant::now() + Duration::from_secs(2);
+                            }
+                            playstation_gamepad
+                                .as_mut()
+                                .map(PlaystationGamepadPoller::read_codes)
+                                .unwrap_or_default()
+                        } else {
+                            HashSet::new()
+                        };
+                        for (event_type, code) in
+                            gamepad_transitions(&previous_gamepad, &current_gamepad)
+                        {
+                            emit_input(event_type, code, mode);
+                        }
+                        previous_gamepad = current_gamepad;
                     }
-                    previous_gamepad = current_gamepad;
-                    std::thread::sleep(std::time::Duration::from_millis(4));
+                    std::thread::sleep(Duration::from_millis(4));
                 }
             })
             .map_err(|error| error.to_string())?;
@@ -2183,7 +3319,9 @@ mod winhook {
                 }
                 let address = GetProcAddress(module, b"XInputGetState\0".as_ptr());
                 if !address.is_null() {
-                    return Some(std::mem::transmute::<*const c_void, XInputGetStateFn>(address));
+                    return Some(std::mem::transmute::<*const c_void, XInputGetStateFn>(
+                        address,
+                    ));
                 }
             }
             None
@@ -2222,21 +3360,188 @@ mod winhook {
         codes
     }
 
+    fn playstation_gamepad_codes(reading: &GamepadReading) -> HashSet<&'static str> {
+        let mut codes = HashSet::new();
+        let buttons = reading.Buttons;
+        if buttons.contains(GamepadButtons::A) {
+            codes.insert("GamepadA");
+        }
+        if buttons.contains(GamepadButtons::B) {
+            codes.insert("GamepadB");
+        }
+        if buttons.contains(GamepadButtons::X) {
+            codes.insert("GamepadX");
+        }
+        if buttons.contains(GamepadButtons::Y) {
+            codes.insert("GamepadY");
+        }
+        if buttons.contains(GamepadButtons::LeftShoulder) {
+            codes.insert("GamepadLB");
+        }
+        if buttons.contains(GamepadButtons::RightShoulder) {
+            codes.insert("GamepadRB");
+        }
+        if reading.LeftTrigger >= PLAYSTATION_TRIGGER_THRESHOLD {
+            codes.insert("GamepadLT");
+        }
+        if reading.RightTrigger >= PLAYSTATION_TRIGGER_THRESHOLD {
+            codes.insert("GamepadRT");
+        }
+        if buttons.contains(GamepadButtons::View) {
+            codes.insert("GamepadView");
+        }
+        if buttons.contains(GamepadButtons::Menu) {
+            codes.insert("GamepadMenu");
+        }
+        if buttons.contains(GamepadButtons::LeftThumbstick) {
+            codes.insert("GamepadLeftStick");
+        }
+        if buttons.contains(GamepadButtons::RightThumbstick) {
+            codes.insert("GamepadRightStick");
+        }
+        if buttons.contains(GamepadButtons::DPadUp) {
+            codes.insert("GamepadDPadUp");
+        }
+        if buttons.contains(GamepadButtons::DPadDown) {
+            codes.insert("GamepadDPadDown");
+        }
+        if buttons.contains(GamepadButtons::DPadLeft) {
+            codes.insert("GamepadDPadLeft");
+        }
+        if buttons.contains(GamepadButtons::DPadRight) {
+            codes.insert("GamepadDPadRight");
+        }
+        codes
+    }
+
+    fn playstation_raw_controller_codes(controller: &RawGameController) -> HashSet<&'static str> {
+        let button_count = controller.ButtonCount().unwrap_or(0).max(0) as usize;
+        let switch_count = controller.SwitchCount().unwrap_or(0).max(0) as usize;
+        let axis_count = controller.AxisCount().unwrap_or(0).max(0) as usize;
+        let mut buttons = vec![false; button_count];
+        let mut switches = vec![GameControllerSwitchPosition::Center; switch_count];
+        let mut axes = vec![0.0; axis_count];
+        if controller
+            .GetCurrentReading(&mut buttons, &mut switches, &mut axes)
+            .is_err()
+        {
+            return HashSet::new();
+        }
+        let mut codes = HashSet::new();
+        for (index, pressed) in buttons.into_iter().enumerate() {
+            if !pressed {
+                continue;
+            }
+            let Ok(label) = controller.GetButtonLabel(index as i32) else {
+                continue;
+            };
+            if let Some(code) = playstation_button_label_code(label) {
+                codes.insert(code);
+            }
+        }
+        for position in switches {
+            add_switch_position_codes(&mut codes, position);
+        }
+        codes
+    }
+
+    fn playstation_button_label_code(label: GameControllerButtonLabel) -> Option<&'static str> {
+        match label {
+            GameControllerButtonLabel::Cross | GameControllerButtonLabel::LetterA => {
+                Some("GamepadA")
+            }
+            GameControllerButtonLabel::Circle | GameControllerButtonLabel::LetterB => {
+                Some("GamepadB")
+            }
+            GameControllerButtonLabel::Square | GameControllerButtonLabel::LetterX => {
+                Some("GamepadX")
+            }
+            GameControllerButtonLabel::Triangle | GameControllerButtonLabel::LetterY => {
+                Some("GamepadY")
+            }
+            GameControllerButtonLabel::LeftBumper | GameControllerButtonLabel::Left1 => {
+                Some("GamepadLB")
+            }
+            GameControllerButtonLabel::RightBumper | GameControllerButtonLabel::Right1 => {
+                Some("GamepadRB")
+            }
+            GameControllerButtonLabel::LeftTrigger | GameControllerButtonLabel::Left2 => {
+                Some("GamepadLT")
+            }
+            GameControllerButtonLabel::RightTrigger | GameControllerButtonLabel::Right2 => {
+                Some("GamepadRT")
+            }
+            GameControllerButtonLabel::Share
+            | GameControllerButtonLabel::View
+            | GameControllerButtonLabel::Back
+            | GameControllerButtonLabel::Select => Some("GamepadView"),
+            GameControllerButtonLabel::Options
+            | GameControllerButtonLabel::Menu
+            | GameControllerButtonLabel::Start => Some("GamepadMenu"),
+            GameControllerButtonLabel::LeftStickButton => Some("GamepadLeftStick"),
+            GameControllerButtonLabel::RightStickButton => Some("GamepadRightStick"),
+            GameControllerButtonLabel::Up => Some("GamepadDPadUp"),
+            GameControllerButtonLabel::Down => Some("GamepadDPadDown"),
+            GameControllerButtonLabel::Left => Some("GamepadDPadLeft"),
+            GameControllerButtonLabel::Right => Some("GamepadDPadRight"),
+            _ => None,
+        }
+    }
+
+    fn add_switch_position_codes(
+        codes: &mut HashSet<&'static str>,
+        position: GameControllerSwitchPosition,
+    ) {
+        if matches!(
+            position,
+            GameControllerSwitchPosition::Up
+                | GameControllerSwitchPosition::UpLeft
+                | GameControllerSwitchPosition::UpRight
+        ) {
+            codes.insert("GamepadDPadUp");
+        }
+        if matches!(
+            position,
+            GameControllerSwitchPosition::Down
+                | GameControllerSwitchPosition::DownLeft
+                | GameControllerSwitchPosition::DownRight
+        ) {
+            codes.insert("GamepadDPadDown");
+        }
+        if matches!(
+            position,
+            GameControllerSwitchPosition::Left
+                | GameControllerSwitchPosition::UpLeft
+                | GameControllerSwitchPosition::DownLeft
+        ) {
+            codes.insert("GamepadDPadLeft");
+        }
+        if matches!(
+            position,
+            GameControllerSwitchPosition::Right
+                | GameControllerSwitchPosition::UpRight
+                | GameControllerSwitchPosition::DownRight
+        ) {
+            codes.insert("GamepadDPadRight");
+        }
+    }
+
     fn gamepad_transitions(
         previous: &HashSet<&'static str>,
         current: &HashSet<&'static str>,
     ) -> Vec<(&'static str, String)> {
         let mut events = Vec::new();
 
-        if previous.contains(GAMEPAD_COMBO_MODIFIER)
-            && !current.contains(GAMEPAD_COMBO_MODIFIER)
-        {
+        if previous.contains(GAMEPAD_COMBO_MODIFIER) && !current.contains(GAMEPAD_COMBO_MODIFIER) {
             for code in GAMEPAD_CODE_ORDER {
                 if code != GAMEPAD_COMBO_MODIFIER
                     && previous.contains(code)
                     && current.contains(code)
                 {
-                    events.push(("gamepadbuttonup", format!("{GAMEPAD_COMBO_MODIFIER}+{code}")));
+                    events.push((
+                        "gamepadbuttonup",
+                        format!("{GAMEPAD_COMBO_MODIFIER}+{code}"),
+                    ));
                 }
             }
         }
@@ -2256,13 +3561,12 @@ mod winhook {
 
         for code in GAMEPAD_CODE_ORDER {
             if current.contains(code) && !previous.contains(code) {
-                let emitted_code = if code != GAMEPAD_COMBO_MODIFIER
-                    && current.contains(GAMEPAD_COMBO_MODIFIER)
-                {
-                    format!("{GAMEPAD_COMBO_MODIFIER}+{code}")
-                } else {
-                    String::from(code)
-                };
+                let emitted_code =
+                    if code != GAMEPAD_COMBO_MODIFIER && current.contains(GAMEPAD_COMBO_MODIFIER) {
+                        format!("{GAMEPAD_COMBO_MODIFIER}+{code}")
+                    } else {
+                        String::from(code)
+                    };
                 events.push(("gamepadbuttondown", emitted_code));
             }
         }
@@ -2324,7 +3628,10 @@ mod winhook {
     }
 
     unsafe extern "system" fn keyboard_proc(code: i32, wparam: Wparam, lparam: Lparam) -> Lresult {
-        if code == HC_ACTION {
+        if code == HC_ACTION
+            && GLOBAL_INPUT_ENABLED.load(Ordering::Relaxed)
+            && GLOBAL_INPUT_MODE.load(Ordering::Relaxed) == GLOBAL_INPUT_MODE_KEYBOARD
+        {
             let data = &*(lparam as *const KbdLlHookStruct);
             let event_type = match wparam as u32 {
                 WM_KEYDOWN | WM_SYSKEYDOWN => Some("keydown"),
@@ -2333,7 +3640,11 @@ mod winhook {
             };
 
             if let Some(event_type) = event_type {
-                emit_input(event_type, vk_to_code(data.vk_code));
+                emit_input(
+                    event_type,
+                    vk_to_code(data.vk_code),
+                    GLOBAL_INPUT_MODE_KEYBOARD,
+                );
             }
         }
 
@@ -2341,7 +3652,10 @@ mod winhook {
     }
 
     unsafe extern "system" fn mouse_proc(code: i32, wparam: Wparam, lparam: Lparam) -> Lresult {
-        if code == HC_ACTION {
+        if code == HC_ACTION
+            && GLOBAL_INPUT_ENABLED.load(Ordering::Relaxed)
+            && GLOBAL_INPUT_MODE.load(Ordering::Relaxed) == GLOBAL_INPUT_MODE_KEYBOARD
+        {
             let mapped = match wparam as u32 {
                 WM_LBUTTONDOWN => Some(("mousedown", "MouseLeft")),
                 WM_LBUTTONUP => Some(("mouseup", "MouseLeft")),
@@ -2357,7 +3671,7 @@ mod winhook {
             };
 
             if let Some((event_type, code)) = mapped {
-                emit_input(event_type, String::from(code));
+                emit_input(event_type, String::from(code), GLOBAL_INPUT_MODE_KEYBOARD);
             }
         }
 
@@ -2401,8 +3715,10 @@ mod winhook {
         fn maps_xinput_buttons_and_triggers_to_existing_binding_codes() {
             let gamepad = XInputGamepad {
                 buttons: XINPUT_GAMEPAD_A
+                    | XINPUT_GAMEPAD_B
                     | XINPUT_GAMEPAD_Y
                     | XINPUT_GAMEPAD_LEFT_SHOULDER
+                    | XINPUT_GAMEPAD_START
                     | XINPUT_GAMEPAD_DPAD_RIGHT,
                 left_trigger: XINPUT_TRIGGER_THRESHOLD,
                 right_trigger: XINPUT_TRIGGER_THRESHOLD - 1,
@@ -2411,11 +3727,60 @@ mod winhook {
 
             let codes = xinput_gamepad_codes(&gamepad);
             assert!(codes.contains("GamepadA"));
+            assert!(codes.contains("GamepadB"));
             assert!(codes.contains("GamepadY"));
             assert!(codes.contains("GamepadLB"));
+            assert!(codes.contains("GamepadMenu"));
             assert!(codes.contains("GamepadLT"));
             assert!(codes.contains("GamepadDPadRight"));
             assert!(!codes.contains("GamepadRT"));
+        }
+
+        #[test]
+        fn maps_playstation_gamepad_buttons_triggers_and_dpad() {
+            let reading = GamepadReading {
+                Buttons: GamepadButtons::A
+                    | GamepadButtons::B
+                    | GamepadButtons::Y
+                    | GamepadButtons::LeftShoulder
+                    | GamepadButtons::RightShoulder
+                    | GamepadButtons::Menu
+                    | GamepadButtons::DPadUp
+                    | GamepadButtons::DPadLeft,
+                LeftTrigger: PLAYSTATION_TRIGGER_THRESHOLD,
+                RightTrigger: PLAYSTATION_TRIGGER_THRESHOLD - 0.01,
+                ..GamepadReading::default()
+            };
+
+            let codes = playstation_gamepad_codes(&reading);
+            assert!(codes.contains("GamepadA"));
+            assert!(codes.contains("GamepadB"));
+            assert!(codes.contains("GamepadY"));
+            assert!(codes.contains("GamepadLB"));
+            assert!(codes.contains("GamepadRB"));
+            assert!(codes.contains("GamepadMenu"));
+            assert!(codes.contains("GamepadLT"));
+            assert!(codes.contains("GamepadDPadUp"));
+            assert!(codes.contains("GamepadDPadLeft"));
+            assert!(!codes.contains("GamepadRT"));
+        }
+
+        #[test]
+        fn maps_playstation_labels_and_diagonal_switches() {
+            assert_eq!(
+                playstation_button_label_code(GameControllerButtonLabel::Cross),
+                Some("GamepadA")
+            );
+            assert_eq!(
+                playstation_button_label_code(GameControllerButtonLabel::Options),
+                Some("GamepadMenu")
+            );
+            let mut codes = HashSet::new();
+            add_switch_position_codes(&mut codes, GameControllerSwitchPosition::DownRight);
+            assert_eq!(
+                codes,
+                HashSet::from(["GamepadDPadDown", "GamepadDPadRight"])
+            );
         }
 
         #[test]
@@ -2468,6 +3833,11 @@ fn start_windows_global_input(_app: AppHandle) -> Result<(), String> {
 
 pub fn run() {
     tauri::Builder::default()
+        .plugin(
+            tauri::plugin::Builder::<tauri::Wry, ()>::new("afyg-bridge")
+                .js_init_script_on_all_frames(include_str!("afyg_bridge.js"))
+                .build(),
+        )
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             if let Some(overlay) = app.get_webview_window("overlay") {
@@ -2563,6 +3933,12 @@ pub fn run() {
                             let _ = indicator.hide();
                             let _ = indicator.destroy();
                         }
+                        if let Some(notes_editor) =
+                            app_handle.get_webview_window("overlay-notes-editor")
+                        {
+                            let _ = notes_editor.hide();
+                            let _ = notes_editor.destroy();
+                        }
                         app_handle.exit(0);
                     }
                     _ => {}
@@ -2579,7 +3955,14 @@ pub fn run() {
             get_overlay_state,
             get_display_size,
             update_overlay,
+            update_overlay_practice,
             notify_overlay_bounds_changed,
+            notify_overlay_note_bounds_changed,
+            set_overlay_notes_visible,
+            set_overlay_notes_click_through,
+            set_overlay_notes_bounds,
+            get_overlay_notes_bounds,
+            get_overlay_notes_state,
             request_overlay_move_mode,
             set_rhythm_feedback_visible,
             update_rhythm_feedback,
@@ -2599,9 +3982,15 @@ pub fn run() {
             notify_key_mapping_bounds_changed,
             update_recording_indicator,
             get_recording_indicator_state,
+            update_realtime_vision,
+            get_realtime_vision_state,
+            set_global_input_mode,
             start_global_input,
+            stop_global_input,
             global_input_status,
             fetch_remote_character_avatars,
+            get_dlc_status,
+            open_dlc_folder,
             save_export_file,
             pick_export_directory,
             pick_video_file,

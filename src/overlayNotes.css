@@ -1,0 +1,18 @@
+html, body, #overlay-notes-root { width: 100%; height: 100%; margin: 0; background: transparent !important; overflow: hidden; }
+.overlay-notes-root { width: 100%; height: 100%; user-select: none; pointer-events: none; }
+.overlay-notes-root.hidden { display: none; }
+.overlay-notes-root.move-mode { pointer-events: auto; background: rgba(8, 8, 8, .78); }
+.overlay-notes-editor { position: relative; width: 100%; height: 100%; box-sizing: border-box; }
+.overlay-notes-root.move-mode .overlay-notes-editor { pointer-events: auto; cursor: move; }
+.overlay-notes-frame { position: absolute; z-index: 20; inset: 0; box-sizing: border-box; border: 3px dashed #ffe037; box-shadow: inset 0 0 0 1px rgba(0,0,0,.9), 0 0 0 1px rgba(255,224,55,.45); pointer-events: none; }
+.overlay-notes-content { position: absolute; z-index: 10; inset: 5px; box-sizing: border-box; padding: 6px 10px; display: flex; flex-direction: column; align-items: flex-start; justify-content: var(--overlay-note-order, flex-end); gap: 5px; overflow: hidden; color: var(--overlay-note-color, #fff); font-family: var(--overlay-note-font-family, Microsoft YaHei, sans-serif); font-size: calc(18px * var(--overlay-note-scale, 1)); font-weight: 900; line-height: 1.25; text-align: left; pointer-events: none; }
+.overlay-notes-row { width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; pointer-events: none; }
+.overlay-notes-resize-handle { position: absolute; z-index: 30; width: 18px; height: 18px; padding: 0; border: 2px solid #ffe037; border-radius: 0; background: #050505; box-shadow: 0 0 0 1px rgba(0,0,0,.95); pointer-events: auto; }
+.overlay-notes-resize-handle.n { left: 50%; top: 2px; transform: translateX(-50%); cursor: ns-resize; }
+.overlay-notes-resize-handle.s { left: 50%; bottom: 2px; transform: translateX(-50%); cursor: ns-resize; }
+.overlay-notes-resize-handle.e { right: 2px; top: 50%; transform: translateY(-50%); cursor: ew-resize; }
+.overlay-notes-resize-handle.w { left: 2px; top: 50%; transform: translateY(-50%); cursor: ew-resize; }
+.overlay-notes-resize-handle.ne { right: 2px; top: 2px; cursor: nesw-resize; }
+.overlay-notes-resize-handle.nw { left: 2px; top: 2px; cursor: nwse-resize; }
+.overlay-notes-resize-handle.se { right: 2px; bottom: 2px; cursor: nwse-resize; }
+.overlay-notes-resize-handle.sw { left: 2px; bottom: 2px; cursor: nesw-resize; }

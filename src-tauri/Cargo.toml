@@ -1,6 +1,6 @@
 [package]
 name = "wwcombo"
-version = "0.62.0"
+version = "0.63.0"
 description = "Wuthering Waves combo trainer"
 authors = ["NovaWallace"]
 license = "MIT"
@@ -23,3 +23,6 @@ once_cell = "1"
 parking_lot = "0.12"
 
 rfd = "0.15"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.61.3", features = ["Gaming_Input", "Win32_System_WinRT"] }

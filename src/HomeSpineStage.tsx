@@ -4,6 +4,8 @@ type LoadState = 'loading' | 'ready' | 'error';
 
 type HomeSpineStageProps = {
   skeletonUrl: string;
+  atlasUrl: string;
+  textureUrl: string;
   scale?: number;
   offsetX?: number;
   offsetY?: number;
@@ -11,12 +13,11 @@ type HomeSpineStageProps = {
   active?: boolean;
 };
 
-function relatedSpineAssetUrls(skeletonUrl: string): string[] {
-  const stem = skeletonUrl.replace(/\.skel$/i, '');
-  return [skeletonUrl, `${stem}.atlas`, `${stem}.webp`];
+function relatedSpineAssetUrls(skeletonUrl: string, atlasUrl: string, textureUrl: string): string[] {
+  return [skeletonUrl, atlasUrl, textureUrl];
 }
 
-export function HomeSpineStage({ skeletonUrl, scale = 2, offsetX = 0, offsetY = 0, shiftX = 0, active = true }: HomeSpineStageProps) {
+export function HomeSpineStage({ skeletonUrl, atlasUrl, textureUrl, scale = 2, offsetX = 0, offsetY = 0, shiftX = 0, active = true }: HomeSpineStageProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const applicationRef = useRef<import('pixi.js').Application | null>(null);
   const activeRef = useRef(active);
@@ -55,7 +56,7 @@ export function HomeSpineStage({ skeletonUrl, scale = 2, offsetX = 0, offsetY = 
       assetLoaded = false;
       const loadedAssets = assets;
       void (async () => {
-        for (const url of relatedSpineAssetUrls(skeletonUrl)) await loadedAssets.unload(url).catch(() => undefined);
+        for (const url of relatedSpineAssetUrls(skeletonUrl, atlasUrl, textureUrl)) await loadedAssets.unload(url).catch(() => undefined);
       })();
     };
 
@@ -83,7 +84,12 @@ export function HomeSpineStage({ skeletonUrl, scale = 2, offsetX = 0, offsetY = 
       stageHost.replaceChildren(canvas);
 
       type SpineResource = { spineData?: ConstructorParameters<typeof Spine>[0] };
-      const resource = await Assets.load(skeletonUrl) as SpineResource;
+      const resource = await Assets.load({
+        src: skeletonUrl,
+        data: {
+          spineAtlasFile: atlasUrl
+        }
+      }) as SpineResource;
       assetLoaded = true;
       if (disposed) {
         releaseAsset();
@@ -155,7 +161,7 @@ export function HomeSpineStage({ skeletonUrl, scale = 2, offsetX = 0, offsetY = 
       if (applicationRef.current === application) applicationRef.current = null;
       stageHost.replaceChildren();
     };
-  }, [offsetX, offsetY, scale, skeletonUrl]);
+  }, [atlasUrl, offsetX, offsetY, scale, skeletonUrl, textureUrl]);
 
   return (
     <div className={`home-spine-frame ${loadState}`}>

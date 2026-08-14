@@ -5,6 +5,7 @@ import type { CharacterSlot, ComboBasePreset, ComboChart, ComboIconMapping, Comb
 import {
   chartToComboImageItems,
   capsuleEdgeSourceRange,
+  comboImageItemSizeForDisplayItem,
   comboImageItemSizeForText,
   comboTextParts,
   effectiveCapsuleImageFields,
@@ -13,6 +14,7 @@ import {
   normalizeComboImageStyle,
   normalizeRectPercent
 } from './combo-image/comboImage';
+import type { ComboContentPart, ComboImageItem, ComboImageMergedMove } from './combo-image/comboImage';
 import { localizeCharacterName, localizeDefaultCharacterName, useI18n } from './i18n';
 import type { AppLanguage } from './i18n';
 import { NumericDraftInput } from './NumericDraftInput';
@@ -35,6 +37,7 @@ type ExportBlock = {
   breakBefore: boolean;
   breakAfter: boolean;
   width?: number;
+  displayItem?: ComboImageItem;
 };
 
 type ExportSettings = {
@@ -44,6 +47,7 @@ type ExportSettings = {
   paddingY: number;
   columnGap: number;
   rowGap: number;
+  showBlockArrows: boolean;
   transparent: boolean;
   backgroundColor: string;
 };
@@ -55,6 +59,7 @@ type Placement = {
   width: number;
   height: number;
   showAvatar: boolean;
+  showArrow: boolean;
 };
 
 type LayoutResult = {
@@ -68,6 +73,8 @@ type FullChartExportLabProps = {
   library: ComboChart[];
   style: ComboImageStyle;
   basePresets: ComboBasePreset[];
+  initialPreset?: 'practice-axis';
+  initialContentWidth?: number;
   onSelectChart: (id: string) => void;
   onExit: () => void;
   onExport: (filename: string, bytes: Uint8Array) => Promise<void>;
@@ -80,9 +87,33 @@ const DEFAULT_SETTINGS: ExportSettings = {
   paddingY: 72,
   columnGap: 12,
   rowGap: 18,
+  showBlockArrows: true,
   transparent: true,
   backgroundColor: '#101216'
 };
+
+function practiceAxisExportSettings(contentWidth: number): ExportSettings {
+  const width = Math.round(clamp(contentWidth, 520, 1920));
+  return {
+    ...DEFAULT_SETTINGS,
+    width,
+    height: Math.max(720, Math.round(width * 0.9)),
+    paddingX: 18,
+    paddingY: 18,
+    columnGap: 10,
+    rowGap: 18
+  };
+}
+
+function practiceAxisExportStyle(style: ComboImageStyle): ComboImageStyle {
+  const renderedStyle = effectiveComboImageStyle(style);
+  return normalizeComboImageStyle({
+    ...renderedStyle,
+    overallScale: 1,
+    mergeSameRoleSteps: true,
+    mergeSameRoleLimit: Number.MAX_SAFE_INTEGER
+  });
+}
 
 const imageCache = new Map<string, Promise<HTMLImageElement | null>>();
 
@@ -130,12 +161,12 @@ function mergeBasePresets(...sources: ComboBasePreset[][]): ComboBasePreset[] {
   return [...merged.values()].sort((left, right) => left.name.localeCompare(right.name, 'zh-CN'));
 }
 
-function blocksFromChart(chart: ComboChart | null, style: ComboImageStyle, language: AppLanguage, visibleLoopIds: string[]): ExportBlock[] {
+function blocksFromChart(chart: ComboChart | null, style: ComboImageStyle, language: AppLanguage, visibleLoopIds: string[], practiceAxisWidth?: number): ExportBlock[] {
   if (!chart) return [];
   const loopPeriods = sortedLoopPeriods(chart);
   const visibleLoops = new Set(visibleLoopIds);
   const hiddenLoopPeriods = loopPeriods.filter((period) => !visibleLoops.has(period.id));
-  const items = chartToComboImageItems(chart, style).filter((item) => !hiddenLoopPeriods.some((period) => item.step.startMin >= period.startMs && item.step.startMin < period.endMs));
+  const items = chartToComboImageItems(chart, style, practiceAxisWidth === undefined ? 'horizontal' : 'vertical', practiceAxisWidth === undefined ? undefined : { width: Math.max(240, practiceAxisWidth - 70), height: 10000 }).filter((item) => !hiddenLoopPeriods.some((period) => item.step.startMin >= period.startMs && item.step.startMin < period.endMs));
   const events: Array<{ time: number; order: number; block: ExportBlock }> = items.map((item, order) => ({
     time: item.step.startMin,
     order: order * 2 + 1,
@@ -145,6 +176,7 @@ function blocksFromChart(chart: ComboChart | null, style: ComboImageStyle, langu
       kind: 'action',
       role: item.characterSlot,
       text: item.displayText,
+      displayItem: item,
       showAvatar: item.showAvatar,
       hideAvatar: false,
       hideBackground: false,
@@ -172,12 +204,31 @@ function blocksFromChart(chart: ComboChart | null, style: ComboImageStyle, langu
           text: axisBlockLabel(period, language, loopPeriods.length),
           showAvatar: false,
           hideAvatar: true,
-          hideBackground: false,
+          hideBackground: true,
           breakBefore: true,
           breakAfter: true
         }
       });
     });
+
+  if (practiceAxisWidth !== undefined && !events.some((event) => event.block.axisKind === 'startup_axis')) {
+    events.push({
+      time: Math.min(0, ...chart.steps.map((step) => step.startMin)),
+      order: -1,
+      block: {
+        id: 'axis-practice-full-axis',
+        axisKind: 'startup_axis',
+        kind: 'axis',
+        role: items[0]?.characterSlot ?? 1,
+        text: localizedPeriodLabel({ kind: 'startup_axis', label: '' }, language, loopPeriods.length),
+        showAvatar: false,
+        hideAvatar: true,
+        hideBackground: true,
+        breakBefore: true,
+        breakAfter: true
+      }
+    });
+  }
 
   return events.sort((left, right) => left.time - right.time
     || (left.block.kind === right.block.kind ? left.order - right.order : left.block.kind === 'axis' ? -1 : 1))
@@ -222,7 +273,11 @@ function roleAvatarSize(style: ComboImageStyle, role: CharacterSlot): number {
 function blockBaseSize(block: ExportBlock, style: ComboImageStyle): { width: number; height: number } {
   const roleStyle = style.roleStyles[block.role];
   const showAvatar = block.showAvatar && !block.hideAvatar;
-  const measured = comboImageItemSizeForText(style, block.text, showAvatar, roleStyle);
+  if (block.kind === 'action' && block.displayItem) {
+    const measured = comboImageItemSizeForDisplayItem(style, { ...block.displayItem, displayText: block.text, showAvatar }, roleStyle);
+    return { width: Math.max(32, block.width ?? measured.width), height: Math.max(24, measured.height) };
+  }
+  const measured = comboImageItemSizeForText(block.kind === 'axis' ? { ...style, convertIcons: false } : style, block.text, showAvatar, roleStyle);
   return { width: Math.max(32, block.width ?? measured.width), height: Math.max(24, measured.height) };
 }
 
@@ -239,23 +294,27 @@ function layoutBlocks(blocks: ExportBlock[], style: ComboImageStyle, settings: E
   let maxRight = paddingX;
   let maxBottom = paddingY;
 
-  blocks.forEach((block) => {
+  blocks.forEach((block, index) => {
     const base = blockBaseSize(block, style);
     const width = base.width * scale;
     const height = base.height * scale;
+    const showArrow = settings.showBlockArrows && block.kind === 'action' && blocks[index + 1]?.kind === 'action';
+    const arrowWidth = showArrow ? 18 * scale : 0;
+    const arrowGap = showArrow ? 5 * scale : 0;
+    const itemWidth = width + arrowGap + arrowWidth;
     if (block.breakBefore && cursorX > paddingX) {
       cursorX = paddingX;
       cursorY += rowHeight + gapY;
       rowHeight = 0;
     }
-    if (cursorX > paddingX && cursorX + width > rightEdge) {
+    if (cursorX > paddingX && cursorX + itemWidth > rightEdge) {
       cursorX = paddingX;
       cursorY += rowHeight + gapY;
       rowHeight = 0;
     }
     const showAvatar = block.showAvatar && !block.hideAvatar;
-    placements.push({ block, x: cursorX, y: cursorY, width, height, showAvatar });
-    maxRight = Math.max(maxRight, cursorX + width);
+    placements.push({ block, x: cursorX, y: cursorY, width, height, showAvatar, showArrow });
+    maxRight = Math.max(maxRight, cursorX + itemWidth);
     maxBottom = Math.max(maxBottom, cursorY + height);
     rowHeight = Math.max(rowHeight, height);
     if (block.breakAfter) {
@@ -263,7 +322,7 @@ function layoutBlocks(blocks: ExportBlock[], style: ComboImageStyle, settings: E
       cursorY += rowHeight + gapY;
       rowHeight = 0;
     } else {
-      cursorX += width + gapX;
+      cursorX += itemWidth + gapX;
     }
   });
 
@@ -371,7 +430,7 @@ async function drawAvatar(ctx: CanvasRenderingContext2D, src: string | undefined
 
 async function drawInlineContent(ctx: CanvasRenderingContext2D, block: ExportBlock, style: ComboImageStyle, placement: Placement, scale: number) {
   const mappings = effectiveIconMappings(style, block.role);
-  const parts = comboTextParts(block.text, style.convertIcons, mappings);
+  const parts = comboTextParts(block.text, block.kind !== 'axis' && style.convertIcons, mappings);
   const fontSize = style.fontSize * scale;
   const avatarSize = placement.showAvatar ? roleAvatarSize(style, block.role) * scale : 0;
   const avatarSpace = placement.showAvatar ? Math.max(0, avatarSize * 0.66) : 0;
@@ -416,6 +475,104 @@ async function drawInlineContent(ctx: CanvasRenderingContext2D, block: ExportBlo
   ctx.shadowBlur = 0;
 }
 
+type MergedDrawGroup = {
+  source: ComboImageMergedMove;
+  parts: ComboContentPart[];
+  iconWidth: number;
+  countWidth: number;
+  width: number;
+};
+
+async function drawMergedContent(ctx: CanvasRenderingContext2D, block: ExportBlock, style: ComboImageStyle, placement: Placement, scale: number): Promise<boolean> {
+  const groups = block.displayItem?.mergedMoveGroups;
+  if (!groups?.length) return false;
+  const mappings = effectiveIconMappings(style, block.role);
+  const fontSize = style.fontSize * scale;
+  const avatarSize = placement.showAvatar ? roleAvatarSize(style, block.role) * scale : 0;
+  const avatarSpace = placement.showAvatar ? Math.max(0, avatarSize * 0.66) : 0;
+  const availableWidth = Math.max(8, placement.width - 20 * scale - avatarSpace);
+  const groupGap = fontSize * 0.2;
+  const iconGap = fontSize * 0.16;
+  ctx.font = `900 ${fontSize}px ${style.fontFamily}`;
+  const measured: MergedDrawGroup[] = groups.map((group) => {
+    const parts = group.renderAsIcon && group.iconSrc ? [] : comboTextParts(group.displayText, style.convertIcons, mappings);
+    const iconWidth = group.renderAsIcon && group.iconSrc ? fontSize * 1.62 * (group.iconScale ?? 1) * (group.iconWidthScale ?? 1) : 0;
+    const countWidth = group.renderAsIcon && group.count > 1 ? ctx.measureText(`x${group.count}`).width * 1.32 : 0;
+    const fallbackWidth = parts.reduce((sum, part) => sum + (part.kind === 'icon' ? fontSize * 1.62 * part.iconScale * part.iconWidthScale : ctx.measureText(part.value).width), 0) + Math.max(0, parts.length - 1) * 2 * scale;
+    return { source: group, parts, iconWidth, countWidth, width: group.renderAsIcon && group.iconSrc ? iconWidth + (countWidth ? iconGap + countWidth : 0) : fallbackWidth };
+  });
+  const naturalWidth = measured.reduce((sum, group) => sum + group.width, 0) + Math.max(0, measured.length - 1) * groupGap;
+  const fit = Math.min(1, availableWidth / Math.max(1, naturalWidth));
+  const centerOffset = placement.showAvatar ? avatarSpace * 0.28 : 0;
+  let cursorX = placement.x + placement.width / 2 - naturalWidth * fit / 2 + centerOffset;
+  const centerY = placement.y + placement.height / 2;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = style.textColor;
+  ctx.strokeStyle = style.textStrokeColor;
+  ctx.lineWidth = Math.max(0, style.textStrokeWidth * scale * fit);
+  ctx.lineJoin = 'round';
+  ctx.miterLimit = 2;
+  ctx.shadowColor = 'rgba(0,0,0,.72)';
+  ctx.shadowBlur = Math.max(1, 3 * scale * fit);
+
+  for (const group of measured) {
+    const groupX = cursorX;
+    if (group.source.renderAsIcon && group.source.iconSrc) {
+      const image = await loadImage(group.source.iconSrc);
+      const iconHeight = fontSize * 1.45 * (group.source.iconScale ?? 1) * fit;
+      const iconWidth = iconHeight * (group.source.iconWidthScale ?? 1);
+      const reservedIconWidth = group.iconWidth * fit;
+      if (image) ctx.drawImage(image, cursorX + (reservedIconWidth - iconWidth) / 2, centerY - iconHeight / 2, iconWidth, iconHeight);
+      cursorX += reservedIconWidth;
+      if (group.source.count > 1) {
+        cursorX += iconGap * fit;
+        const countText = `x${group.source.count}`;
+        ctx.font = `400 ${fontSize * 1.32 * fit}px ${style.fontFamily}`;
+        if (style.textStrokeEnabled && ctx.lineWidth > 0) ctx.strokeText(countText, cursorX, centerY);
+        ctx.fillText(countText, cursorX, centerY);
+        cursorX += group.countWidth * fit;
+        const dotSize = fontSize * 0.44 * fit;
+        const dotGap = fontSize * 0.12 * fit;
+        const dotY = centerY + fontSize * 0.93 * fit;
+        for (let index = 0; index < group.source.count; index += 1) {
+          const dotX = groupX + index * (dotSize + dotGap);
+          ctx.beginPath();
+          ctx.arc(dotX + dotSize / 2, dotY, dotSize / 2, 0, Math.PI * 2);
+          ctx.fillStyle = '#ffffff';
+          ctx.fill();
+          ctx.strokeStyle = '#050505';
+          ctx.lineWidth = Math.max(1, scale * fit);
+          ctx.stroke();
+        }
+        ctx.fillStyle = style.textColor;
+        ctx.strokeStyle = style.textStrokeColor;
+      }
+    } else {
+      ctx.font = `900 ${fontSize * fit}px ${style.fontFamily}`;
+      for (const part of group.parts) {
+        if (part.kind === 'icon') {
+          const reservedWidth = fontSize * 1.62 * part.iconScale * part.iconWidthScale * fit;
+          const image = await loadImage(part.src);
+          const iconHeight = fontSize * 1.45 * part.iconScale * fit;
+          const iconWidth = iconHeight * part.iconWidthScale;
+          if (image) ctx.drawImage(image, cursorX + (reservedWidth - iconWidth) / 2, centerY - iconHeight / 2, iconWidth, iconHeight);
+          cursorX += reservedWidth;
+        } else {
+          const width = ctx.measureText(part.value).width;
+          if (style.textStrokeEnabled && ctx.lineWidth > 0) ctx.strokeText(part.value, cursorX, centerY);
+          ctx.fillText(part.value, cursorX, centerY);
+          cursorX += width;
+        }
+        cursorX += 2 * scale * fit;
+      }
+    }
+    cursorX = groupX + group.width * fit + groupGap * fit;
+  }
+  ctx.shadowBlur = 0;
+  return true;
+}
+
 async function drawPlacement(ctx: CanvasRenderingContext2D, placement: Placement, style: ComboImageStyle, scale: number) {
   const { block, x, y, width, height } = placement;
   const roleStyle = style.roleStyles[block.role];
@@ -438,7 +595,23 @@ async function drawPlacement(ctx: CanvasRenderingContext2D, placement: Placement
     const offsetY = (roleStyle.avatarOffsetY ?? style.avatarOffsetY) * scale;
     await drawAvatar(ctx, roleStyle.avatar, roleStyle.avatarCrop, x + offsetX, y + height / 2 - avatarSize / 2 + offsetY, avatarSize);
   }
-  await drawInlineContent(ctx, block, style, placement, scale);
+  if (!await drawMergedContent(ctx, block, style, placement, scale)) await drawInlineContent(ctx, block, style, placement, scale);
+  if (placement.showArrow) {
+    const arrowSize = 18 * scale;
+    const arrowX = x + width + 5 * scale;
+    const arrowY = y + (height - arrowSize) / 2;
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(arrowX + arrowSize * 0.34, arrowY + arrowSize * 0.22);
+    ctx.lineTo(arrowX + arrowSize * 0.68, arrowY + arrowSize * 0.5);
+    ctx.lineTo(arrowX + arrowSize * 0.34, arrowY + arrowSize * 0.78);
+    ctx.strokeStyle = '#70787d';
+    ctx.lineWidth = Math.max(1.5, 2.2 * scale);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.stroke();
+    ctx.restore();
+  }
 }
 
 function readFileAsDataUrl(file: File): Promise<string> {
@@ -608,9 +781,9 @@ function BaseCropEditor({ src, width, height, crop, stretch, edge, emptyLabel, o
   </div>;
 }
 
-export function FullChartExportLab({ chart, library, style, basePresets, onSelectChart, onExit, onExport }: FullChartExportLabProps) {
+export function FullChartExportLab({ chart, library, style, basePresets, initialPreset, initialContentWidth = 900, onSelectChart, onExit, onExport }: FullChartExportLabProps) {
   const { language, text } = useI18n();
-  const sourceStyle = useMemo(() => normalizeComboImageStyle(style), [style]);
+  const sourceStyle = useMemo(() => initialPreset === 'practice-axis' ? practiceAxisExportStyle(style) : normalizeComboImageStyle(style), [initialPreset, style]);
   const charts = useMemo(() => {
     const map = new Map<string, ComboChart>();
     if (chart) map.set(chart.id, chart);
@@ -619,6 +792,7 @@ export function FullChartExportLab({ chart, library, style, basePresets, onSelec
   }, [chart, library]);
   const [selectedId, setSelectedId] = useState(chart?.id ?? charts[0]?.id ?? '');
   const selectedChart = charts.find((item) => item.id === selectedId) ?? chart ?? charts[0] ?? null;
+  const characterSlots = selectedChart?.characterCount === 4 ? [1, 2, 3, 4] as CharacterSlot[] : [1, 2, 3] as CharacterSlot[];
   const [draftStyle, setDraftStyle] = useState(sourceStyle);
   const [localMappings, setLocalMappings] = useState<ComboIconMapping[]>(() => sourceStyle.iconMappings.map((mapping) => ({ ...mapping, triggers: [...mapping.triggers] })));
   const [localBasePresets, setLocalBasePresets] = useState<ComboBasePreset[]>(() => mergeBasePresets(basePresets, sourceStyle.basePresets));
@@ -628,14 +802,16 @@ export function FullChartExportLab({ chart, library, style, basePresets, onSelec
     roleStyles: {
       1: { ...draftStyle.roleStyles[1], iconMappings: localMappings },
       2: { ...draftStyle.roleStyles[2], iconMappings: localMappings },
-      3: { ...draftStyle.roleStyles[3], iconMappings: localMappings }
+      3: { ...draftStyle.roleStyles[3], iconMappings: localMappings },
+      4: { ...draftStyle.roleStyles[4], iconMappings: localMappings }
     }
   }), [draftStyle, localMappings]);
-  const [settings, setSettings] = useState(DEFAULT_SETTINGS);
+  const [settings, setSettings] = useState<ExportSettings>(() => initialPreset === 'practice-axis' ? practiceAxisExportSettings(initialContentWidth) : DEFAULT_SETTINGS);
   const [visibleLoopIds, setVisibleLoopIds] = useState<string[]>(() => defaultVisibleLoopIds(selectedChart));
   const loopPeriods = useMemo(() => sortedLoopPeriods(selectedChart), [selectedChart]);
   const hasStartupAxis = useMemo(() => (selectedChart?.periods ?? []).some((period) => period.kind === 'startup_axis'), [selectedChart]);
-  const [blocks, setBlocks] = useState<ExportBlock[]>(() => blocksFromChart(selectedChart, effectiveStyle, language, defaultVisibleLoopIds(selectedChart)));
+  const practiceAxisWidth = initialPreset === 'practice-axis' ? initialContentWidth : undefined;
+  const [blocks, setBlocks] = useState<ExportBlock[]>(() => blocksFromChart(selectedChart, effectiveStyle, language, defaultVisibleLoopIds(selectedChart), practiceAxisWidth));
   const [selectedBlockId, setSelectedBlockId] = useState(blocks[0]?.id ?? '');
   const [editorTab, setEditorTab] = useState<'appearance' | 'base' | 'icons' | 'content'>('appearance');
   const [baseTarget, setBaseTarget] = useState<'global' | CharacterSlot>('global');
@@ -649,10 +825,20 @@ export function FullChartExportLab({ chart, library, style, basePresets, onSelec
   const [autoScale, setAutoScale] = useState(1);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const renderRevisionRef = useRef(0);
+  const initializedPracticeChartRef = useRef<string | null>(null);
 
   useEffect(() => {
     setLocalBasePresets((current) => mergeBasePresets(basePresets, sourceStyle.basePresets, current.filter((preset) => preset.id.startsWith('export-base-'))));
   }, [basePresets, sourceStyle.basePresets]);
+
+  useEffect(() => {
+    if (initialPreset !== 'practice-axis' || !selectedChart || initializedPracticeChartRef.current === selectedChart.id || !blocks.length) return;
+    initializedPracticeChartRef.current = selectedChart.id;
+    setSettings((current) => {
+      const layout = layoutBlocks(blocks, effectiveStyle, { ...current, height: 100_000 }, 1);
+      return { ...current, height: Math.max(320, Math.ceil(layout.contentHeight)) };
+    });
+  }, [blocks, effectiveStyle, initialPreset, selectedChart]);
 
   useEffect(() => {
     if (!selectedChart) {
@@ -662,7 +848,7 @@ export function FullChartExportLab({ chart, library, style, basePresets, onSelec
     }
     setDraftStyle((current) => {
       const roleStyles = { ...current.roleStyles };
-      ([1, 2, 3] as CharacterSlot[]).forEach((slot) => {
+      characterSlots.forEach((slot) => {
         const sourceRole = sourceStyle.roleStyles[slot];
         roleStyles[slot] = { ...current.roleStyles[slot], name: sourceRole.name, avatar: sourceRole.avatar, avatarCrop: sourceRole.avatarCrop };
       });
@@ -670,10 +856,10 @@ export function FullChartExportLab({ chart, library, style, basePresets, onSelec
     });
     const defaultLoops = defaultVisibleLoopIds(selectedChart);
     setVisibleLoopIds(defaultLoops);
-    const next = blocksFromChart(selectedChart, effectiveStyle, language, defaultLoops);
+    const next = blocksFromChart(selectedChart, effectiveStyle, language, defaultLoops, practiceAxisWidth);
     setBlocks(next);
     setSelectedBlockId(next[0]?.id ?? '');
-  }, [selectedChart?.id]);
+  }, [selectedChart?.id, selectedChart?.characterCount]);
 
   useEffect(() => {
     setBlocks((current) => current.map((block) => {
@@ -693,14 +879,18 @@ export function FullChartExportLab({ chart, library, style, basePresets, onSelec
     const height = Math.round(settings.height);
     canvas.width = width;
     canvas.height = height;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    const previewContext = canvas.getContext('2d');
+    if (!previewContext) return;
     const scale = solveAutoScale(blocks, effectiveStyle, settings);
     setAutoScale(scale);
     const layout = layoutBlocks(blocks, effectiveStyle, settings, scale);
     setRenderError('');
     void (async () => {
-      ctx.clearRect(0, 0, width, height);
+      const renderCanvas = document.createElement('canvas');
+      renderCanvas.width = width;
+      renderCanvas.height = height;
+      const ctx = renderCanvas.getContext('2d');
+      if (!ctx) throw new Error('Canvas context unavailable');
       if (!settings.transparent) {
         ctx.fillStyle = settings.backgroundColor;
         ctx.fillRect(0, 0, width, height);
@@ -709,6 +899,9 @@ export function FullChartExportLab({ chart, library, style, basePresets, onSelec
         await drawPlacement(ctx, placement, effectiveStyle, scale);
         if (renderRevisionRef.current !== revision) return;
       }
+      if (renderRevisionRef.current !== revision) return;
+      previewContext.clearRect(0, 0, width, height);
+      previewContext.drawImage(renderCanvas, 0, 0);
     })().catch((error) => {
       if (renderRevisionRef.current === revision) setRenderError(error instanceof Error ? error.message : String(error));
     });
@@ -740,11 +933,11 @@ export function FullChartExportLab({ chart, library, style, basePresets, onSelec
 
   function patchSelectedBlock(patch: Partial<ExportBlock>) {
     if (!selectedBlock) return;
-    setBlocks((current) => current.map((block) => block.id === selectedBlock.id ? { ...block, ...patch } : block));
+    setBlocks((current) => current.map((block) => block.id === selectedBlock.id ? { ...block, ...patch, ...(patch.text === undefined ? {} : { displayItem: undefined }) } : block));
   }
 
   function resetBlocks() {
-    const next = blocksFromChart(selectedChart, effectiveStyle, language, visibleLoopIds);
+    const next = blocksFromChart(selectedChart, effectiveStyle, language, visibleLoopIds, practiceAxisWidth);
     setBlocks(next);
     setSelectedBlockId(next[0]?.id ?? '');
   }
@@ -755,7 +948,7 @@ export function FullChartExportLab({ chart, library, style, basePresets, onSelec
       ? visibleLoopIds.filter((id) => id !== periodId)
       : [...visibleLoopIds, periodId];
     setVisibleLoopIds(nextIds);
-    const next = blocksFromChart(selectedChart, effectiveStyle, language, nextIds);
+    const next = blocksFromChart(selectedChart, effectiveStyle, language, nextIds, practiceAxisWidth);
     setBlocks(next);
     setSelectedBlockId(next[0]?.id ?? '');
   }
@@ -959,6 +1152,7 @@ export function FullChartExportLab({ chart, library, style, basePresets, onSelec
               <NumberControl label={text('垂直边距', 'Vertical Padding')} value={settings.paddingY} min={0} max={800} onChange={(value) => patchSettings({ paddingY: value })} />
               <NumberControl label={text('横向间距', 'Column Gap')} value={settings.columnGap} min={0} max={300} onChange={(value) => patchSettings({ columnGap: value })} />
               <NumberControl label={text('行间距', 'Row Gap')} value={settings.rowGap} min={0} max={300} onChange={(value) => patchSettings({ rowGap: value })} />
+              <label className="full-chart-check"><input type="checkbox" checked={settings.showBlockArrows} onChange={(event) => patchSettings({ showBlockArrows: event.target.checked })} /><span>{text('块间箭头', 'Arrows Between Blocks')}</span></label>
               <label className="full-chart-check"><input type="checkbox" checked={settings.transparent} onChange={(event) => patchSettings({ transparent: event.target.checked })} /><span>{text('透明背景', 'Transparent Background')}</span></label>
               <label><span>{text('背景色', 'Background Color')}</span><input type="color" disabled={settings.transparent} value={settings.backgroundColor} onChange={(event) => patchSettings({ backgroundColor: event.target.value })} /></label>
             </div></fieldset>
@@ -975,14 +1169,14 @@ export function FullChartExportLab({ chart, library, style, basePresets, onSelec
               <label><span>{text('描边颜色', 'Outline Color')}</span><input type="color" disabled={!draftStyle.textStrokeEnabled} value={draftStyle.textStrokeColor} onChange={(event) => patchStyle({ textStrokeColor: event.target.value })} /></label>
               <label className="full-chart-check"><input type="checkbox" checked={draftStyle.convertIcons} onChange={(event) => patchStyle({ convertIcons: event.target.checked })} /><span>{text('图标转换', 'Icon Conversion')}</span></label>
             </div></fieldset>
-            <fieldset><legend>{text('角色颜色', 'Character Colors')}</legend><div className="full-chart-role-colors">{([1, 2, 3] as CharacterSlot[]).map((role) => <label key={role}><span>{localizeDefaultCharacterName(draftStyle.roleStyles[role].name, role, language)}</span><input type="color" value={draftStyle.roleStyles[role].color} onChange={(event) => patchRole(role, { color: event.target.value })} /></label>)}</div></fieldset>
+            <fieldset><legend>{text('角色颜色', 'Character Colors')}</legend><div className="full-chart-role-colors">{characterSlots.map((role) => <label key={role}><span>{localizeDefaultCharacterName(draftStyle.roleStyles[role].name, role, language)}</span><input type="color" value={draftStyle.roleStyles[role].color} onChange={(event) => patchRole(role, { color: event.target.value })} /></label>)}</div></fieldset>
           </div>
         ) : editorTab === 'base' ? (
           <div className="full-chart-base-editor">
             <div className="full-chart-base-toolbar">
               <div className="segmented full-chart-base-targets">
                 <button className={baseTarget === 'global' ? 'active' : ''} onClick={() => setBaseTarget('global')}>{text('全局', 'Global')}</button>
-                {([1, 2, 3] as CharacterSlot[]).map((role) => <button key={role} className={baseTarget === role ? 'active' : ''} onClick={() => setBaseTarget(role)}>{localizeDefaultCharacterName(draftStyle.roleStyles[role].name, role, language)}</button>)}
+                {characterSlots.map((role) => <button key={role} className={baseTarget === role ? 'active' : ''} onClick={() => setBaseTarget(role)}>{localizeDefaultCharacterName(draftStyle.roleStyles[role].name, role, language)}</button>)}
               </div>
               <label className="full-chart-upload-button"><Upload size={15} />{text('上传底图', 'Upload Base')}<input className="full-chart-file-input" type="file" accept="image/*" onChange={(event) => { void pickCustomBase(event.target.files?.[0] ?? null); event.currentTarget.value = ''; }} /></label>
               {baseTarget !== 'global' && <button disabled={!baseTargetHasOverride} onClick={reuseGlobalBase}><RotateCcw size={15} />{text('复用全局底图', 'Use Global Block Background')}</button>}

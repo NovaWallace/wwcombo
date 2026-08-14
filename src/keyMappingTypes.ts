@@ -66,14 +66,15 @@ const DEFAULT_CODES = [
   ['跳跃', 'Space', 'jump'],
   ['普攻', 'MouseLeft', 'basic_attack'],
   ['闪避', 'MouseRight', 'dodge'],
-  ['交互', 'KeyF', 'start_challenge'],
+  ['处决', 'KeyF', 'finisher'],
   ['W', 'KeyW', ''],
   ['A', 'KeyA', ''],
   ['S', 'KeyS', ''],
   ['D', 'KeyD', ''],
   ['1', 'Digit1', 'switch_1'],
   ['2', 'Digit2', 'switch_2'],
-  ['3', 'Digit3', 'switch_3']
+  ['3', 'Digit3', 'switch_3'],
+  ['4', 'Digit4', 'switch_4']
 ] as const;
 
 function clamp(value: number, min: number, max: number): number {
@@ -224,6 +225,11 @@ function normalizeBinding(value: unknown, index: number): KeyMappingBinding | nu
     ? record.codes.map((item) => String(item || '').trim()).filter(Boolean)
     : undefined;
   const id = typeof record.id === 'string' && record.id ? record.id : crypto.randomUUID();
+  const migratedDefaultFinisher = id === 'default-key-7' && (
+    record.moveId === 'start_challenge'
+    || record.name === '交互'
+    || record.name === 'Interact'
+  );
   const migratedDefaultDodge = id === 'default-key-6' && (
     storedCode === 'MouseLeftHold'
     || storedCodes?.includes('MouseLeftHold')
@@ -234,9 +240,13 @@ function normalizeBinding(value: unknown, index: number): KeyMappingBinding | nu
   const code = migratedDefaultDodge ? 'MouseRight' : storedCode;
   const defaultIndex = defaultKeyIndexFromId(id) ?? DEFAULT_CODES.findIndex(([, defaultCode]) => defaultCode === code);
   const fallbackSrc = defaultIndex >= 0 ? defaultKeyImageSrc(defaultIndex) : undefined;
-  const defaultMoveId = migratedDefaultDodge ? 'dodge' : defaultIndex >= 0 ? (DEFAULT_CODES[defaultIndex][2] || undefined) : undefined;
+  const defaultMoveId = migratedDefaultDodge
+    ? 'dodge'
+    : migratedDefaultFinisher
+      ? 'finisher'
+      : defaultIndex >= 0 ? (DEFAULT_CODES[defaultIndex][2] || undefined) : undefined;
   const moveId = typeof record.moveId === 'string' && record.moveId.trim()
-    ? (migratedDefaultDodge ? 'dodge' : record.moveId.trim())
+    ? (migratedDefaultDodge ? 'dodge' : migratedDefaultFinisher ? 'finisher' : record.moveId.trim())
     : defaultMoveId || undefined;
   const codes = migratedDefaultDodge
     ? ['MouseRight']
@@ -249,7 +259,11 @@ function normalizeBinding(value: unknown, index: number): KeyMappingBinding | nu
     || storedName === keyMappingCodeLabel(capturedCode)
     || storedName === keyMappingCodeLabel(capturedCode, (_chinese, english) => english)
   )));
-  const name = migratedDefaultDodge ? '闪避' : capturedCodeName ? defaultName! : storedName || defaultName || primaryCode || `按键 ${index + 1}`;
+  const name = migratedDefaultDodge
+    ? '闪避'
+    : migratedDefaultFinisher
+      ? '处决'
+      : capturedCodeName ? defaultName! : storedName || defaultName || primaryCode || `按键 ${index + 1}`;
 
   return {
     id,
@@ -400,6 +414,21 @@ export function resolveMoveBindingCodes(bindings: KeyBinding[], moveId: string):
   return result;
 }
 
+function gamepadDisplayCodes(codes: string[]): string[] {
+  const result = [...codes];
+  const seen = new Set(result);
+  for (const code of codes) {
+    const parts = code.split('+').map((part) => normalizeInputCode(part)).filter(Boolean);
+    if (parts.length < 2) continue;
+    for (const modifier of parts.slice(0, -1)) {
+      if (!/^Gamepad(?:LB|RB|LT|RT)$/u.test(modifier) || seen.has(modifier)) continue;
+      seen.add(modifier);
+      result.push(modifier);
+    }
+  }
+  return result;
+}
+
 export function keyMappingBindingLabel(binding: Pick<KeyMappingBinding, 'code' | 'codes'>, translate?: KeyMappingLabelTranslator): string {
   const codes = keyMappingBindingCodes(binding);
   if (!codes.length) return translate?.('未绑定', 'Unbound') ?? '未绑定';
@@ -427,7 +456,8 @@ export function withSettingsSyncedKeyMappingBindings(
       }
       const ownCodes = keyMappingBindingCodes(binding);
       const settingsBinding = settingsBindings.find((item) => item.moveId === binding.moveId);
-      const codes = settingsBinding ? resolveMoveBindingCodes(settingsBindings, binding.moveId) : ownCodes;
+      const resolvedCodes = settingsBinding ? resolveMoveBindingCodes(settingsBindings, binding.moveId) : ownCodes;
+      const codes = inputMode === 'gamepad' ? gamepadDisplayCodes(resolvedCodes) : resolvedCodes;
       if (!codes.length) continue;
       bindings.push({
         ...binding,

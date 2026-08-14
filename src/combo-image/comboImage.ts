@@ -30,11 +30,12 @@ export type ComboImageMergedPart = {
 export type ComboImageMergedMove = {
   moveId: string;
   displayText: string;
-  iconId: string;
-  iconLabel: string;
-  iconSrc: string;
-  iconScale: number;
-  iconWidthScale: number;
+  iconId?: string;
+  iconLabel?: string;
+  iconSrc?: string;
+  iconScale?: number;
+  iconWidthScale?: number;
+  renderAsIcon: boolean;
   count: number;
   stepIds: string[];
   startMs: number;
@@ -57,7 +58,8 @@ const GENERATED_SPECIAL_KEY_ICONS: Record<string, { generated: string | undefine
   finisher: { generated: keyboardMouseIconSource('KeyF', 'accent'), project: '/combo-assets/button-icons/finisher.png' },
   i: { generated: keyboardMouseIconSource('Digit1', 'accent'), project: '/combo-assets/button-icons/i.png' },
   ii: { generated: keyboardMouseIconSource('Digit2', 'accent'), project: '/combo-assets/button-icons/ii.png' },
-  iii: { generated: keyboardMouseIconSource('Digit3', 'accent'), project: '/combo-assets/button-icons/iii.png' }
+  iii: { generated: keyboardMouseIconSource('Digit3', 'accent'), project: '/combo-assets/button-icons/iii.png' },
+  iv: { generated: keyboardMouseIconSource('Digit4', 'accent'), project: '/combo-assets/button-icons/iii.png' }
 };
 
 type RoleStyle = ComboImageStyle['roleStyles'][CharacterSlot];
@@ -73,7 +75,8 @@ type CapsuleImageFields = {
 export const DEFAULT_ROLE_COLORS: Record<CharacterSlot, string> = {
   1: '#3459a4',
   2: '#8f4b57',
-  3: '#326d5d'
+  3: '#326d5d',
+  4: '#8064a2'
 };
 
 export const DEFAULT_ICON_MAPPINGS: ComboImageStyle['iconMappings'] = [
@@ -90,13 +93,14 @@ export const DEFAULT_ICON_MAPPINGS: ComboImageStyle['iconMappings'] = [
   { id: 'liberation', label: '共鸣解放', src: '/combo-assets/button-icons/liberation.png', triggers: ['r', '共鸣解放'] },
   { id: 'mouse-right', label: '闪避', src: '/combo-assets/button-icons/mouse-right.png', triggers: ['s', 'd', '闪避'] },
   { id: 'jump', label: '跳跃', src: '/combo-assets/button-icons/jump.png', triggers: ['j', '跳跃', '跳'] },
-  { id: 'intro', label: '变奏', src: '/combo-assets/button-icons/intro.png', triggers: ['b', '变奏'] },
-  { id: 'outro', label: '延奏', src: '/combo-assets/button-icons/outro.png', triggers: ['y', '延奏'] },
+  { id: 'intro', label: '变奏 / Intro', src: '/combo-assets/button-icons/intro.png', triggers: ['b', 'B', '变奏', '变奏切人', '变奏技能', '变奏技', 'intro', 'Intro', 'INTRO', 'intro skill', 'Intro Skill', 'Intro Character Switch'] },
+  { id: 'outro', label: '延奏 / Outro', src: '/combo-assets/button-icons/outro.png', triggers: ['y', 'Y', '延奏', '延奏切人', '延奏技能', '延奏技', 'outro', 'Outro', 'OUTRO', 'outro skill', 'Outro Skill', 'Outro Character Switch'] },
   { id: 'finisher', label: '处决 / Tunebreak', src: '/combo-assets/button-icons/finisher.png', triggers: ['f'] },
   { id: 'forward', label: '前走 / Forward', src: FORWARD_KEY_ICON, triggers: ['w'] },
   { id: 'iii', label: '3', src: '/combo-assets/button-icons/iii.png', triggers: ['iii'] },
   { id: 'ii', label: '2', src: '/combo-assets/button-icons/ii.png', triggers: ['ii'] },
-  { id: 'i', label: '1', src: '/combo-assets/button-icons/i.png', triggers: ['i'] }
+  { id: 'i', label: '1', src: '/combo-assets/button-icons/i.png', triggers: ['i'] },
+  { id: 'iv', label: '4', src: GENERATED_SPECIAL_KEY_ICONS.iv.generated ?? GENERATED_SPECIAL_KEY_ICONS.iv.project, triggers: ['iv', 'iiii', '4'] }
 ];
 
 export const SKILL_ICON_MAP: Record<string, { id: string; label: string; src: string }> = {
@@ -118,8 +122,8 @@ export const SKILL_ICON_MAP: Record<string, { id: string; label: string; src: st
   s: { id: 'mouse-right', label: '闪避', src: '/combo-assets/button-icons/mouse-right.png' },
   d: { id: 'mouse-right', label: '闪避', src: '/combo-assets/button-icons/mouse-right.png' },
   j: { id: 'jump', label: '跳跃', src: '/combo-assets/button-icons/jump.png' },
-  b: { id: 'intro', label: '变奏', src: '/combo-assets/button-icons/intro.png' },
-  y: { id: 'outro', label: '延奏', src: '/combo-assets/button-icons/outro.png' },
+  b: { id: 'intro', label: '变奏 / Intro', src: '/combo-assets/button-icons/intro.png' },
+  y: { id: 'outro', label: '延奏 / Outro', src: '/combo-assets/button-icons/outro.png' },
   f: { id: 'finisher', label: '处决 / Tunebreak', src: '/combo-assets/button-icons/finisher.png' },
   w: { id: 'forward', label: '前走 / Forward', src: FORWARD_KEY_ICON }
 };
@@ -135,8 +139,16 @@ const TEXT_ICON_MAP: Record<string, { id: string; label: string; src: string }> 
   ii: { id: 'ii', label: '2', src: '/combo-assets/button-icons/ii.png' },
   i: { id: 'i', label: '1', src: '/combo-assets/button-icons/i.png' },
   跳: { id: 'jump', label: '跳跃', src: '/combo-assets/button-icons/jump.png' },
-  变奏: { id: 'intro', label: '变奏', src: '/combo-assets/button-icons/intro.png' },
-  延奏: { id: 'outro', label: '延奏', src: '/combo-assets/button-icons/outro.png' }
+  变奏: { id: 'intro', label: '变奏 / Intro', src: '/combo-assets/button-icons/intro.png' },
+  延奏: { id: 'outro', label: '延奏 / Outro', src: '/combo-assets/button-icons/outro.png' },
+  intro: { id: 'intro', label: '变奏 / Intro', src: '/combo-assets/button-icons/intro.png' },
+  Intro: { id: 'intro', label: '变奏 / Intro', src: '/combo-assets/button-icons/intro.png' },
+  'intro skill': { id: 'intro', label: '变奏 / Intro', src: '/combo-assets/button-icons/intro.png' },
+  'Intro Skill': { id: 'intro', label: '变奏 / Intro', src: '/combo-assets/button-icons/intro.png' },
+  outro: { id: 'outro', label: '延奏 / Outro', src: '/combo-assets/button-icons/outro.png' },
+  Outro: { id: 'outro', label: '延奏 / Outro', src: '/combo-assets/button-icons/outro.png' },
+  'outro skill': { id: 'outro', label: '延奏 / Outro', src: '/combo-assets/button-icons/outro.png' },
+  'Outro Skill': { id: 'outro', label: '延奏 / Outro', src: '/combo-assets/button-icons/outro.png' }
 };
 
 export const AVATAR_PRESETS: Array<{ name: string; src: string }> = [];
@@ -156,6 +168,7 @@ export function scaleComboImageStyle(style: ComboImageStyle, scaleInput: number)
   return {
     ...style,
     roleStyles: {
+      4: scaleRole(style.roleStyles[4]),
       1: scaleRole(style.roleStyles[1]),
       2: scaleRole(style.roleStyles[2]),
       3: scaleRole(style.roleStyles[3])
@@ -181,6 +194,7 @@ export function scaleComboImageStyle(style: ComboImageStyle, scaleInput: number)
 export function createDefaultComboImageStyle(): ComboImageStyle {
   return {
     roleStyles: {
+      4: { name: 'Character 4', color: DEFAULT_ROLE_COLORS[4], avatarCrop: defaultRectPercent(), avatarSize: 70, avatarOffsetX: -20, avatarOffsetY: 0 },
       1: { name: '角色1', color: DEFAULT_ROLE_COLORS[1], avatarCrop: defaultRectPercent(), avatarSize: 70, avatarOffsetX: -20, avatarOffsetY: 0 },
       2: { name: '角色2', color: DEFAULT_ROLE_COLORS[2], avatarCrop: defaultRectPercent(), avatarSize: 70, avatarOffsetX: -20, avatarOffsetY: 0 },
       3: { name: '角色3', color: DEFAULT_ROLE_COLORS[3], avatarCrop: defaultRectPercent(), avatarSize: 70, avatarOffsetX: -20, avatarOffsetY: 0 }
@@ -225,6 +239,15 @@ export function createDefaultComboImageStyle(): ComboImageStyle {
     mergeSameRoleSteps: true,
     mergeSameRoleLimit: 10,
     mergeSameMoveSteps: false,
+    showNotesSeparately: true,
+    noteScale: 1,
+    noteFontFamily: 'Microsoft YaHei, Inter, system-ui, sans-serif',
+    noteTextColor: '#ffffff',
+    noteTextStrokeEnabled: true,
+    noteTextStrokeWidth: 3,
+    noteTextStrokeColor: '#050505',
+    noteOrder: 'oldest-bottom',
+    stairRoleOffset: 48,
     iconMappings: DEFAULT_ICON_MAPPINGS,
     basePresets: [],
     avatarPresets: [],
@@ -257,6 +280,7 @@ export function normalizeComboImageStyle(value: Partial<ComboImageStyle> | null 
     backgroundImage,
     capsuleImage,
     roleStyles: {
+      4: normalizeRoleStyle(fallback.roleStyles[4], value?.roleStyles?.[4]),
       1: normalizeRoleStyle(fallback.roleStyles[1], value?.roleStyles?.[1]),
       2: normalizeRoleStyle(fallback.roleStyles[2], value?.roleStyles?.[2]),
       3: normalizeRoleStyle(fallback.roleStyles[3], value?.roleStyles?.[3])
@@ -294,6 +318,15 @@ export function normalizeComboImageStyle(value: Partial<ComboImageStyle> | null 
     mergeSameRoleSteps: value?.mergeSameRoleSteps !== false,
     mergeSameRoleLimit: clampNumber(value?.mergeSameRoleLimit, 1, 30, fallback.mergeSameRoleLimit),
     mergeSameMoveSteps: Boolean(value?.mergeSameMoveSteps),
+    showNotesSeparately: value?.showNotesSeparately !== false,
+    noteScale: clampNumber(value?.noteScale, 0.25, 4, fallback.noteScale),
+    noteFontFamily: typeof value?.noteFontFamily === 'string' && value.noteFontFamily.trim() ? value.noteFontFamily.trim() : fallback.noteFontFamily,
+    noteTextColor: typeof value?.noteTextColor === 'string' && /^#[0-9a-f]{6}$/i.test(value.noteTextColor) ? value.noteTextColor : fallback.noteTextColor,
+    noteTextStrokeEnabled: value?.noteTextStrokeEnabled !== false,
+    noteTextStrokeWidth: clampNumber(value?.noteTextStrokeWidth, 0, 16, fallback.noteTextStrokeWidth),
+    noteTextStrokeColor: typeof value?.noteTextStrokeColor === 'string' && /^#[0-9a-f]{6}$/i.test(value.noteTextStrokeColor) ? value.noteTextStrokeColor : fallback.noteTextStrokeColor,
+    noteOrder: value?.noteOrder === 'oldest-top' ? 'oldest-top' : 'oldest-bottom',
+    stairRoleOffset: clampNumber(value?.stairRoleOffset, 0, 1000, fallback.stairRoleOffset),
     iconMappings: normalizeIconMappings(value?.iconMappings),
     basePresets: normalizeStoredBasePresets(value?.basePresets),
     avatarPresets: normalizeStoredAvatarPresets(value?.avatarPresets),
@@ -360,7 +393,13 @@ export function chartToComboImageItems(chart: ComboChart | null, style: ComboIma
   const items = steps.map((step, index) => {
     const switchSlot = switchSlotForMove(step.moveId);
     const characterSlot = step.characterSlot ?? switchSlot ?? 1;
-    const displayText = style.contentLabels[step.id]?.trim() || defaultComboContentLabelForMoveId(step.moveId) || step.label;
+    // The style is the live editor state; chart labels are the import/export
+    // fallback. Keeping both here prevents a stale style snapshot from
+    // changing which b/y icon sequence is rendered after chart switching.
+    const displayText = style.contentLabels[step.id]?.trim()
+      || chart.contentLabels?.[step.id]?.trim()
+      || defaultComboContentLabelForMoveId(step.moveId)
+      || step.label;
     const mappings = effectiveIconMappings(style, characterSlot);
     return {
       step,
@@ -412,7 +451,7 @@ export function comboImageItemSizeForDisplayItem(style: ComboImageStyle, item: C
   const mappings = effectiveIconMappings(style, roleStyle ?? item.characterSlot);
   const mergedMoveGroups = item.mergedMoveGroups?.length ? item.mergedMoveGroups : undefined;
   const contentUnits = mergedMoveGroups
-    ? mergedMoveGroups.reduce((sum, group) => sum + 1.62 * group.iconScale * group.iconWidthScale + (group.count > 1 ? 1.7 : 0.2), 0)
+    ? mergedMoveGroups.reduce((sum, group) => sum + (group.renderAsIcon ? 1.62 * (group.iconScale ?? 1) * (group.iconWidthScale ?? 1) + (group.count > 1 ? 1.7 : 0.2) : comboTextDisplayUnits(group.displayText, style.convertIcons, mappings)), 0)
     : item.mergedParts.reduce((sum, part) => sum + comboTextDisplayUnits(part.displayText, Boolean(part.iconId), mappings), 0);
   const avatarSpace = item.showAvatar ? Math.max(30, base.height * 0.62) : 0;
   const sidePadding = style.blockMode === 'image' ? Math.max(52, style.autoWidthPadding * 0.84) : Math.max(36, style.autoWidthPadding * 0.66);
@@ -465,7 +504,7 @@ function estimatedMergedContentWidth(item: ComboImageItem, style: ComboImageStyl
   const mappings = effectiveIconMappings(style, roleStyle ?? item.characterSlot);
   const mergedMoveGroups = item.mergedMoveGroups?.length ? item.mergedMoveGroups : undefined;
   const contentUnits = mergedMoveGroups
-    ? mergedMoveGroups.reduce((sum, group) => sum + 1.62 * group.iconScale * group.iconWidthScale + (group.count > 1 ? 1.25 : 0.2), 0)
+    ? mergedMoveGroups.reduce((sum, group) => sum + (group.renderAsIcon ? 1.62 * (group.iconScale ?? 1) * (group.iconWidthScale ?? 1) + (group.count > 1 ? 1.25 : 0.2) : comboTextDisplayUnits(group.displayText, style.convertIcons, mappings)), 0)
     : item.mergedParts.reduce((sum, part) => sum + comboTextDisplayUnits(part.displayText, Boolean(part.iconId), mappings), 0);
   const avatarSpace = item.showAvatar ? Math.max(30, base.height * 0.62) : 0;
   const sidePadding = style.blockMode === 'image' ? Math.max(52, style.autoWidthPadding * 0.84) : Math.max(36, style.autoWidthPadding * 0.66);
@@ -513,11 +552,13 @@ function createMergedMoveGroups(items: ComboImageItem[], style: ComboImageStyle)
   for (const item of items) {
     const mappings = effectiveIconMappings(style, item.characterSlot);
     const parts = comboTextParts(item.displayText, style.convertIcons, mappings);
-    const icon = parts.length === 1 && parts[0].kind === 'icon' ? parts[0] : undefined;
-    if (!icon) return undefined;
+    const iconParts = parts.filter((part): part is Extract<typeof part, { kind: 'icon' }> => part.kind === 'icon');
+    const icon = iconParts.length > 0 && iconParts.length === parts.length && iconParts.every((part) => part.iconId === iconParts[0].iconId)
+      ? iconParts[0]
+      : undefined;
     const { startMs, endMs } = comboItemMergeRange(item);
     const previous = groups[groups.length - 1];
-    if (previous && previous.moveId === item.step.moveId && previous.iconId === icon.iconId) {
+    if (icon && previous?.renderAsIcon && previous.moveId === item.step.moveId && previous.iconId === icon.iconId) {
       previous.count += 1;
       previous.stepIds.push(item.step.id);
       previous.endMs = Math.max(previous.endMs, endMs);
@@ -526,18 +567,21 @@ function createMergedMoveGroups(items: ComboImageItem[], style: ComboImageStyle)
     groups.push({
       moveId: item.step.moveId,
       displayText: item.displayText,
-      iconId: icon.iconId,
-      iconLabel: icon.label,
-      iconSrc: icon.src,
-      iconScale: icon.iconScale,
-      iconWidthScale: icon.iconWidthScale,
+      ...(icon ? {
+        iconId: icon.iconId,
+        iconLabel: icon.label,
+        iconSrc: icon.src,
+        iconScale: icon.iconScale,
+        iconWidthScale: icon.iconWidthScale
+      } : {}),
+      renderAsIcon: Boolean(icon),
       count: 1,
       stepIds: [item.step.id],
       startMs,
       endMs
     });
   }
-  return groups.some((group) => group.count > 1) ? groups : undefined;
+  return groups.some((group) => group.renderAsIcon && group.count > 1) ? groups : undefined;
 }
 
 function createMergedPart(item: ComboImageItem): ComboImageMergedPart {
@@ -697,6 +741,7 @@ export function defaultComboContentLabelForMoveId(moveId: string): string | unde
   if (moveId === 'switch_1') return 'i';
   if (moveId === 'switch_2') return 'ii';
   if (moveId === 'switch_3') return 'iii';
+  if (moveId === 'switch_4') return 'iiii';
   return undefined;
 }
 
@@ -808,7 +853,6 @@ function createLocalPresetId(): string {
 }
 
 function normalizeIconMappings(value: unknown): ComboImageStyle['iconMappings'] {
-  
   const source = Array.isArray(value) ? value : [];
   const byId = new Map(DEFAULT_ICON_MAPPINGS.map((mapping) => [mapping.id, { ...mapping, triggers: [...mapping.triggers] }]));
 
@@ -825,8 +869,12 @@ function normalizeIconMappings(value: unknown): ComboImageStyle['iconMappings'] 
       triggers = triggers.filter((trigger) => trigger !== 'a');
       for (const trigger of ['A', 'z', 'Z']) if (!triggers.includes(trigger)) triggers.push(trigger);
     }
-    if (!triggers.length) continue;
     const id = entry.id.trim();
+    if (!triggers.length) continue;
+    const defaultMapping = byId.get(id);
+    if ((id === 'intro' || id === 'outro') && defaultMapping) {
+      triggers = [...new Set([...defaultMapping.triggers, ...triggers])];
+    }
     const storedSource = entry.src.trim();
     const builtInForwardSource = id === 'forward' && storedSource.endsWith('/combo-assets/button-icons/forward.png');
     const generatedSpecialIcon = GENERATED_SPECIAL_KEY_ICONS[id];
@@ -855,14 +903,38 @@ export function normalizeComboIconMappings(value: unknown): ComboImageStyle['ico
 }
 
 export function effectiveIconMappings(style: ComboImageStyle, role: CharacterSlot | RoleStyle | undefined): ComboImageStyle['iconMappings'] {
+  const globalMappings = normalizeIconMappings(style.iconMappings);
   const roleStyle = typeof role === 'number' ? style.roleStyles[role] : role;
-  return roleStyle?.iconMappings?.length ? roleStyle.iconMappings : style.iconMappings;
+  const roleMappings = roleStyle?.iconMappings;
+  if (!roleMappings?.length) return globalMappings;
+
+  // Role snapshots are still needed for per-character custom icons, but they
+  // must not erase newer global triggers (especially Intro/Outro aliases).
+  const explicitRoleIds = new Set(roleMappings.flatMap((mapping) => {
+    if (!mapping || typeof mapping.id !== 'string' || !mapping.id.trim()) return [];
+    return [mapping.id.trim()];
+  }));
+  const normalizedRoleMappings = normalizeIconMappings(roleMappings);
+  const roleById = new Map(normalizedRoleMappings.map((mapping) => [mapping.id, mapping]));
+  const merged = globalMappings.map((mapping) => {
+    if (!explicitRoleIds.has(mapping.id)) return mapping;
+    const roleMapping = roleById.get(mapping.id);
+    if (!roleMapping) return mapping;
+    return {
+      ...mapping,
+      ...roleMapping,
+      triggers: [...new Set([...mapping.triggers, ...roleMapping.triggers])]
+    };
+  });
+  const globalIds = new Set(globalMappings.map((mapping) => mapping.id));
+  return [...merged, ...normalizedRoleMappings.filter((mapping) => !globalIds.has(mapping.id))];
 }
 
 export function switchSlotForMove(moveId: string): CharacterSlot | null {
   if (moveId === 'switch_1') return 1;
   if (moveId === 'switch_2') return 2;
   if (moveId === 'switch_3') return 3;
+  if (moveId === 'switch_4') return 4;
   return null;
 }
 

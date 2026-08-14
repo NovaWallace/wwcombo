@@ -1,0 +1,7 @@
+.decorated-note-row { display: flex; align-items: center; gap: .24em; min-width: 0; }
+.decorated-note-avatar { flex: 0 0 1.2em; width: 1.2em; height: 1.2em; border: .06em solid currentColor; border-radius: 50%; display: inline-grid; place-items: center; overflow: hidden; color: #fff; font-size: 1em; font-weight: 900; line-height: 1; text-shadow: 0 .05em .1em rgba(0,0,0,.85); }
+.decorated-note-operation { flex: 0 0 calc(1.2em * var(--note-operation-width-scale, 1)); width: calc(1.2em * var(--note-operation-width-scale, 1)); height: 1.2em; display: inline-grid; place-items: center; }
+.decorated-note-operation img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.decorated-note-diamond-slot { flex: 0 0 1em; width: 1em; height: 1em; display: inline-grid; place-items: center; }
+.decorated-note-diamond { width: .38em; height: .38em; transform: rotate(45deg); background: #fff; box-shadow: 0 0 0 .07em rgba(0,0,0,.92); }
+.decorated-note-text { flex: 1 1 auto; min-width: 0; padding-inline: var(--note-outline-space, 1px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

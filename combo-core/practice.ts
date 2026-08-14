@@ -138,11 +138,19 @@ export class PracticeSession {
     this.elapsedMs = 0;
     this.startedFromElapsed = 0;
     this.waitingAxisStart = null;
-    if (resetProgress) this.currentStepIndex = 0;
+    if (resetProgress) {
+      this.currentStepIndex = 0;
+      this.completedStepIds = [];
+      this.errorStepIds = [];
+      this.matchedStepIds.clear();
+      this.judgements.clear();
+      this.missedStepIds.clear();
+      this.unlockedAxisStarts.clear();
+    }
     return this.snapshot();
   }
 
-  accept(event: TrainerInputEvent): PracticeSnapshot {
+  accept(event: TrainerInputEvent, resetProgressOnStop = false): PracticeSnapshot {
     const activation = resolveActivation(event, this.moves, this.bindings);
     if (!activation) return this.snapshot();
 
@@ -151,7 +159,7 @@ export class PracticeSession {
     }
 
     if (activation.move.id === (this.chart.stopTriggerMoveId ?? 'stop_recording')) {
-      return this.stop();
+      return this.stop(resetProgressOnStop);
     }
 
     if (this.settings.axisGateEnabled && (this.status === 'idle' || this.status === 'armed') && this.settings.mode !== 'lenient') {
@@ -324,14 +332,17 @@ export class PracticeSession {
   }
 
   private findLenientInputTarget(moveId: string, active: ComboStep | undefined): ComboStep | null {
-    if (active && this.isBlockingPracticeStep(active) && !this.matchedStepIds.has(active.id) && active.moveId === moveId) return active;
+    // Older shared charts can still mark normal actions as independent. They
+    // remain time-skippable, but a correct live input must complete them
+    // immediately instead of leaving Advance mode waiting for their duration.
+    if (active && !active.free && !this.isDisplayOnlyStep(active) && !this.matchedStepIds.has(active.id) && this.matchesLenientMove(active.moveId, moveId)) return active;
     const activeIndex = active ? this.chart.steps.findIndex((step) => step.id === active.id) : this.currentStepIndex;
     if (active && this.isInterruptibleTimedStep(active)) {
       for (let index = activeIndex + 1; index < this.chart.steps.length; index += 1) {
         const step = this.chart.steps[index];
         if (this.matchedStepIds.has(step.id)) continue;
         if (!this.isBlockingPracticeStep(step)) continue;
-        return step.moveId === moveId ? step : null;
+        return this.matchesLenientMove(step.moveId, moveId) ? step : null;
       }
       return null;
     }
@@ -340,10 +351,19 @@ export class PracticeSession {
     for (let index = searchStart; index < searchEnd; index += 1) {
       const step = this.chart.steps[index];
       if (!this.isBlockingPracticeStep(step) || this.matchedStepIds.has(step.id)) continue;
-      if (step.moveId === moveId) return step;
+      if (this.matchesLenientMove(step.moveId, moveId)) return step;
       if (index >= this.currentStepIndex && step.moveId !== moveId) break;
     }
     return null;
+  }
+
+  private matchesLenientMove(expectedMoveId: string, actualMoveId: string): boolean {
+    if (expectedMoveId === actualMoveId) return true;
+    // Advance mode should not get stuck when a normal action is released
+    // after the hold threshold and arrives as its hold variant. Challenge
+    // mode still requires the exact move id.
+    if (actualMoveId === 'heavy_attack') return expectedMoveId === 'basic_attack';
+    return actualMoveId.endsWith('_hold') && actualMoveId.slice(0, -5) === expectedMoveId;
   }
 
   private isTimedPracticeStep(step: ComboStep): boolean {

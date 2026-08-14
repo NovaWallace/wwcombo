@@ -86,7 +86,7 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
             items: [
               '进入“设置”，在“输入模式”选择“键鼠”或“手柄”，只会显示当前模式的绑定。',
               '点击每个绑定框右侧的捕获按钮，再按下目标按键；同一招式可同时设置两个按键，例如 Shift 与鼠标右键。',
-              '手柄可选择 Xbox 或 PlayStation 图标；键鼠统一显示实际按键图标，并可点击按键图标上传自定义图片。',
+              '手柄类型可选择 Xbox 或 PlayStation；该选项会同时切换实际捕获后端和按键图标。键鼠统一显示实际按键图标，并可点击按键图标上传自定义图片。',
               '用“导出按键设置”备份键鼠与手柄绑定，之后可导入 .wwkeys.json 恢复；该文件与连段分享 JSON 相互独立。',
               '在“快捷键设置”中可修改时间轴与视频工具的单键或 Shift 组合；Ctrl、Alt 起手的编辑组合保持固定。'
             ]
@@ -211,6 +211,7 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
               { keys: ['Y'], action: '单选一个块时，在现有内容末尾追加延奏 y', note: '例如普攻 a 会变成 ay。' },
               { keys: ['Shift'], action: '直接进入连续添加状态' },
               { keys: ['X'], action: '鼠标在时段轴上时，以悬停位置设置左侧启动轴和右侧循环轴；添加状态中则切换“招式 / 时段”', nested: true },
+              { keys: ['滚轮'], action: '鼠标在时间轴区域时，以指针位置为中心调整横向缩放比例', nested: true },
               { keys: ['A'], action: '添加状态切换为普攻', nested: true },
               { keys: ['Z / Shift+A'], action: '添加状态切换为重击', nested: true },
               { keys: ['E / Q / R'], action: '切换为技能 / 声骸 / 共鸣解放', note: '按住 Shift 使用对应长按版本。', nested: true },
@@ -332,9 +333,10 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
               { name: '输入模式', effect: '在键鼠和手柄之间切换；只显示当前模式的绑定。' },
               { name: '按键 1 / 按键 2', effect: '同一招式最多绑定两个输入，适配不同操作习惯。' },
               { name: '独立 / 推进', effect: '独立操作可与其他操作并行记录；推进决定该招式是否推动练习步骤。' },
-              { name: '键鼠 / 手柄图标', effect: '键鼠显示实际按键图标；手柄可选择 Xbox 或 PlayStation 图标。' },
+              { name: '输入模式 / 手柄类型', effect: '键鼠、Xbox 与 PlayStation 使用互相独立的捕获逻辑；一次只启用当前选择的输入源。手柄类型也会同步切换按键图标。' },
               { name: '导入 / 导出按键设置', effect: '用独立的 .wwkeys.json 文件备份或恢复键鼠与手柄绑定，不会导入连段或外观；内置社区会自动同步当前按键与自定义图标用于连段图。' },
               { name: '快捷键设置', effect: '修改时间轴与视频工具的单键或 Shift 组合；Ctrl、Alt 起手的固定编辑组合不会被覆盖。' },
+              { name: '录制识别阈值', effect: '分别调整点按合并窗口、键鼠重击长按、普通长按和手柄长按的判定时间。' },
               { name: 'Live2D / 录制提示点', effect: '分别控制主界面动态角色和录制状态提示点的显示。' }
             ]
           }
@@ -344,6 +346,29 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
         title: '更新日志',
         summary: '记录公开版本和当前开发版的重要变化。',
         groups: [
+          {
+            title: 'v0.63.0 · 2026-08-09',
+            items: [
+              '新增兼容模式：最多支持 4 名角色，并同步扩展角色轨道、自适应切人和第 4 个切人按键；兼容模式下可直接编辑角色名与招式名，招式名会同步成为默认提示。',
+              '新增“备注单独显示”。只有用户自定义过备注的招式进入独立提示区；提示区可独立移动、缩放并设置字体、颜色、圆润描边和排序，招式完成后对应备注立即消失。视频预览和最终合成也会包含该提示区。',
+              '连段图新增“阶梯”布局与角色偏移量设置。“同招式合并”可把连续同图标显示为图标与次数，并保留逐招进度；带特殊备注的合并节点会使用醒目的红色标记。',
+              '录制页新增快速编队，可直接选择角色与顺序、应用当前队伍或保存为队伍预设；预设列表标题和操作区在滚动时保持可用。',
+              '主编辑器和视频编辑器统一使用“时间 / 备注”。备注模式现在编辑真正的招式备注，不再改写内容映射；开启独立备注后，连段图本体仍显示默认招式提示。',
+              '优化连段图与提示区的移动、裁剪和缩放。移动键支持左右拖动缩放与长按 3 秒复位，视频模式放宽横向裁剪范围，并修复移动裁剪框抽搐、复原和超出边缘的问题。',
+              '新增 PlayStation 手柄捕获模式。键鼠、Xbox、PlayStation 使用三套独立输入链路，一次只运行用户当前选择的一套；同时调整默认手柄闪避与共鸣解放键位。',
+              '将 FFmpeg 和全部 Live2D 源素材拆分为可选的 wwcombo DLC。视频扩展与每名角色的 Live2D 可按需安装，设置页可重新扫描并调整角色缩放、左右和上下位置；离开主界面会释放 Live2D 渲染资源。',
+              '修复变奏、延奏及其他组合图标在部分旧连段中重叠或丢失的问题；统一主界面、置顶连段图、练习预览和视频合成的图标映射与圆润文字描边。',
+              '修复文字轴 z、Z、A 不能稳定转换为重击的问题；社区下载连段不再覆盖用户的按键、招式名或推进设置，只有主动导入 .wwkeys.json 才会更改全局输入设置。',
+              '修复推进模式偶尔卡在上一步的问题。普通招式可兼容其长按版本，普攻可兼容重击输入，旧连段中误标为独立轨道的普通操作也会在正确输入后立即推进；挑战模式仍保持严格匹配。'
+            ]
+          },
+          {
+            title: 'v0.62.1 · 2026-08-05',
+            items: [
+              '练习模式导入现在兼容隔壁项目角色技能 JSON：会生成本体可编辑的连段图，并按当前语言复制可直接粘贴到文字轴识别的文字轴；图片和头像 Base64 数据不会导入。',
+              '文字轴解析支持中括号备注，备注不会参与图标转换；补齐时间轴滚轮缩放的快捷键说明，以及录制识别阈值的设置说明。'
+            ]
+          },
           {
             title: 'v0.61.0 · 2026-08-02',
             items: [
@@ -461,7 +486,7 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
             items: [
               'Open Settings and choose Keyboard & Mouse or Gamepad under Input Mode. Only bindings for the active mode are shown.',
               'Click the capture button beside a binding, then press the desired input. One action can have two bindings, such as Shift and the right mouse button.',
-              'Gamepad mode supports Xbox and PlayStation icons. Keyboard and mouse inputs use actual-key icons, which can be clicked to upload custom images.',
+              'Choose Xbox or PlayStation under Controller Type. This switches both the capture backend and its button icons. Keyboard and mouse inputs use actual-key icons, which can be clicked to upload custom images.',
               'Use Export Input Settings to back up keyboard, mouse, and gamepad bindings, then import the .wwkeys.json file to restore them. This format is separate from combo-share JSON.',
               'Shortcut Settings can customize single-key and Shift combinations for timeline and video tools. Editing combinations beginning with Ctrl or Alt remain fixed.'
             ]
@@ -586,6 +611,7 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
               { keys: ['Y'], action: 'Append Outro y to one selected block', note: 'Basic Attack a becomes ay.' },
               { keys: ['Shift'], action: 'Enter continuous Add mode immediately' },
               { keys: ['X'], action: 'On the Period track, set Opener on the left and Loop on the right at the pointer; while adding, switch between Action and Period', nested: true },
+              { keys: ['Mouse wheel'], action: 'When the pointer is over the timeline, change horizontal zoom around the pointer position', nested: true },
               { keys: ['A'], action: 'Choose Basic Attack for placement', nested: true },
               { keys: ['Z / Shift+A'], action: 'Choose Heavy Attack for placement', nested: true },
               { keys: ['E / Q / R'], action: 'Choose Skill / Echo / Resonance Liberation', note: 'Hold Shift for each hold variant.', nested: true },
@@ -707,9 +733,10 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
               { name: 'Input Mode', effect: 'Switches between keyboard/mouse and gamepad, showing bindings for only the active mode.' },
               { name: 'Binding 1 / Binding 2', effect: 'Assigns up to two inputs to one action for different control habits.' },
               { name: 'Independent / Advances Step', effect: 'Independent actions can overlap others; Advances Step decides whether an action moves practice forward.' },
-              { name: 'Keyboard / gamepad icons', effect: 'Keyboard and mouse inputs use actual-key icons; gamepad mode supports Xbox and PlayStation icons.' },
+              { name: 'Input Mode / Controller Type', effect: 'Keyboard and mouse, Xbox, and PlayStation use separate capture backends. Only the selected input source runs, and the controller type also selects its button icons.' },
               { name: 'Import / Export Input Settings', effect: 'Backs up or restores keyboard, mouse, and gamepad bindings with a separate .wwkeys.json file; combos and appearance are not imported. The embedded Community automatically syncs current bindings and custom icons for combo charts.' },
               { name: 'Shortcut Settings', effect: 'Customizes single-key and Shift combinations for timeline and video tools without replacing fixed Ctrl or Alt editing combinations.' },
+              { name: 'Recording recognition thresholds', effect: 'Adjusts the tap merge window, keyboard/mouse heavy-hold threshold, standard hold threshold, and gamepad hold threshold separately.' },
               { name: 'Live2D / Recording Indicator', effect: 'Controls the animated home character and the recording status dot.' }
             ]
           }
@@ -719,6 +746,29 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
         title: 'Changelog',
         summary: 'Important changes in public releases and the current development build.',
         groups: [
+          {
+            title: 'v0.63.0 · 2026-08-09',
+            items: [
+              'Added Compatibility Mode with up to four characters, matching character lanes, adaptive switches, and a fourth switch binding. Character and action names are editable in this mode, and custom action names become their default prompts.',
+              'Added Show Notes Separately. Only actions with user-authored notes enter the independent note area. Its position, scale, font, color, rounded outline, and order are configurable; each note disappears as soon as its action completes. The area is also rendered in video preview and final composition.',
+              'Added the Stair combo layout with an adjustable per-character offset. Merge Same Move can display repeated icons as one icon plus a count while retaining per-action progress; merged actions with special notes receive a prominent red marker.',
+              'Added Quick Team to the Record page for selecting and ordering characters, applying the current selection, or saving it as a team preset. Preset titles and actions remain available while the list scrolls.',
+              'The main and video editors now consistently use Timing / Notes. Notes mode edits the real action note instead of content mappings, while the combo itself keeps its default action prompt when notes are shown separately.',
+              'Improved moving, cropping, and scaling for combo and note layers. Move controls support horizontal drag scaling and a three-second hold to reset. Video mode permits a much wider horizontal crop and fixes jitter, unexpected resets, and edge clipping.',
+              'Added a PlayStation controller capture mode. Keyboard/mouse, Xbox, and PlayStation use separate input backends, and only the currently selected backend runs. Default controller bindings for Dodge and Resonance Liberation were also updated.',
+              'Split FFmpeg and all Live2D source assets into optional wwcombo DLC. The video extension and each character can be installed independently; Settings can rescan DLC and adjust Live2D scale and offsets. Leaving Home releases the active Live2D renderer and assets.',
+              'Fixed Intro, Outro, and other combined icons overlapping or disappearing in some legacy combos. Icon mapping and rounded text outlines are now consistent across Home, the topmost overlay, Practice preview, and video composition.',
+              'Fixed z, Z, and A not consistently converting to Heavy Attack in Text Axis. Community combo downloads no longer replace user bindings, action names, or practice behavior; only an explicit .wwkeys.json import changes global input settings.',
+              'Fixed Advance mode occasionally remaining on the previous action. Normal actions accept their hold variants, Basic Attack accepts a detected Heavy Attack, and normal actions incorrectly marked independent by legacy charts now advance immediately after the correct input. Challenge mode remains exact.'
+            ]
+          },
+          {
+            title: 'v0.62.1 · 2026-08-05',
+            items: [
+              'Practice import now accepts the neighboring project\'s role-and-skill JSON: it creates an editable combo chart and copies a language-aware text axis ready for Text Axis Import. Image and avatar Base64 fields are ignored.',
+              'Text Axis parsing now preserves bracketed notes without icon conversion; the help now documents timeline wheel zoom and recording-recognition thresholds.'
+            ]
+          },
           {
             title: 'v0.61.0 · 2026-08-02',
             items: [
@@ -873,6 +923,7 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
               { keys: ['Y'], action: 'ブロックを1つ選択した状態で、内容末尾に終奏 y を追加', note: '通常攻撃 a は ay になります。' },
               { keys: ['Shift'], action: '連続追加モードへ直接入る' },
               { keys: ['X'], action: '区間トラック上ではポインター位置を境界に左を開始軸、右をループ軸へ設定。追加中は「アクション／区間」を切り替える', nested: true },
+              { keys: ['ホイール'], action: 'タイムライン上でポインター位置を中心に横方向のズーム倍率を変更', nested: true },
               { keys: ['A'], action: '配置するアクションを通常攻撃に変更', nested: true },
               { keys: ['Z / Shift+A'], action: '重撃に変更', nested: true },
               { keys: ['E / Q / R'], action: 'スキル／音骸／共鳴解放に変更', note: 'Shiftを押しながら入力すると各長押し版になります。', nested: true },
@@ -997,6 +1048,7 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
               { name: 'キー / パッドアイコン', effect: 'キーボード・マウスは実キーアイコンを表示し、ゲームパッドはXbox／PlayStation表示を選べます。' },
               { name: '入力設定の読み込み / 書き出し', effect: '独立した.wwkeys.jsonでキーボード・マウス／ゲームパッド割り当てを復元・保存します。連段や外観は含まれません。内蔵コミュニティには現在の割り当てとカスタムアイコンが自動同期されます。' },
               { name: 'ショートカット設定', effect: 'タイムラインと動画ツールの単キー／Shift組み合わせを変更します。固定のCtrl／Alt編集操作は上書きしません。' },
+              { name: '録画認識しきい値', effect: 'タップ結合時間、キーボード・マウスの重撃長押し、通常の長押し、ゲームパッド長押しを個別に調整します。' },
               { name: 'Live2D / 録画インジケーター', effect: 'ホームの動くキャラクターと録画状態ドットを切り替えます。' }
             ]
           }
@@ -1006,6 +1058,29 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
         title: '更新履歴',
         summary: '公開版と現在の開発版における主な変更です。',
         groups: [
+          {
+            title: 'v0.63.0 · 2026-08-09',
+            items: [
+              '互換モードを追加しました。最大4キャラクターに対応し、キャラクターレーン、自動切替、4番目の切替キーも連動します。このモードではキャラクター名とアクション名を編集でき、変更したアクション名が既定の案内になります。',
+              '「メモを別表示」を追加しました。ユーザーが入力したメモだけが独立したメモ領域へ表示され、位置、倍率、フォント、色、丸みのある縁取り、並び順を設定できます。アクション完了時に該当メモが消え、動画プレビューと最終合成にも反映されます。',
+              'キャラクターごとのずらし量を調整できる「階段」レイアウトを追加しました。「同一アクションを結合」は繰り返しアイコンを1つのアイコンと回数で表示しながら進捗を保持し、特別なメモを持つ結合アクションには目立つ赤い印を表示します。',
+              '録画画面にクイック編成を追加しました。キャラクターと順番を選び、現在の編成へ適用するかチームプリセットとして保存できます。プリセット一覧をスクロールしても見出しと操作部分は利用できます。',
+              '通常エディターと動画エディターを「タイミング / メモ」に統一しました。メモモードは内容マッピングではなく実際のアクションメモを編集し、メモを別表示するときもコンボ本体には既定のアクション案内を表示します。',
+              'コンボ領域とメモ領域の移動、切り抜き、拡大縮小を改善しました。移動ボタンは左右ドラッグで倍率を変更し、3秒長押しでリセットできます。動画では横方向の切り抜き範囲を広げ、枠の振動、突然の復元、端の欠けを修正しました。',
+              'PlayStationコントローラーの入力取得を追加しました。キーボード・マウス、Xbox、PlayStationは別々の入力経路を使用し、選択中のものだけが動作します。回避と共鳴解放の既定ゲームパッド割り当ても更新しました。',
+              'FFmpegとすべてのLive2D素材を任意導入のwwcombo DLCへ分離しました。動画拡張機能と各キャラクターを個別に導入でき、設定から再スキャンとLive2Dの倍率・位置調整を行えます。ホームを離れるとLive2Dの描画資源を解放します。',
+              '一部の旧コンボで変奏、終奏などの組み合わせアイコンが重なったり消えたりする問題を修正しました。ホーム、最前面オーバーレイ、練習プレビュー、動画合成でアイコン変換と丸みのある文字縁取りを統一しました。',
+              '文字軸でz、Z、Aが重撃へ安定して変換されない問題を修正しました。コミュニティからコンボを取得しても、ユーザーのキー割り当て、アクション名、練習設定を上書きしません。全体入力設定は.wwkeys.jsonを明示的に読み込んだ場合だけ変更されます。',
+              '進行モードが前のアクションで止まることがある問題を修正しました。通常アクションは対応する長押し版を受け付け、通常攻撃は重撃入力も受け付けます。旧コンボで誤って独立扱いになった通常操作も正しい入力ですぐ進みます。チャレンジモードは引き続き完全一致です。'
+            ]
+          },
+          {
+            title: 'v0.62.1 · 2026-08-05',
+            items: [
+              '練習モードのインポートが、隣接プロジェクトのキャラクター・スキルJSONに対応しました。編集可能な連段図を生成し、現在の言語に合わせた文字軸を文字軸認識へ貼り付けられるようにします。画像やアバターのBase64データは読み込みません。',
+              '文字軸解析で角括弧の注記をアイコン変換せず保持するようにし、タイムラインのホイールズームと録画認識しきい値のヘルプ説明を追加しました。'
+            ]
+          },
           {
             title: 'v0.61.0 · 2026-08-02',
             items: [
@@ -1146,6 +1221,7 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
               { keys: ['Y'], action: '블록 하나를 선택한 상태에서 기존 내용 뒤에 반주 y 추가', note: '기본 공격 a는 ay가 됩니다.' },
               { keys: ['Shift'], action: '연속 추가 모드로 바로 진입' },
               { keys: ['X'], action: '구간 트랙에서는 포인터 위치를 경계로 왼쪽을 시작 축, 오른쪽을 반복 축으로 설정하고, 추가 중에는 “동작 / 구간”을 전환', nested: true },
+              { keys: ['휠'], action: '타임라인 위에서 포인터 위치를 중심으로 가로 확대 배율을 조정', nested: true },
               { keys: ['A'], action: '배치 동작을 기본 공격으로 변경', nested: true },
               { keys: ['Z / Shift+A'], action: '강공격으로 변경', nested: true },
               { keys: ['E / Q / R'], action: '스킬 / 에코 / 공명 해방으로 변경', note: 'Shift와 함께 누르면 해당 길게 누르기 동작입니다.', nested: true },
@@ -1270,6 +1346,7 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
               { name: '키 / 패드 아이콘', effect: '키보드·마우스는 실제 키 아이콘을 표시하며 게임패드는 Xbox 또는 PlayStation 아이콘을 선택합니다.' },
               { name: '입력 설정 가져오기 / 내보내기', effect: '별도의 .wwkeys.json으로 키보드·마우스와 게임패드 바인딩을 저장하거나 복원합니다. 콤보와 외형은 포함되지 않습니다. 내장 커뮤니티에는 현재 바인딩과 사용자 아이콘이 자동 동기화됩니다.' },
               { name: '단축키 설정', effect: '타임라인과 영상 도구의 단일 키 또는 Shift 조합을 바꿉니다. 고정된 Ctrl/Alt 편집 조합은 덮어쓰지 않습니다.' },
+              { name: '녹화 인식 임계값', effect: '탭 병합 시간, 키보드·마우스 강공격 길게 누르기, 일반 길게 누르기와 게임패드 길게 누르기 시간을 각각 조정합니다.' },
               { name: 'Live2D / 녹화 표시점', effect: '홈의 동적 캐릭터와 녹화 상태 점 표시를 전환합니다.' }
             ]
           }
@@ -1279,6 +1356,29 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
         title: '업데이트 기록',
         summary: '공개 버전과 현재 개발 빌드의 주요 변경 사항입니다.',
         groups: [
+          {
+            title: 'v0.63.0 · 2026-08-09',
+            items: [
+              '호환 모드를 추가했습니다. 최대 4명의 캐릭터와 이에 맞는 캐릭터 레인, 적응형 전환, 네 번째 전환 키를 지원합니다. 이 모드에서는 캐릭터 이름과 동작 이름을 편집할 수 있으며 변경한 동작 이름이 기본 안내가 됩니다.',
+              '“메모 별도 표시”를 추가했습니다. 사용자가 작성한 메모만 독립 메모 영역에 표시되며 위치, 배율, 글꼴, 색상, 둥근 외곽선과 순서를 설정할 수 있습니다. 동작이 완료되면 해당 메모가 즉시 사라지고 영상 미리보기와 최종 합성에도 포함됩니다.',
+              '캐릭터별 간격을 조절할 수 있는 “계단” 콤보 배치를 추가했습니다. “같은 동작 병합”은 반복 아이콘을 하나의 아이콘과 횟수로 표시하면서 동작별 진행 상태를 유지하며, 특별 메모가 있는 병합 동작은 눈에 띄는 빨간 표시를 사용합니다.',
+              '녹화 화면에 빠른 편성을 추가했습니다. 캐릭터와 순서를 선택해 현재 팀에 적용하거나 팀 프리셋으로 저장할 수 있으며, 프리셋 목록을 스크롤해도 제목과 작업 영역을 계속 사용할 수 있습니다.',
+              '일반 편집기와 영상 편집기를 “타이밍 / 메모”로 통일했습니다. 메모 모드는 내용 매핑이 아닌 실제 동작 메모를 편집하며, 메모를 별도로 표시할 때 콤보 본체는 기본 동작 안내를 유지합니다.',
+              '콤보와 메모 레이어의 이동, 자르기와 확대·축소를 개선했습니다. 이동 버튼은 좌우 드래그로 배율을 조절하고 3초간 길게 눌러 초기화할 수 있습니다. 영상 모드의 가로 자르기 범위를 넓히고 프레임 떨림, 갑작스러운 복원과 가장자리 잘림을 수정했습니다.',
+              'PlayStation 컨트롤러 입력 모드를 추가했습니다. 키보드·마우스, Xbox, PlayStation은 별도의 입력 백엔드를 사용하며 현재 선택한 백엔드만 실행됩니다. 회피와 공명 해방의 기본 게임패드 바인딩도 조정했습니다.',
+              'FFmpeg와 모든 Live2D 원본을 선택 설치형 wwcombo DLC로 분리했습니다. 영상 확장 기능과 캐릭터별 Live2D를 따로 설치할 수 있고 설정에서 DLC 재검색 및 Live2D 배율·위치 조정이 가능합니다. 홈 화면을 벗어나면 Live2D 렌더러와 리소스를 해제합니다.',
+              '일부 이전 콤보에서 변주, 반주와 다른 조합 아이콘이 겹치거나 사라지는 문제를 수정했습니다. 홈, 최상단 오버레이, 연습 미리보기와 영상 합성의 아이콘 변환 및 둥근 문자 외곽선을 통일했습니다.',
+              '문자 축의 z, Z, A가 강공격으로 안정적으로 변환되지 않던 문제를 수정했습니다. 커뮤니티 콤보를 내려받아도 사용자 키 바인딩, 동작 이름과 연습 설정을 덮어쓰지 않으며, 전역 입력 설정은 .wwkeys.json을 명시적으로 가져올 때만 변경됩니다.',
+              '진행 모드가 이전 동작에서 멈추는 문제를 수정했습니다. 일반 동작은 대응하는 길게 누르기 동작을 허용하고 기본 공격은 감지된 강공격도 허용합니다. 이전 콤보에서 잘못 독립 처리된 일반 동작도 올바른 입력 직후 진행하며 도전 모드는 계속 정확히 일치해야 합니다.'
+            ]
+          },
+          {
+            title: 'v0.62.1 · 2026-08-05',
+            items: [
+              '연습 모드 가져오기가 인접 프로젝트의 캐릭터·스킬 JSON을 지원합니다. 편집 가능한 콤보 차트를 만들고 현재 언어에 맞는 문자 축을 문자 축 인식에 붙여 넣도록 클립보드에 복사합니다. 이미지와 아바타 Base64 데이터는 가져오지 않습니다.',
+              '문자 축 파서가 대괄호 메모를 아이콘 변환 없이 보존하도록 수정했으며, 타임라인 휠 확대와 녹화 인식 임계값의 도움말 설명을 보강했습니다.'
+            ]
+          },
           {
             title: 'v0.61.0 · 2026-08-02',
             items: [

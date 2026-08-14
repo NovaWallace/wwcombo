@@ -27,8 +27,10 @@ import { createOverlayBridge } from './desktopBridge';
 import { I18nProvider, isAppLanguage, useI18n } from './i18n';
 import type { AppLanguage } from './i18n';
 import { localizedMovePrompt } from './moveLabels';
+import { noteStepCompleted } from './noteDisplay';
 import { currentPeriodLabelAtStep } from './periodLabels';
 import { buildRhythmCrowdedGroups, rhythmNoteHeight, rhythmNoteOpacity, rhythmNoteTop, visibleRhythmCrowdedGroups } from './rhythmCrowding';
+import { roundedTextOutlineShadow } from './textOutline';
 import './overlay.css';
 
 const STORAGE_KEY = 'ww-combo-trainer-state-v2';
@@ -39,6 +41,30 @@ type OverlayBounds = { x: number; y: number; width: number; height: number };
 type RhythmUiSettings = { width: number; height: number; scale: number; laneGap: number; roleSpacing: number; fallSpeed: number; judgeLineOffset: number; ringStartScale: number; ringEndScale: number; ringOffsetX: number; ringOffsetY: number; ringDurationMs: number; feedbackX?: number; feedbackY?: number };
 type ComboTrackMetric = { extent: number; start: number; center: number };
 type OverlayDragState = { startX: number; startY: number; bounds: OverlayBounds; frame: number | null; lastMoveAt: number; moved: boolean };
+type OverlayResizeState = OverlayDragState & { edge: string };
+
+const MIN_OVERLAY_WIDTH = 160;
+const MIN_OVERLAY_HEIGHT = 64;
+
+function resizeOverlayBounds(base: OverlayBounds, edge: string, dx: number, dy: number): OverlayBounds {
+  let x = base.x;
+  let y = base.y;
+  let width = base.width;
+  let height = base.height;
+  if (edge.includes('e')) width = base.width + dx;
+  if (edge.includes('s')) height = base.height + dy;
+  if (edge.includes('w')) { x = base.x + dx; width = base.width - dx; }
+  if (edge.includes('n')) { y = base.y + dy; height = base.height - dy; }
+  if (width < MIN_OVERLAY_WIDTH) {
+    if (edge.includes('w')) x = base.x + base.width - MIN_OVERLAY_WIDTH;
+    width = MIN_OVERLAY_WIDTH;
+  }
+  if (height < MIN_OVERLAY_HEIGHT) {
+    if (edge.includes('n')) y = base.y + base.height - MIN_OVERLAY_HEIGHT;
+    height = MIN_OVERLAY_HEIGHT;
+  }
+  return { x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height) };
+}
 type OverlayStep = ComboChart['steps'][number];
 
 type OverlayPayload = {
@@ -49,7 +75,9 @@ type OverlayPayload = {
   practicePreset?: 'strict' | 'lenient' | 'simple';
   visible: boolean;
   moveMode?: boolean;
-  settings?: OverlayBounds & { layout?: 'horizontal' | 'vertical' | 'waterfall' };
+  noteMoveMode?: boolean;
+  noteBounds?: { x: number; y: number; width: number; height: number };
+  settings?: OverlayBounds & { layout?: 'horizontal' | 'vertical' | 'stair' | 'waterfall' };
   comboImageStyle?: Partial<ComboImageStyle>;
   rhythmUiSettings?: Partial<RhythmUiSettings>;
 };
@@ -58,25 +86,59 @@ function isPayload(value: unknown): value is OverlayPayload {
   return typeof value === 'object' && value !== null && 'practice' in value;
 }
 
+function customNoteNumberByStepId(chart: ComboChart | null): Map<string, number> {
+  const result = new Map<string, number>();
+  if (!chart) return result;
+  const steps = chart.steps
+    .map((step, index) => ({ step, index }))
+    .filter(({ step }) => Boolean(step.note?.trim()))
+    .sort((left, right) => left.step.startMin - right.step.startMin || left.index - right.index);
+  if (!steps.length) return result;
+  const periods = [...(chart.periods ?? [])]
+    .filter((period) => period.kind === 'startup_axis' || period.kind === 'loop_axis')
+    .sort((left, right) => left.startMs - right.startMs || left.id.localeCompare(right.id));
+  const loopPeriods = periods.filter((period) => period.kind === 'loop_axis');
+  const counters = new Map<string, number>();
+  const axisKeyForStep = (startMs: number): string => {
+    const containing = periods
+      .filter((period) => startMs >= period.startMs && (period.endMs <= period.startMs || startMs <= period.endMs))
+      .sort((left, right) => right.startMs - left.startMs)[0];
+    if (containing) return containing.kind === 'loop_axis' ? containing.id : `startup:${containing.id}`;
+    const previousLoop = loopPeriods.filter((period) => startMs >= period.startMs).at(-1);
+    if (previousLoop) return previousLoop.id;
+    return 'startup:default';
+  };
+  for (const { step } of steps) {
+    const key = axisKeyForStep(step.startMin);
+    const next = (counters.get(key) ?? 0) + 1;
+    counters.set(key, next);
+    result.set(step.id, next);
+  }
+  return result;
+}
+
 function isRhythmHoldStep(step: OverlayStep): boolean {
   return step.moveId === 'heavy_attack' || step.moveId.endsWith('_hold');
 }
 
-function rhythmActiveCharacterSlot(steps: OverlayStep[], elapsedMs: number): 1 | 2 | 3 | null {
+function rhythmActiveCharacterSlot(steps: OverlayStep[], elapsedMs: number): 1 | 2 | 3 | 4 | null {
   if (!steps.length) return null;
-  const firstSlot = (steps[0].characterSlot ?? 1) as 1 | 2 | 3;
+  const firstSlot = (steps[0].characterSlot ?? 1) as 1 | 2 | 3 | 4;
   return steps
-    .filter((step) => step.startMin <= elapsedMs && (step.moveId === 'switch_1' || step.moveId === 'switch_2' || step.moveId === 'switch_3'))
+    .filter((step) => step.startMin <= elapsedMs && /^switch_[1234]$/.test(step.moveId))
     .sort((left, right) => right.startMin - left.startMin || right.id.localeCompare(left.id))
-    .map((step) => (step.moveId === 'switch_1' ? 1 : step.moveId === 'switch_2' ? 2 : 3) as 1 | 2 | 3)[0] ?? firstSlot;
+    .map((step) => Number(step.moveId.slice(-1)) as 1 | 2 | 3 | 4)[0] ?? firstSlot;
 }
 
-function rhythmDisplayText(step: OverlayStep, style: ComboImageStyle): string {
-  return style.contentLabels[step.id]?.trim() || defaultComboContentLabelForMoveId(step.moveId) || displayMoveLabel(step);
+function rhythmDisplayText(step: OverlayStep, style: ComboImageStyle, chart: ComboChart | null): string {
+  return chart?.contentLabels?.[step.id]?.trim()
+    || style.contentLabels[step.id]?.trim()
+    || defaultComboContentLabelForMoveId(step.moveId)
+    || displayMoveLabel(step);
 }
 
-function switchSlotForMoveId(moveId: string): 1 | 2 | 3 | null {
-  return moveId === 'switch_1' ? 1 : moveId === 'switch_2' ? 2 : moveId === 'switch_3' ? 3 : null;
+function switchSlotForMoveId(moveId: string): 1 | 2 | 3 | 4 | null {
+  return /^switch_[1234]$/.test(moveId) ? Number(moveId.slice(-1)) as 1 | 2 | 3 | 4 : null;
 }
 
 function rhythmSwitchRingSteps(steps: OverlayStep[], elapsedMs: number, durationMs = 420): OverlayStep[] {
@@ -127,6 +189,7 @@ function OverlayApp() {
   const overlay = useMemo(createOverlayBridge, []);
   const surfaceRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<OverlayDragState | null>(null);
+  const resizeRef = useRef<OverlayResizeState | null>(null);
   const latestBoundsRef = useRef<OverlayBounds>(DEFAULT_BOUNDS);
   const isDraggingRef = useRef(false);
   const progressRef = useRef({ runKey: '', activeStepIndex: 0, indicatorStepIndex: 0 });
@@ -134,7 +197,10 @@ function OverlayApp() {
   const applyPayload = React.useCallback((next: unknown) => {
     if (!isPayload(next)) return;
     setPayload(next);
-    if (next.settings && !isDraggingRef.current) {
+    // During pointer move/resize dragging, the live bounds are owned by the
+    // drag loop. Do not apply an older React payload back to the window while
+    // the pointer is moving or the visible crop frame can jump.
+    if (next.settings && !next.moveMode && !isDraggingRef.current) {
       const nextBounds = {
         x: next.settings.x ?? DEFAULT_BOUNDS.x,
         y: next.settings.y ?? DEFAULT_BOUNDS.y,
@@ -149,6 +215,35 @@ function OverlayApp() {
   useEffect(() => {
     return overlay?.onUpdate(applyPayload);
   }, [applyPayload, overlay]);
+
+  useEffect(() => overlay?.onPracticeUpdate?.((practice) => {
+    if (typeof practice !== 'object' || practice === null) return;
+    setPayload((current) => current ? { ...current, practice: practice as OverlayPayload['practice'] } : current);
+  }), [overlay]);
+
+  useEffect(() => {
+    return overlay?.onBoundsChanged?.((next) => {
+      const current = latestBoundsRef.current;
+      const normalized = {
+        x: Number.isFinite(next.x) ? next.x : current.x,
+        y: Number.isFinite(next.y) ? next.y : current.y,
+        width: Number.isFinite(next.width) ? Math.max(1, next.width) : current.width,
+        height: Number.isFinite(next.height) ? Math.max(1, next.height) : current.height
+      };
+      latestBoundsRef.current = normalized;
+      if (!isDraggingRef.current) setBounds(normalized);
+    });
+  }, [overlay]);
+
+  useEffect(() => {
+    let disposed = false;
+    overlay?.getOverlayBounds?.().then((next) => {
+      if (disposed || !next) return;
+      latestBoundsRef.current = next;
+      if (!isDraggingRef.current) setBounds(next);
+    }).catch(() => undefined);
+    return () => { disposed = true; };
+  }, [overlay]);
 
   useEffect(() => {
     let disposed = false;
@@ -176,15 +271,23 @@ function OverlayApp() {
   const practice = payload?.practice ?? null;
   const displayLanguage = isAppLanguage(payload?.language) ? payload.language : language;
   const moveMode = payload?.moveMode ?? false;
-  const layout = payload?.settings?.layout === 'vertical' ? 'vertical' : payload?.settings?.layout === 'waterfall' ? 'waterfall' : 'horizontal';
+  const layout = payload?.settings?.layout === 'vertical' ? 'vertical' : payload?.settings?.layout === 'stair' ? 'stair' : payload?.settings?.layout === 'waterfall' ? 'waterfall' : 'horizontal';
   const activeIndex = chart?.steps.length ? Math.max(0, Math.min(practice?.currentStepIndex ?? 0, chart.steps.length - 1)) : 0;
   const timedIndex = timedStepIndexForPractice(chart, practice, activeIndex);
   const activeStep = chart && practice ? chart.steps[activeIndex] : null;
-  const comboStyle = effectiveComboImageStyle(normalizeComboImageStyle(mergeOverlayStyleWithStorage(payload?.comboImageStyle)));
+  const normalizedComboStyle = normalizeComboImageStyle(mergeOverlayStyleWithStorage(payload?.comboImageStyle));
+  const comboOverallScale = payload?.mode === 'rhythm' ? 1 : Math.min(4, Math.max(0.25, normalizedComboStyle.overallScale));
+  const comboStyle = payload?.mode === 'rhythm' ? effectiveComboImageStyle(normalizedComboStyle) : normalizedComboStyle;
   const rhythmUiSettings = { ...DEFAULT_RHYTHM_UI, ...payload?.rhythmUiSettings };
   const effectiveBounds = measuredBounds ?? bounds;
+  const comboLayoutBounds = {
+    ...effectiveBounds,
+    width: effectiveBounds.width / comboOverallScale,
+    height: effectiveBounds.height / comboOverallScale
+  };
   const linearLayout = layout === 'vertical' ? 'vertical' : 'horizontal';
-  const allItems = chartToComboImageItems(chart, comboStyle, linearLayout, effectiveBounds);
+  const horizontalLikeLayout = layout === 'horizontal' || layout === 'stair';
+  const allItems = chartToComboImageItems(chart, comboStyle, linearLayout, comboLayoutBounds);
   const metrics = comboTrackMetrics(allItems, linearLayout, comboStyle);
   const rawIndicatorStepIndex = comboStyle.mergeSameRoleSteps ? Math.min(chart?.steps.length ?? 0, activeIndex + 1) : activeIndex + 1;
   const runKey = `${chart?.id ?? 'none'}:${practice?.startedAt ?? 'idle'}:${practice?.status ?? 'idle'}`;
@@ -199,8 +302,8 @@ function OverlayApp() {
   const displayActiveStep = chart?.steps[activeStepIndex] ?? activeStep;
   const activeDisplayIndex = comboImageDisplayIndexForStep(allItems, activeDisplayStepId);
   const indicatorDisplayIndex = comboImageDisplayIndexForStep(allItems, indicatorStepId);
-  const visibleItems = visibleComboImageItems(allItems, activeDisplayIndex, linearLayout, effectiveBounds, comboStyle);
-  const trackOffset = comboTrackOffset(allItems, activeDisplayIndex, linearLayout, effectiveBounds, comboStyle);
+  const visibleItems = visibleComboImageItems(allItems, activeDisplayIndex, linearLayout, comboLayoutBounds, comboStyle);
+  const trackOffset = comboTrackOffset(allItems, activeDisplayIndex, linearLayout, comboLayoutBounds, comboStyle);
   const activeMetric = metrics[Math.max(0, Math.min(activeDisplayIndex, Math.max(0, metrics.length - 1)))];
   const backgroundSource = comboImageBackgroundSource(comboStyle);
   const periodLabel = currentPeriodLabelAtStep(chart, activeStepIndex, displayLanguage);
@@ -213,30 +316,50 @@ function OverlayApp() {
   const nextIndicatorSide = layout === 'vertical'
     ? (overlayCenterX < screenWidth / 2 ? 'right' : 'left')
     : (overlayCenterY > screenHeight / 2 ? 'above' : 'below');
-  const promptSide = layout === 'horizontal' ? nextIndicatorSide : (overlayCenterX < screenWidth / 2 ? 'left' : 'right');
+  const promptSide = horizontalLikeLayout ? nextIndicatorSide : (overlayCenterX < screenWidth / 2 ? 'left' : 'right');
   const promptStep = comboStyle.prePromptEnabled && shouldShowPromptForStep(displayActiveStep) ? displayActiveStep : null;
-  const promptText = promptTextForStep(promptStep, displayLanguage, comboStyle);
+  const promptText = promptTextForStep(promptStep, displayLanguage, comboStyle, chart);
   const visualGap = comboRenderGap(linearLayout, comboStyle);
   const verticalImageOverlap = comboVerticalImageOverlap(comboStyle);
-  const firstVisibleItem = visibleItems[0];
-  const firstVisibleIndex = firstVisibleItem ? allItems.indexOf(firstVisibleItem) : -1;
-  const verticalTopCompensation = linearLayout === 'vertical' && firstVisibleIndex >= 0
-    ? verticalComboTrackClipCompensation(comboStyle, firstVisibleItem, metrics[firstVisibleIndex]?.start ?? 0, trackOffset, periodLabel ? 26 : 0)
+  const verticalTopClearance = Math.max(22, periodLabel ? 26 : 0);
+  const activeVerticalItem = linearLayout === 'vertical' ? allItems[activeDisplayIndex] : undefined;
+  const verticalTopCompensation = linearLayout === 'vertical' && comboStyle.scrollAnchor === 'start' && activeVerticalItem && activeMetric
+    ? verticalComboTrackClipCompensation(comboStyle, activeVerticalItem, activeMetric.start, trackOffset, verticalTopClearance)
     : 0;
   const renderTrackOffset = trackOffset + verticalTopCompensation;
+  const noteNumberByStepId = useMemo(() => {
+    const numbered = customNoteNumberByStepId(chart);
+    if (!chart || !practice) return numbered;
+    const stepById = new Map(chart.steps.map((step) => [step.id, step]));
+    return new Map([...numbered].filter(([stepId]) => {
+      const step = stepById.get(stepId);
+      return Boolean(step && !noteStepCompleted(step, practice, chart));
+    }));
+  }, [chart, practice]);
+  const firstVisibleIndex = linearLayout === 'vertical'
+    ? metrics.findIndex((metric) => metric.start + renderTrackOffset >= verticalTopClearance)
+    : visibleItems.length ? allItems.indexOf(visibleItems[0]) : -1;
+  const safeFirstVisibleIndex = firstVisibleIndex >= 0 ? firstVisibleIndex : 0;
+  const firstVisibleItem = allItems[safeFirstVisibleIndex];
   const horizontalPeriodSide = promptSide === 'above' ? 'below' : 'above';
   const verticalPeriodSide = promptSide === 'right' ? 'left' : 'right';
 
   const beginDrag = (event: ReactPointerEvent<HTMLElement>) => {
     if (!moveMode) return;
     const target = event.target as HTMLElement | null;
-    const hitCombo = payload?.mode === 'rhythm' ? Boolean(target?.closest('.rhythm-overlay-note, .rhythm-overlay-judge, .rhythm-overlay-avatars, .rhythm-overlay-lane-prompt, .rhythm-overlay-switch-ring')) : Boolean(target?.closest('.combo-row, .combo-chip, .overlay-background, .overlay-period-label, .overlay-action-prompt'));
+    // The combo overlay's dashed move frame is itself the drag surface. In
+    // move mode, requiring a hit on a rendered chip makes the border and empty
+    // parts of the frame exit move mode instead of starting native dragging.
+    const hitCombo = payload?.mode === 'rhythm'
+      ? Boolean(target?.closest('.rhythm-overlay-note, .rhythm-overlay-judge, .rhythm-overlay-avatars, .rhythm-overlay-lane-prompt, .rhythm-overlay-switch-ring'))
+      : true;
     if (!hitCombo) {
       event.preventDefault();
       void overlay?.requestOverlayMoveMode(false);
       return;
     }
     event.preventDefault();
+    event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
     dragRef.current = { startX: event.screenX, startY: event.screenY, bounds: latestBoundsRef.current, frame: null, lastMoveAt: 0, moved: false };
     isDraggingRef.current = true;
@@ -246,49 +369,58 @@ function OverlayApp() {
     if (!moveMode || payload?.mode !== 'rhythm' || event.button !== 0) return;
     event.preventDefault();
     event.stopPropagation();
-    void overlay?.startResize?.(edge).catch(() => undefined);
+    event.currentTarget.setPointerCapture(event.pointerId);
+    resizeRef.current = { edge, startX: event.screenX, startY: event.screenY, bounds: latestBoundsRef.current, frame: null, lastMoveAt: 0, moved: false };
+    isDraggingRef.current = true;
   };
 
   const onPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
     const drag = dragRef.current;
-    if (!drag) return;
-    const next = {
-      ...drag.bounds,
-      x: Math.max(0, Math.round(drag.bounds.x + event.screenX - drag.startX)),
-      y: Math.max(0, Math.round(drag.bounds.y + event.screenY - drag.startY))
-    };
+    const resize = resizeRef.current;
+    const active = drag ?? resize;
+    if (!active) return;
+    const pointerScale = Math.max(0.1, window.devicePixelRatio || 1);
+    const dx = (event.screenX - active.startX) * pointerScale;
+    const dy = (event.screenY - active.startY) * pointerScale;
+    const next = drag
+      ? { ...drag.bounds, x: Math.round(drag.bounds.x + dx), y: Math.round(drag.bounds.y + dy) }
+      : resizeOverlayBounds(resize!.bounds, resize!.edge, dx, dy);
     latestBoundsRef.current = next;
-    drag.moved = drag.moved || Math.abs(event.screenX - drag.startX) > 2 || Math.abs(event.screenY - drag.startY) > 2;
+    active.moved = active.moved || Math.abs(dx) > 2 || Math.abs(dy) > 2;
     const now = performance.now();
-    if (drag.frame !== null || now - drag.lastMoveAt < 24) return;
-    drag.frame = requestAnimationFrame(() => {
+    if (active.frame !== null || now - active.lastMoveAt < 24) return;
+    active.frame = requestAnimationFrame(() => {
       const latest = latestBoundsRef.current;
-      drag.lastMoveAt = performance.now();
-      if (overlay?.setOverlayPosition) void overlay.setOverlayPosition({ x: latest.x, y: latest.y });
+      active.lastMoveAt = performance.now();
+      if (drag && overlay?.setOverlayPosition) void overlay.setOverlayPosition({ x: latest.x, y: latest.y });
       else void overlay?.setOverlayBounds(latest);
-      drag.frame = null;
+      active.frame = null;
     });
   };
 
   const endDrag = () => {
     const drag = dragRef.current;
-    if (drag?.frame !== null && drag?.frame !== undefined) cancelAnimationFrame(drag.frame);
-    if (drag) {
+    const resize = resizeRef.current;
+    const active = drag ?? resize;
+    if (active?.frame !== null && active?.frame !== undefined) cancelAnimationFrame(active.frame);
+    if (active) {
       setBounds(latestBoundsRef.current);
       const finalBounds = latestBoundsRef.current;
       void (async () => {
-        await overlay?.setOverlayBounds(finalBounds);
+        if (drag) await overlay?.setOverlayPosition?.({ x: finalBounds.x, y: finalBounds.y });
+        else await overlay?.setOverlayBounds(finalBounds);
         await overlay?.notifyOverlayBoundsChanged(finalBounds);
       })();
     }
     dragRef.current = null;
+    resizeRef.current = null;
     isDraggingRef.current = false;
   };
 
   return (
-    <div className={`overlay-shell ${layout} next-indicator-${nextIndicatorSide} ${payload?.mode === 'rhythm' ? 'rhythm-mode' : ''} ${moveMode ? 'move-mode' : ''}`} onPointerMove={onPointerMove} onPointerUp={endDrag}>
-      <div ref={surfaceRef} className="overlay-drag-surface" onPointerDown={beginDrag}>
-        {payload?.mode === 'rhythm' ? <RhythmOverlay chart={chart} practice={practice} style={comboStyle} bounds={effectiveBounds} settings={rhythmUiSettings} language={displayLanguage} /> : <>
+    <div className={`overlay-shell ${layout} next-indicator-${nextIndicatorSide} ${payload?.mode === 'rhythm' ? 'rhythm-mode' : ''} ${moveMode ? 'move-mode' : ''}`} onPointerDown={beginDrag} onPointerMove={onPointerMove} onPointerUp={endDrag} onPointerCancel={endDrag}>
+      <div ref={surfaceRef} className="overlay-drag-surface">
+        {payload?.mode === 'rhythm' ? <RhythmOverlay chart={chart} practice={practice} style={comboStyle} bounds={effectiveBounds} settings={rhythmUiSettings} language={displayLanguage} /> : <div className="combo-overall-scale-frame" style={{ width: comboLayoutBounds.width, height: comboLayoutBounds.height, transform: `scale(${comboOverallScale})` }}>
         {backgroundSource && <div className="overlay-background" style={imageCropBackground(backgroundSource, normalizeRectPercent(comboStyle.backgroundCrop, { x: 0, y: 0, w: 100, h: 100 }))} />}
         <div className="combo-row" style={{ gap: visualGap, '--combo-vertical-image-overlap': `${verticalImageOverlap}px`, transform: layout === 'vertical' ? `translateY(${renderTrackOffset}px)` : `translateX(${renderTrackOffset}px)` } as CSSProperties}>
           {visibleItems.length ? visibleItems.map((item) => {
@@ -303,13 +435,14 @@ function OverlayApp() {
             const isActive = comboImageItemContainsStep(item, activeDisplayStepId);
             const activeMergedStepId = comboStyle.mergeSameRoleSteps && comboImageItemContainsStep(item, mergedHighlightStepId) ? mergedHighlightStepId : undefined;
             const isNext = comboStyle.prePromptEnabled && comboImageItemContainsStep(item, indicatorStepId) && indicatorDisplayIndex !== activeDisplayIndex;
+            const itemNoteNumbers = (item.mergedStepIds ?? [item.step.id]).flatMap((stepId) => { const number = noteNumberByStepId.get(stepId); return number === undefined ? [] : [number]; });
             const isDone = Boolean(practice && (practice.completedStepIds.includes(item.step.id) || item.mergedStepIds?.some((stepId) => practice.completedStepIds.includes(stepId))));
             const isError = Boolean(practice && (practice.errorStepIds.includes(item.step.id) || item.mergedStepIds?.some((stepId) => practice.errorStepIds.includes(stepId))));
             const triangleCenter = comboImageContentCenterPercent(item, indicatorStepId);
             return (
               <div
                 key={item.step.id}
-                className={`combo-chip ${comboStyle.blockMode === 'image' ? 'image-block' : ''} ${isDone ? 'done' : ''} ${isError ? 'error' : ''} ${isActive ? 'active' : ''} ${isNext ? 'next' : ''} ${item.showAvatar ? 'with-avatar' : ''}`}
+                className={`combo-chip ${comboStyle.blockMode === 'image' ? 'image-block' : ''} ${isDone ? 'done' : ''} ${isError ? 'error' : ''} ${isActive ? 'active' : ''} ${isNext ? 'next' : ''} ${itemNoteNumbers.length ? 'has-custom-note' : ''} ${item.showAvatar ? 'with-avatar' : ''}`}
                 style={{
                   '--move-color': roleStyle.color,
                   '--next-indicator-x': `${triangleCenter ?? 50}%`,
@@ -318,7 +451,8 @@ function OverlayApp() {
                   color: comboStyle.textColor,
                   fontSize: comboStyle.fontSize,
                   fontFamily: comboStyle.fontFamily,
-                  opacity: isNext ? 1 : comboItemOpacity(metrics[allItems.indexOf(item)], activeMetric, renderTrackOffset, linearLayout, effectiveBounds, comboStyle),
+                  transform: layout === 'stair' ? `translateY(${(item.characterSlot - 2) * comboStyle.stairRoleOffset}px)` : undefined,
+                  opacity: isNext ? 1 : comboItemOpacity(metrics[allItems.indexOf(item)], activeMetric, renderTrackOffset, linearLayout, comboLayoutBounds, comboStyle),
                   backgroundColor: blockColor,
                   borderRadius: comboStyle.blockMode === 'capsule' && comboStyle.capsuleShape === 'capsule' ? 999 : 4,
                   ...blockImageStyle,
@@ -327,19 +461,21 @@ function OverlayApp() {
               >
                 {item.showAvatar && <span className="avatar-slot" style={{ width: comboStyle.avatarSize, height: comboStyle.avatarSize, left: avatarLeft, transform: `translateY(calc(-50% + ${comboStyle.avatarOffsetY}px))`, ...imageCropBackground(roleStyle.avatar, normalizeSquareRectPercent(roleStyle.avatarCrop)) }}>{roleStyle.avatar ? null : item.characterSlot}</span>}
                 {comboStyle.blockMode === 'image' && <CapsuleBlockBackground />}
-                {layout === 'horizontal' && promptText && comboImageItemContainsStep(item, promptStep?.id) && <div className={`overlay-action-prompt horizontal ${promptSide}`} style={{ fontFamily: comboStyle.promptFontFamily }}>{promptText}</div>}
-                {layout === 'vertical' && promptText && isActive && <div className={`overlay-action-prompt vertical ${nextIndicatorSide}`} style={{ fontFamily: comboStyle.promptFontFamily }}>{promptText}</div>}
-                {periodLabel && (layout === 'horizontal' ? isActive : item === firstVisibleItem) && <div className={`overlay-period-label inline ${layout === 'horizontal' ? `horizontal ${horizontalPeriodSide}` : `vertical ${verticalPeriodSide}`}`}>{periodLabel}</div>}
-                <ComboItemContent item={item} parts={contentParts} className="combo-chip-content" mappings={itemIconMappings} activeMergedStepId={activeMergedStepId} textStyle={comboTextStrokeStyle(comboStyle)} />
+                {horizontalLikeLayout && promptText && comboImageItemContainsStep(item, promptStep?.id) && <div className={`overlay-action-prompt horizontal ${promptSide}`} style={{ fontFamily: comboStyle.promptFontFamily }}>{promptText}</div>}
+                {layout === 'vertical' && promptText && isActive && <div className={`overlay-action-prompt vertical ${nextIndicatorSide}`} style={{ fontFamily: comboStyle.promptFontFamily }}>
+                  {periodLabel ? <ruby className="overlay-action-prompt-ruby"><span>{promptText}</span><rt>{periodLabel}</rt></ruby> : promptText}
+                </div>}
+                {periodLabel && (horizontalLikeLayout ? isActive : !promptText && item === firstVisibleItem) && <div className={`overlay-period-label inline ${horizontalLikeLayout ? `horizontal ${horizontalPeriodSide}` : `vertical ${verticalPeriodSide}`}`}>{periodLabel}</div>}
+                <ComboItemContent item={item} parts={contentParts} mappings={itemIconMappings} convertIcons={comboStyle.convertIcons} className="combo-chip-content" activeMergedStepId={activeMergedStepId} noteNumberByStepId={noteNumberByStepId} textStyle={comboTextStrokeStyle(comboStyle)} />
               </div>
             );
           }) : <div className="placeholder">{text('暂无连段图', 'No Combo Chart') }</div>}
         </div>
         <div className="hint-line">
-          <span>{activeStep ? text(`下一步：${promptTextForStep(activeStep, language, comboStyle)}`, `Next: ${promptTextForStep(activeStep, language, comboStyle)}`) : text('等待开始', 'Waiting to start')}</span>
+          <span>{activeStep ? text(`下一步：${promptTextForStep(activeStep, language, comboStyle, chart)}`, `Next: ${promptTextForStep(activeStep, language, comboStyle, chart)}`) : text('等待开始', 'Waiting to start')}</span>
           <strong>{practice?.feedback[0]?.message ?? ''}</strong>
         </div>
-        </>}
+        </div>}
       </div>
         {payload?.mode === 'rhythm' && moveMode && ['n', 'e', 's', 'w', 'ne', 'nw', 'se', 'sw'].map((edge) => <i key={edge} className={`rhythm-overlay-resize-handle ${edge}`} onPointerDown={beginResize(edge)} />)}
     </div>
@@ -360,6 +496,7 @@ function RhythmOverlay({ chart, practice, style, bounds, settings, language }: {
     return () => cancelAnimationFrame(frame);
   }, [practice?.status, practice?.startedAt]);
   const orderedSteps = useMemo(() => [...(chart?.steps ?? [])].sort((left, right) => left.startMin - right.startMin || (left.characterSlot ?? 1) - (right.characterSlot ?? 1) || left.id.localeCompare(right.id)), [chart]);
+  const characterSlots = chart?.characterCount === 4 ? [1, 2, 3, 4] as const : [1, 2, 3] as const;
   const payloadElapsedMs = Math.max(0, typeof practice?.elapsedMs === 'number' ? practice.elapsedMs : 0);
   const clockKey = `${practice?.status ?? 'idle'}:${practice?.startedAt ?? 'idle'}:${payloadElapsedMs}`;
   if (localClockRef.current.key !== clockKey) localClockRef.current = { key: clockKey, receivedAt: clockNow, elapsedMs: payloadElapsedMs };
@@ -373,7 +510,7 @@ function RhythmOverlay({ chart, practice, style, bounds, settings, language }: {
   const visibleSteps = orderedSteps.filter((step) => step.startMin + Math.max(120, step.durationMax) >= elapsedMs && step.startMin <= elapsedMs + lookAheadMs);
   const notePartsByStepId = useMemo(() => new Map(orderedSteps.map((step) => {
     const slot = (step.characterSlot ?? 1) as CharacterSlot;
-    const contentText = rhythmDisplayText(step, style);
+    const contentText = rhythmDisplayText(step, style, chart);
     const iconText = maybeConvertTextToIconLabel(contentText, style.convertIcons);
     const parts = comboTextParts(iconText, style.convertIcons || switchSlotForMoveId(step.moveId) !== null, effectiveIconMappings(style, slot)).filter((part) => part.kind === 'icon');
     return [step.id, parts] as const;
@@ -394,7 +531,7 @@ function RhythmOverlay({ chart, practice, style, bounds, settings, language }: {
     <div className="rhythm-overlay-scale-frame" style={{ width: displayWidth, height: displayHeight } as CSSProperties}>
     <div className="rhythm-overlay-shell" style={{ width: stageWidth, height: stageHeight, transform: `scale(${scale})`, '--rhythm-judge-y': `${judgeY}px`, '--rhythm-lane-gap': `${settings.laneGap}px`, '--rhythm-role-spacing': `${settings.roleSpacing}px` } as CSSProperties}>
       <div className="rhythm-overlay-lanes">
-        {[1, 2, 3].map((slot) => {
+        {characterSlots.map((slot) => {
           const role = style.roleStyles[slot as 1 | 2 | 3];
           return (
             <div key={slot} className="rhythm-overlay-lane">
@@ -419,7 +556,7 @@ function RhythmOverlay({ chart, practice, style, bounds, settings, language }: {
       </div>
       <div className="rhythm-overlay-judge" />
       <div className="rhythm-overlay-avatars">
-        {[1, 2, 3].map((slot) => {
+        {characterSlots.map((slot) => {
           const role = style.roleStyles[slot as 1 | 2 | 3];
           const lanePromptStep = orderedSteps.find((step) => (step.characterSlot ?? 1) === slot && elapsedMs <= step.startMin + step.durationMax) ?? null;
           const crowdedPrompts = visibleCrowdedGroups
@@ -430,13 +567,13 @@ function RhythmOverlay({ chart, practice, style, bounds, settings, language }: {
             }))
             .filter((prompt) => prompt.parts.length > 1);
 
-          return <div key={slot} className={`rhythm-overlay-avatar-cell ${activeCharacterSlot === slot ? 'active' : ''}`}><span className="rhythm-overlay-lane-prompt">{promptTextForStep(lanePromptStep, language, style)}</span>{crowdedPrompts.length > 0 && <span className="rhythm-overlay-crowded-prompts">{crowdedPrompts.map(({ group, parts }) => <span key={group.id} className="rhythm-overlay-crowded-prompt" style={{ '--rhythm-crowded-color': role.color } as CSSProperties}><ComboInlineContent parts={parts} className="rhythm-overlay-crowded-prompt-content" hideIconAlt /></span>)}</span>}{switchRingSteps.filter((step) => switchSlotForMoveId(step.moveId) === slot).map((step) => {
+          return <div key={slot} className={`rhythm-overlay-avatar-cell ${activeCharacterSlot === slot ? 'active' : ''}`}><span className="rhythm-overlay-lane-prompt">{promptTextForStep(lanePromptStep, language, style, chart)}</span>{crowdedPrompts.length > 0 && <span className="rhythm-overlay-crowded-prompts">{crowdedPrompts.map(({ group, parts }) => <span key={group.id} className="rhythm-overlay-crowded-prompt" style={{ '--rhythm-crowded-color': role.color } as CSSProperties}><ComboInlineContent parts={parts} className="rhythm-overlay-crowded-prompt-content" hideIconAlt /></span>)}</span>}{switchRingSteps.filter((step) => switchSlotForMoveId(step.moveId) === slot).map((step) => {
             const visual = rhythmRingVisual(step, elapsedMs, settings);
             return <span key={step.id} className="rhythm-overlay-switch-ring" style={{ '--switch-ring-scale': visual.scale, '--switch-ring-opacity': visual.opacity, '--switch-ring-x': `${settings.ringOffsetX}px`, '--switch-ring-y': `${settings.ringOffsetY}px` } as CSSProperties} aria-hidden="true" />;
           })}<span className="rhythm-overlay-avatar" style={imageCropBackground(role.avatar, normalizeSquareRectPercent(role.avatarCrop))}>{role.avatar ? null : slot}</span></div>;
         })}
+        </div>
       </div>
-    </div>
     </div>
   );
 }
@@ -445,36 +582,47 @@ function CapsuleBlockBackground() {
   return <div className="capsule-bg" aria-hidden="true"><div className="capsule-bg-edge left top" /><div className="capsule-bg-edge left bottom" /><div className="capsule-bg-edge middle top" /><div className="capsule-bg-edge middle bottom" /><div className="capsule-bg-edge right top" /><div className="capsule-bg-edge right bottom" /><div className="capsule-bg-body"><div className="capsule-bg-piece left" /><div className="capsule-bg-piece middle" /><div className="capsule-bg-piece right" /></div></div>;
 }
 
-function ComboInlineContent({ parts, className, hideIconAlt = false, textStyle }: { parts: ReturnType<typeof comboTextParts>; className: string; hideIconAlt?: boolean; textStyle?: CSSProperties }) {
-  return <strong className={className} style={textStyle}>{parts.map((part, index) => part.kind === 'icon' ? <span key={`${part.iconId}-${index}`} className="combo-inline-icon-mark" style={{ '--icon-scale': part.iconScale, '--icon-width-scale': part.iconWidthScale } as CSSProperties}><img className="combo-inline-icon" src={part.src} alt={hideIconAlt ? '' : part.label} title={part.label} /></span> : <span key={`text-${index}`}>{part.value}</span>)}</strong>;
+function ComboInlineContent({ parts, className, hideIconAlt = false, textStyle, inline = false }: { parts: ReturnType<typeof comboTextParts>; className: string; hideIconAlt?: boolean; textStyle?: CSSProperties; inline?: boolean }) {
+  const content = parts.map((part, index) => part.kind === 'icon' ? <span key={`${part.iconId}-${index}`} className="combo-inline-icon-mark" style={{ '--icon-scale': part.iconScale, '--icon-width-scale': part.iconWidthScale } as CSSProperties}><img className="combo-inline-icon" src={part.src} alt={hideIconAlt ? '' : part.label} title={part.label} /></span> : <span key={`text-${index}`}>{part.value}</span>);
+  return inline ? <span className={className} style={textStyle}>{content}</span> : <strong className={className} style={textStyle}>{content}</strong>;
+}
+
+function ComboNoteMarker({ number }: { number: number }) {
+  return <span className="combo-note-marker" aria-label={`Note ${number}`}><span className="combo-note-marker-number">{number}</span></span>;
 }
 
 function comboMergedCountTextStyle(): CSSProperties {
-  return { fontFamily: '"优设标题黑", Inter, system-ui, sans-serif', color: '#fff', WebkitTextStroke: '5px #050505', paintOrder: 'stroke fill' };
+  return { fontFamily: '"优设标题黑", Inter, system-ui, sans-serif', color: '#fff' };
 }
 
-function ComboMergedMoveContent({ groups, className, textStyle, activeStepId }: { groups: NonNullable<ReturnType<typeof chartToComboImageItems>[number]['mergedMoveGroups']>; className: string; textStyle?: CSSProperties; activeStepId?: string }) {
+function ComboMergedMoveContent({ groups, mappings, convertIcons, className, textStyle, activeStepId, noteNumberByStepId }: { groups: NonNullable<ReturnType<typeof chartToComboImageItems>[number]['mergedMoveGroups']>; mappings: ComboImageStyle['iconMappings']; convertIcons: boolean; className: string; textStyle?: CSSProperties; activeStepId?: string; noteNumberByStepId?: Map<string, number> }) {
   return <strong className={className} style={textStyle}>{groups.map((group) => {
     const activeIndex = activeStepId ? group.stepIds.indexOf(activeStepId) : -1;
-    return <span key={group.stepIds[0]} className="combo-merged-move">
-      <span className="combo-merged-move-body">
-        <span className={`combo-inline-icon-mark ${activeIndex >= 0 ? 'active' : ''}`} style={{ '--icon-scale': group.iconScale, '--icon-width-scale': group.iconWidthScale } as CSSProperties}><img className="combo-inline-icon" src={group.iconSrc} alt={group.iconLabel} title={group.iconLabel} /></span>
+    const noteStepIndexes = group.stepIds.flatMap((stepId, index) => noteNumberByStepId?.has(stepId) ? [index] : []);
+    const noteNumbers = group.stepIds.flatMap((stepId, index) => { const number = noteNumberByStepId?.get(stepId); return number === undefined || (activeIndex > index) ? [] : [number]; });
+    const hasPendingNote = noteStepIndexes.some((index) => activeIndex <= index);
+    return <span key={group.stepIds[0]} className={`combo-merged-move ${noteStepIndexes.length ? 'has-special-note' : ''} ${noteStepIndexes.length && activeIndex >= 0 ? 'note-started' : ''}`}>
+      {group.renderAsIcon && group.iconSrc ? <span className="combo-merged-move-body">
+        <span className={`combo-inline-icon-mark ${activeIndex >= 0 ? 'active' : ''}`} style={{ '--icon-scale': group.iconScale ?? 1, '--icon-width-scale': group.iconWidthScale ?? 1 } as CSSProperties}><img className="combo-inline-icon" src={group.iconSrc} alt={group.iconLabel ?? ''} title={group.iconLabel ?? ''} /></span>
         {group.count > 1 && <span className="combo-merged-move-count" style={comboMergedCountTextStyle()}>{`x${group.count}`}</span>}
-      </span>
-      {group.count > 1 && <span className="combo-merged-move-progress" aria-hidden="true">{Array.from({ length: group.count }, (_, index) => <span key={index} className={`combo-merged-move-marker dot ${activeIndex >= index ? 'active' : ''}`} />)}</span>}
+      </span> : <ComboInlineContent parts={comboTextParts(group.displayText, convertIcons, mappings)} className={`combo-merged-move-fallback ${activeIndex >= 0 ? 'active' : ''}`} inline />}
+      {noteNumbers.map((number) => <ComboNoteMarker key={number} number={number} />)}
+      {group.renderAsIcon && group.count > 1 && <span className="combo-merged-move-progress" aria-hidden="true">{Array.from({ length: group.count }, (_, index) => <span key={index} className={`combo-merged-move-marker dot ${activeIndex >= index ? 'active' : ''} ${hasPendingNote && noteStepIndexes.includes(index) ? 'special-note' : ''}`} />)}</span>}
     </span>;
   })}</strong>;
 }
 
-function ComboItemContent({ item, parts, className, mappings, activeMergedStepId, textStyle }: { item: ReturnType<typeof chartToComboImageItems>[number]; parts: ReturnType<typeof comboTextParts>; className: string; mappings: ComboImageStyle['iconMappings']; activeMergedStepId?: string; textStyle?: CSSProperties }) {
-  if (item.mergedMoveGroups?.length) return <ComboMergedMoveContent groups={item.mergedMoveGroups} className={className} textStyle={textStyle} activeStepId={activeMergedStepId} />;
+function ComboItemContent({ item, parts, mappings, convertIcons, className, activeMergedStepId, noteNumberByStepId, textStyle }: { item: ReturnType<typeof chartToComboImageItems>[number]; parts: ReturnType<typeof comboTextParts>; mappings: ComboImageStyle['iconMappings']; convertIcons: boolean; className: string; activeMergedStepId?: string; noteNumberByStepId?: Map<string, number>; textStyle?: CSSProperties }) {
+  if (item.mergedMoveGroups?.length) return <ComboMergedMoveContent groups={item.mergedMoveGroups} mappings={mappings} convertIcons={convertIcons} className={className} textStyle={textStyle} activeStepId={activeMergedStepId} noteNumberByStepId={noteNumberByStepId} />;
   if (item.mergedParts?.length && activeMergedStepId) {
     return <strong className={className} style={textStyle}>{item.mergedParts.map((part) => {
       const active = part.stepId === activeMergedStepId;
-      return <span key={part.stepId} className={active ? 'combo-merged-part active' : 'combo-merged-part'}>{comboTextParts(part.displayText, Boolean(part.iconId), mappings).map((piece, index) => piece.kind === 'icon' ? <span key={`${piece.iconId}-${index}`} className={active ? 'combo-inline-icon-mark active' : 'combo-inline-icon-mark'} style={{ '--icon-scale': piece.iconScale, '--icon-width-scale': piece.iconWidthScale } as CSSProperties}><img className="combo-inline-icon" src={piece.src} alt={piece.label} title={piece.label} /></span> : <span key={`text-${index}`}>{piece.value}</span>)}</span>;
+      const noteNumber = noteNumberByStepId?.get(part.stepId);
+      return <span key={part.stepId} className={active ? 'combo-merged-part active' : 'combo-merged-part'}>{noteNumber !== undefined && <ComboNoteMarker number={noteNumber} />}{comboTextParts(part.displayText, convertIcons, mappings).map((piece, index) => piece.kind === 'icon' ? <span key={`${piece.iconId}-${index}`} className={active ? 'combo-inline-icon-mark active' : 'combo-inline-icon-mark'} style={{ '--icon-scale': piece.iconScale, '--icon-width-scale': piece.iconWidthScale } as CSSProperties}><img className="combo-inline-icon" src={piece.src} alt={piece.label} title={piece.label} /></span> : <span key={`text-${index}`}>{piece.value}</span>)}</span>;
     })}</strong>;
   }
-  return <ComboInlineContent parts={parts} className={className} textStyle={textStyle} />;
+  const fallbackNoteNumbers = (item.mergedStepIds ?? [item.step.id]).flatMap((stepId) => { const number = noteNumberByStepId?.get(stepId); return number === undefined ? [] : [number]; });
+  return <>{fallbackNoteNumbers.map((number) => <ComboNoteMarker key={number} number={number} />)}<ComboInlineContent parts={parts} className={className} textStyle={textStyle} /></>;
 }
 
 function comboTextStrokeStyle(style: ComboImageStyle): CSSProperties | undefined {
@@ -482,9 +630,7 @@ function comboTextStrokeStyle(style: ComboImageStyle): CSSProperties | undefined
   const width = Math.max(1, style.textStrokeWidth);
   const color = style.textStrokeColor;
   return {
-    WebkitTextStroke: `${width}px ${color}`,
-    paintOrder: 'stroke fill',
-    textShadow: `${-width}px 0 0 ${color}, ${width}px 0 0 ${color}, 0 ${-width}px 0 ${color}, 0 ${width}px 0 ${color}`
+    textShadow: roundedTextOutlineShadow(true, width, color)
   };
 }
 
@@ -496,6 +642,7 @@ function activeFrameVars(showAvatar: boolean, blockMode: ComboImageStyle['blockM
   const avatarTop = blockHeight / 2 + avatarOffsetY - avatarSize / 2;
   const avatarBottom = blockHeight / 2 + avatarOffsetY + avatarSize / 2;
   return {
+    '--combo-avatar-content-inset': `${showAvatar ? Math.max(0, avatarLeft + avatarSize + 4) : 44}px`,
     '--active-frame-left': `${showAvatar ? Math.min(-bleed, avatarLeft - bleed) : -bleed}px`,
     '--active-frame-right': `${-bleed}px`,
     '--active-frame-top': `${showAvatar ? Math.min(centeredInset, avatarTop - bleed) : centeredInset}px`,
@@ -507,6 +654,7 @@ function displayMoveLabel(step: OverlayStep): string {
   if (step.moveId === 'switch_1') return '1';
   if (step.moveId === 'switch_2') return '2';
   if (step.moveId === 'switch_3') return '3';
+  if (step.moveId === 'switch_4') return '4';
   return step.label.replace(/^切人(?=\d)/, '');
 }
 
@@ -514,11 +662,13 @@ function shouldShowPromptForStep(step: OverlayStep | null | undefined): step is 
   return Boolean(step && !step.free && (step.moveId === 'empty_action' || step.moveId === 'basic_attack' || (!step.independent && step.advancesStep !== false)));
 }
 
-function promptTextForStep(step: OverlayStep | null | undefined, language: AppLanguage, style: ComboImageStyle): string {
+function promptTextForStep(step: OverlayStep | null | undefined, language: AppLanguage, style: ComboImageStyle, chart: ComboChart | null = null): string {
   if (!step) return '';
-  if (step.note?.trim()) return step.note.trim();
-  const contentText = style.contentLabels[step.id]?.trim() || defaultComboContentLabelForMoveId(step.moveId);
-  return localizedMovePrompt(step.moveId, displayMoveLabel(step), contentText, language);
+  if (!style.showNotesSeparately && step.note?.trim()) return step.note.trim();
+  const contentText = chart?.contentLabels?.[step.id]?.trim()
+    || style.contentLabels[step.id]?.trim()
+    || defaultComboContentLabelForMoveId(step.moveId);
+  return localizedMovePrompt(step.moveId, displayMoveLabel(step), contentText, language, step.customLabel === true);
 }
 
 function comboVisualGap(layout: 'horizontal' | 'vertical', style: ComboImageStyle): number {
@@ -537,7 +687,11 @@ function comboVerticalImageOverlap(style: ComboImageStyle): number {
 
 function comboTrackMetrics(items: ReturnType<typeof chartToComboImageItems>, layout: 'horizontal' | 'vertical', style: ComboImageStyle): ComboTrackMetric[] {
   let cursor = 0;
-  const gap = comboVisualGap(layout, style);
+  // Vertical image blocks also have a negative top margin for the image
+  // overlap. Include that margin in the measured track gap, otherwise the
+  // real block position drifts upward a little more on every item.
+  const renderedGap = comboRenderGap(layout, style);
+  const gap = renderedGap - (layout === 'vertical' && style.blockMode === 'image' ? comboVerticalImageOverlap(style) : 0);
   return items.map((item, index) => {
     if (index > 0) cursor += gap;
     const roleStyle = style.roleStyles[item.characterSlot];
@@ -598,7 +752,8 @@ function mergeOverlayStyleWithStorage(incoming: Partial<ComboImageStyle> | undef
       roleStyles: {
         1: { ...fallback.roleStyles[1], ...savedStyle.roleStyles?.[1], ...incoming?.roleStyles?.[1] },
         2: { ...fallback.roleStyles[2], ...savedStyle.roleStyles?.[2], ...incoming?.roleStyles?.[2] },
-        3: { ...fallback.roleStyles[3], ...savedStyle.roleStyles?.[3], ...incoming?.roleStyles?.[3] }
+        3: { ...fallback.roleStyles[3], ...savedStyle.roleStyles?.[3], ...incoming?.roleStyles?.[3] },
+        4: { ...fallback.roleStyles[4], ...savedStyle.roleStyles?.[4], ...incoming?.roleStyles?.[4] }
       }
     };
   } catch {

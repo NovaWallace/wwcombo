@@ -1,7 +1,8 @@
 import { cloneElement, isValidElement, useEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode, WheelEvent as ReactWheelEvent } from 'react';
+import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode, RefObject, WheelEvent as ReactWheelEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, Clock3, Download, FileVideo, PanelBottomClose, PanelBottomOpen, Pause, Play, Redo2, Save, ScanSearch, Scissors, Undo2, Upload, Volume2, VolumeX, X } from 'lucide-react';
+import { Check, Clock3, Download, FileVideo, Move, PanelBottomClose, PanelBottomOpen, Pause, Play, Redo2, Save, ScanSearch, Scissors, Undo2, Upload, Volume2, VolumeX, X } from 'lucide-react';
+import { ALL_CHARACTER_SLOTS, DEFAULT_CHARACTER_SLOTS } from '../combo-core';
 import type { CharacterSlot, ComboChart, ComboImageStyle, ComboPeriod, ComboStep, MoveDefinition } from '../combo-core';
 import {
   chartToComboImageItems,
@@ -17,14 +18,19 @@ import {
   verticalComboTrackClipCompensation,
   visibleComboImageItems
 } from './combo-image/comboImage';
+import type { ComboImageMergedMove } from './combo-image/comboImage';
 import { useI18n } from './i18n';
 import type { AppLanguage } from './i18n';
 import { localizedMovePrompt } from './moveLabels';
+import { noteStepVisibleAtTime } from './noteDisplay';
+import { DecoratedNoteRow, noteOperationIcon } from './noteRowDecoration';
 import { NumericDraftInput } from './NumericDraftInput';
 import { currentPeriodLabelAtTime } from './periodLabels';
 import { buildRhythmCrowdedGroups, rhythmNoteHeight, rhythmNoteOpacity, rhythmNoteTop, visibleRhythmCrowdedGroups } from './rhythmCrowding';
 import { shortcutMatches } from './shortcutSettings';
 import type { ShortcutSettings } from './shortcutSettings';
+import { roundedTextOutlineShadow } from './textOutline';
+import { HoldDragFeedback } from './HoldDragFeedback';
 import { keyMappingDisplayBounds, loadStoredKeyMappingConfig } from './keyMappingTypes';
 import {
   buildVideoRecognitionRequest,
@@ -40,18 +46,21 @@ import type {
   VideoRecognitionResult
 } from './videoKeyMappingRecognition';
 
-type ComboLayout = 'horizontal' | 'vertical' | 'waterfall';
-type LinearComboLayout = Exclude<ComboLayout, 'waterfall'>;
+type ComboLayout = 'horizontal' | 'vertical' | 'stair' | 'waterfall';
+type LinearComboLayout = 'horizontal' | 'vertical';
 type RhythmUiSettings = { width: number; height: number; scale: number; laneGap: number; roleSpacing: number; fallSpeed: number; judgeLineOffset: number; ringStartScale: number; ringEndScale: number; ringOffsetX: number; ringOffsetY: number; ringDurationMs: number; feedbackX?: number; feedbackY?: number };
 type VideoLayerBounds = { x: number; y: number; width: number; height: number };
 type DisplayMetrics = { width: number; height: number; scaleFactor: number };
 type LayerInsets = { left: number; top: number; right: number; bottom: number };
 type VideoLayerTransform = { offsetX: number; offsetY: number; scale: number; cropLeft: number; cropTop: number; cropRight: number; cropBottom: number };
 type VideoLayerMoveDrag = { pointerId: number; startX: number; startY: number; viewScale: number; origin: VideoLayerTransform; moved: boolean; historyCaptured: boolean };
-type VideoLayerScaleDrag = { pointerId: number; startX: number; origin: VideoLayerTransform; moved: boolean; historyCaptured: boolean };
+type VideoLayerScaleDrag = { pointerId: number; startX: number; origin: VideoLayerTransform; moved: boolean; historyCaptured: boolean; longPressTimer: number | null; resetTriggered: boolean };
 type VideoLayerCropEdge = 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w' | 'nw';
 type VideoTrimMode = 'video' | 'flowchart';
 type VideoLayerCropDrag = { pointerId: number; edge: VideoLayerCropEdge; startX: number; startY: number; viewScale: number; origin: VideoLayerTransform; moved: boolean; historyCaptured: boolean };
+type VideoNoteBounds = { x: number; y: number; width: number; height: number; scale: number };
+type VideoNoteDrag = { pointerId: number; edge: VideoLayerCropEdge | ''; startX: number; startY: number; hostWidth: number; hostHeight: number; origin: VideoNoteBounds };
+type VideoNoteScaleDrag = { pointerId: number; startX: number; origin: VideoNoteBounds; moved: boolean; longPressTimer: number | null; resetTriggered: boolean };
 type VideoTrimDrag = { pointerId: number; edge: 'start' | 'end'; trackLeft: number; trackWidth: number };
 type OverlaySettings = { layout: ComboLayout; x: number; y: number; width: number; height: number };
 type WorkbenchHistorySnapshot = {
@@ -73,6 +82,8 @@ type TimelinePanelDragSnapshot = {
   moved: boolean;
   historyCaptured: boolean;
   axis: 'horizontal' | 'vertical' | null;
+  longPressTimer: number | null;
+  resetTriggered: boolean;
 };
 
 type RecognitionBoundsDrag = {
@@ -136,6 +147,10 @@ const MAX_VIDEO_TIMELINE_HEIGHT_RATIO = 0.52;
 const TIMELINE_TOGGLE_DRAG_THRESHOLD = 4;
 const MIN_VIDEO_TIMELINE_LANE_HEIGHT = 24;
 const MAX_VIDEO_TIMELINE_LANE_HEIGHT = 64;
+const DEFAULT_VIDEO_NOTE_BOUNDS: VideoNoteBounds = { x: 4, y: 8, width: 28, height: 48, scale: 1 };
+const DEFAULT_VIDEO_LAYER_TRANSFORM: VideoLayerTransform = { offsetX: 0, offsetY: 0, scale: 1, cropLeft: 0, cropTop: 0, cropRight: 0, cropBottom: 0 };
+const MAX_VIDEO_LAYER_HORIZONTAL_CROP_WIDTH_FACTOR = 4;
+const MOVE_BUTTON_RESET_HOLD_MS = 3000;
 const VIDEO_TIMELINE_LANE_HEIGHT_STEP = 4;
 const MAX_WORKBENCH_HISTORY = 80;
 const VIDEO_PLAYBACK_RATES = [1, 0.5, 0.2] as const;
@@ -426,6 +441,7 @@ function activeFrameVars(showAvatar: boolean, blockMode: ComboImageStyle['blockM
   const avatarTop = blockHeight / 2 + avatarOffsetY - avatarSize / 2;
   const avatarBottom = blockHeight / 2 + avatarOffsetY + avatarSize / 2;
   return {
+    '--combo-avatar-content-inset': `${showAvatar ? Math.max(0, avatarLeft + avatarSize + 4) : 44}px`,
     '--active-frame-left': `${showAvatar ? Math.min(-bleed, avatarLeft - bleed) : -bleed}px`,
     '--active-frame-right': `${-bleed}px`,
     '--active-frame-top': `${showAvatar ? Math.min(-bleed, avatarTop - bleed) : -bleed}px`,
@@ -437,18 +453,41 @@ function CapsuleBlockBackground() {
   return <div className="capsule-bg" aria-hidden="true"><div className="capsule-bg-edge left top" /><div className="capsule-bg-edge left bottom" /><div className="capsule-bg-edge middle top" /><div className="capsule-bg-edge middle bottom" /><div className="capsule-bg-edge right top" /><div className="capsule-bg-edge right bottom" /><div className="capsule-bg-body"><div className="capsule-bg-piece left" /><div className="capsule-bg-piece middle" /><div className="capsule-bg-piece right" /></div></div>;
 }
 
-function ComboInlineContent({ parts, className, hideIconAlt = false }: { parts: ReturnType<typeof comboTextParts>; className: string; hideIconAlt?: boolean }) {
-  return <strong className={className}>{parts.map((part, index) => part.kind === 'icon' ? <span key={`${part.iconId}-${index}`} className="combo-inline-icon-mark" style={{ '--icon-scale': part.iconScale, '--icon-width-scale': part.iconWidthScale } as CSSProperties}><img className="combo-inline-icon" src={part.src} alt={hideIconAlt ? '' : part.label} title={part.label} /></span> : <span key={`text-${index}`}>{part.value}</span>)}</strong>;
+function ComboInlineContent({ parts, className, hideIconAlt = false, textStyle, inline = false }: { parts: ReturnType<typeof comboTextParts>; className: string; hideIconAlt?: boolean; textStyle?: CSSProperties; inline?: boolean }) {
+  const content = parts.map((part, index) => part.kind === 'icon' ? <span key={`${part.iconId}-${index}`} className="combo-inline-icon-mark" style={{ '--icon-scale': part.iconScale, '--icon-width-scale': part.iconWidthScale } as CSSProperties}><img className="combo-inline-icon" alt={hideIconAlt ? '' : part.label} title={part.label} src={part.src} /></span> : <span key={`text-${index}`}>{part.value}</span>);
+  return inline ? <span className={className} style={textStyle}>{content}</span> : <strong className={className} style={textStyle}>{content}</strong>;
 }
 
-function ComboItemContent({ item, parts, className, mappings, activeStepId }: { item: ReturnType<typeof chartToComboImageItems>[number]; parts: ReturnType<typeof comboTextParts>; className: string; mappings: ComboImageStyle['iconMappings']; activeStepId?: string }) {
+function ComboMergedMoveContent({ groups, mappings, convertIcons, className, activeStepId, textStyle }: { groups: ComboImageMergedMove[]; mappings: ComboImageStyle['iconMappings']; convertIcons: boolean; className: string; activeStepId?: string; textStyle?: CSSProperties }) {
+  return <strong className={className} style={textStyle}>{groups.map((group) => {
+    const activeIndex = activeStepId ? group.stepIds.indexOf(activeStepId) : -1;
+    return <span key={group.stepIds[0]} className="combo-merged-move">
+      {group.renderAsIcon && group.iconSrc ? <><span className="combo-merged-move-body">
+        <span className={`combo-inline-icon-mark ${activeIndex >= 0 ? 'active' : ''}`} style={{ '--icon-scale': group.iconScale ?? 1, '--icon-width-scale': group.iconWidthScale ?? 1 } as CSSProperties}><img className="combo-inline-icon" src={group.iconSrc} alt={group.iconLabel ?? ''} title={group.iconLabel ?? ''} /></span>
+        {group.count > 1 && <span className="combo-merged-move-count">{`x${group.count}`}</span>}
+      </span>
+      {group.count > 1 && <span className="combo-merged-move-progress" aria-hidden="true">{Array.from({ length: group.count }, (_, index) => <span key={index} className={`combo-merged-move-marker dot ${activeIndex >= index ? 'active' : ''}`} />)}</span>}</> : <ComboInlineContent parts={comboTextParts(group.displayText, convertIcons, mappings)} className={`combo-merged-move-fallback ${activeIndex >= 0 ? 'active' : ''}`} inline />}
+    </span>;
+  })}</strong>;
+}
+
+function comboTextStrokeStyle(style: ComboImageStyle): CSSProperties | undefined {
+  if (!style.textStrokeEnabled || style.textStrokeWidth <= 0) return undefined;
+  const width = Math.max(1, style.textStrokeWidth);
+  return {
+    textShadow: roundedTextOutlineShadow(true, width, style.textStrokeColor)
+  };
+}
+
+function ComboItemContent({ item, parts, mappings, convertIcons, className, activeStepId, textStyle }: { item: ReturnType<typeof chartToComboImageItems>[number]; parts: ReturnType<typeof comboTextParts>; mappings: ComboImageStyle['iconMappings']; convertIcons: boolean; className: string; activeStepId?: string; textStyle?: CSSProperties }) {
+  if (item.mergedMoveGroups?.length) return <ComboMergedMoveContent groups={item.mergedMoveGroups} mappings={mappings} convertIcons={convertIcons} className={className} activeStepId={activeStepId} textStyle={textStyle} />;
   if (item.mergedParts?.length && activeStepId) {
-    return <strong className={className}>{item.mergedParts.map((part) => {
+    return <strong className={className} style={textStyle}>{item.mergedParts.map((part) => {
       const active = part.stepId === activeStepId;
-      return <span key={part.stepId} className={active ? 'combo-merged-part active' : 'combo-merged-part'}>{comboTextParts(part.displayText, Boolean(part.iconId), mappings).map((piece, index) => piece.kind === 'icon' ? <span key={`${piece.iconId}-${index}`} className={active ? 'combo-inline-icon-mark active' : 'combo-inline-icon-mark'} style={{ '--icon-scale': piece.iconScale, '--icon-width-scale': piece.iconWidthScale } as CSSProperties}><img className="combo-inline-icon" src={piece.src} alt={piece.label} title={piece.label} /></span> : <span key={`text-${index}`}>{piece.value}</span>)}</span>;
+      return <span key={part.stepId} className={active ? 'combo-merged-part active' : 'combo-merged-part'}>{comboTextParts(part.displayText, convertIcons, mappings).map((piece, index) => piece.kind === 'icon' ? <span key={`${piece.iconId}-${index}`} className={active ? 'combo-inline-icon-mark active' : 'combo-inline-icon-mark'} style={{ '--icon-scale': piece.iconScale, '--icon-width-scale': piece.iconWidthScale } as CSSProperties}><img className="combo-inline-icon" src={piece.src} alt={piece.label} title={piece.label} /></span> : <span key={`text-${index}`}>{piece.value}</span>)}</span>;
     })}</strong>;
   }
-  return <ComboInlineContent parts={parts} className={className} />;
+  return <ComboInlineContent parts={parts} className={className} textStyle={textStyle} />;
 }
 
 function displayMoveLabel(step: ComboStep): string {
@@ -464,9 +503,9 @@ function shouldShowPromptForStep(step: ComboStep | null | undefined): step is Co
 
 function promptTextForStep(step: ComboStep | null | undefined, style: ComboImageStyle, language: AppLanguage): string {
   if (!step) return '';
-  if (step.note?.trim()) return step.note.trim();
+  if (!style.showNotesSeparately && step.note?.trim()) return step.note.trim();
   const contentText = style.contentLabels[step.id]?.trim() || defaultComboContentLabelForMoveId(step.moveId);
-  return localizedMovePrompt(step.moveId, displayMoveLabel(step), contentText, language);
+  return localizedMovePrompt(step.moveId, displayMoveLabel(step), contentText, language, step.customLabel === true);
 }
 
 function chooseMediaRecorderMime(): string {
@@ -628,7 +667,7 @@ function preloadComboLayerImages(style: ComboImageStyle, cache: ImageCache): Pro
 function preloadChartIconImages(chart: ComboChart, style: ComboImageStyle, cache: ImageCache): Promise<void[]> {
   const items = chartToComboImageItems(chart, style);
   const sources = new Set<string>();
-  items.forEach((item) => comboTextParts(item.displayText, Boolean(item.iconId), style.roleStyles[item.characterSlot]?.iconMappings ?? style.iconMappings).forEach((part) => {
+  items.forEach((item) => comboTextParts(item.displayText, Boolean(item.iconId), effectiveIconMappings(style, item.characterSlot)).forEach((part) => {
     if (part.kind === 'icon') sources.add(part.src);
   }));
   chart.steps.forEach((step) => {
@@ -637,6 +676,8 @@ function preloadChartIconImages(chart: ComboChart, style: ComboImageStyle, cache
     comboTextParts(display.text, display.useIcons, effectiveIconMappings(style, slot)).forEach((part) => {
       if (part.kind === 'icon') sources.add(part.src);
     });
+    const noteIcon = noteOperationIcon(step, style);
+    if (noteIcon) sources.add(noteIcon.src);
   });
   return Promise.all(Array.from(sources).map((src) => preloadCanvasImage(src, cache)));
 }
@@ -769,7 +810,20 @@ function comboTextPartsWidth(layout: ComboTextPartLayout[]): number {
   return last ? last.left + last.width : 0;
 }
 
-function drawComboTextParts(ctx: CanvasRenderingContext2D, parts: ReturnType<typeof comboTextParts>, x: number, y: number, maxWidth: number, fontSize: number, imageCache: ImageCache, drawIconFallbackText = true) {
+function drawCanvasText(ctx: CanvasRenderingContext2D, value: string, x: number, y: number, maxWidth: number, style?: ComboImageStyle) {
+  if (style?.textStrokeEnabled && style.textStrokeWidth > 0) {
+    ctx.save();
+    ctx.lineJoin = 'round';
+    ctx.miterLimit = 2;
+    ctx.lineWidth = Math.max(1, style.textStrokeWidth * 2);
+    ctx.strokeStyle = style.textStrokeColor;
+    ctx.strokeText(value, x, y, maxWidth);
+    ctx.restore();
+  }
+  ctx.fillText(value, x, y, maxWidth);
+}
+
+function drawComboTextParts(ctx: CanvasRenderingContext2D, parts: ReturnType<typeof comboTextParts>, x: number, y: number, maxWidth: number, fontSize: number, imageCache: ImageCache, drawIconFallbackText = true, style?: ComboImageStyle) {
   const layout = measureComboTextParts(ctx, parts, fontSize);
   for (let index = 0; index < parts.length; index += 1) {
     const part = parts[index];
@@ -785,11 +839,68 @@ function drawComboTextParts(ctx: CanvasRenderingContext2D, parts: ReturnType<typ
         ctx.drawImage(image, partX + (markerSize - imageWidth) / 2, y - size / 2, imageWidth, size);
         continue;
       }
-      if (drawIconFallbackText) ctx.fillText(part.label, partX, y, Math.max(1, x + maxWidth - partX));
+      if (drawIconFallbackText) drawCanvasText(ctx, part.label, partX, y, Math.max(1, x + maxWidth - partX), style);
       continue;
     }
-    ctx.fillText(part.value, partX, y, Math.max(1, x + maxWidth - partX));
+    drawCanvasText(ctx, part.value, partX, y, Math.max(1, x + maxWidth - partX), style);
   }
+}
+
+function drawMergedMoveGroups(ctx: CanvasRenderingContext2D, groups: ComboImageMergedMove[], x: number, y: number, maxWidth: number, fontSize: number, imageCache: ImageCache, mappings: ComboImageStyle['iconMappings'], activeStepId?: string, style?: ComboImageStyle) {
+  const bodyGap = fontSize * 0.16;
+  const groupGap = fontSize * 0.3;
+  let cursor = x;
+  groups.forEach((group) => {
+    if (!group.renderAsIcon || !group.iconSrc) {
+      if (cursor >= x + maxWidth) return;
+      const fallbackParts = comboTextParts(group.displayText, true, mappings);
+      const fallbackWidth = Math.max(fontSize, comboTextPartsWidth(measureComboTextParts(ctx, fallbackParts, fontSize)) + fontSize * 0.3);
+      drawComboTextParts(ctx, fallbackParts, cursor, y, Math.max(1, Math.min(fallbackWidth, x + maxWidth - cursor)), fontSize, imageCache, true, style);
+      cursor += fallbackWidth + groupGap;
+      return;
+    }
+    const markerHeight = fontSize * 1.62 * (group.iconScale ?? 1);
+    const markerWidth = markerHeight * (group.iconWidthScale ?? 1);
+    const countText = group.count > 1 ? `x${group.count}` : '';
+    const countWidth = countText ? ctx.measureText(countText).width : 0;
+    const groupWidth = markerWidth + (countText ? bodyGap + countWidth : 0);
+    if (cursor >= x + maxWidth) return;
+    const activeIndex = activeStepId ? group.stepIds.indexOf(activeStepId) : -1;
+    if (activeIndex >= 0) {
+      roundedRect(ctx, cursor, y - markerHeight / 2, markerWidth, markerHeight, Math.max(3, fontSize * 0.18));
+      ctx.fillStyle = 'rgba(255,224,55,0.98)';
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = 'rgba(0,0,0,0.92)';
+      ctx.stroke();
+    }
+    const image = loadCanvasImage(group.iconSrc, imageCache);
+    const iconSize = fontSize * 1.45 * (group.iconScale ?? 1);
+    const iconWidth = iconSize * (group.iconWidthScale ?? 1);
+    if (image) ctx.drawImage(image, cursor + (markerWidth - iconWidth) / 2, y - iconSize / 2, iconWidth, iconSize);
+    else drawCanvasText(ctx, group.iconLabel ?? group.displayText, cursor, y, markerWidth, style);
+    if (countText) {
+      ctx.fillStyle = '#fff';
+      drawCanvasText(ctx, countText, cursor + markerWidth + bodyGap, y, Math.max(1, maxWidth - (cursor - x) - markerWidth - bodyGap), style);
+    }
+    if (group.count > 1) {
+      const dotSize = Math.max(2, fontSize * 0.22);
+      const dotGap = fontSize * 0.12;
+      const dotsWidth = group.count * dotSize + (group.count - 1) * dotGap;
+      const dotsLeft = cursor + Math.max(0, (groupWidth - dotsWidth) / 2);
+      for (let index = 0; index < group.count; index += 1) {
+        const dotX = dotsLeft + index * (dotSize + dotGap);
+        ctx.beginPath();
+        ctx.arc(dotX + dotSize / 2, y + markerHeight * 0.58, dotSize / 2, 0, Math.PI * 2);
+        ctx.fillStyle = activeIndex >= index ? '#ffe037' : '#fff';
+        ctx.fill();
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = '#050505';
+        ctx.stroke();
+      }
+    }
+    cursor += groupWidth + groupGap;
+  });
 }
 
 
@@ -879,7 +990,7 @@ function drawRhythmLayerToCanvas(ctx: CanvasRenderingContext2D, chart: ComboChar
       ctx.font = '900 20px Microsoft YaHei, sans-serif';
       ctx.textBaseline = 'middle';
       ctx.textAlign = 'left';
-      drawComboTextParts(ctx, parts, noteX + 4, top + noteHeight / 2, noteWidth - 8, 20, imageCache, false);
+      drawComboTextParts(ctx, parts, noteX + 4, top + noteHeight / 2, noteWidth - 8, 20, imageCache, false, style);
       ctx.restore();
     });
   });
@@ -930,13 +1041,13 @@ function drawRhythmLayerToCanvas(ctx: CanvasRenderingContext2D, chart: ComboChar
       ctx.stroke();
       ctx.fillStyle = '#fff';
       ctx.font = '900 22px Microsoft YaHei, sans-serif';
-      parts.forEach((part, index) => drawComboTextParts(ctx, [part], panelX + 6, panelY + 4 + rowHeight * index + rowHeight / 2, panelWidth - 12, 22, imageCache, false));
+    parts.forEach((part, index) => drawComboTextParts(ctx, [part], panelX + 6, panelY + 4 + rowHeight * index + rowHeight / 2, panelWidth - 12, 22, imageCache, false, style));
     });
   });
   ctx.restore();
 }
 
-function drawComboLayerToCanvas(ctx: CanvasRenderingContext2D, chart: ComboChart, style: ComboImageStyle, timeMs: number, contentBounds: VideoLayerBounds, clipBounds: VideoLayerBounds, layout: LinearComboLayout, overlayBounds: { width: number; height: number }, canvasWidth: number, canvasHeight: number, imageCache: ImageCache, language: AppLanguage) {
+function drawComboLayerToCanvas(ctx: CanvasRenderingContext2D, chart: ComboChart, style: ComboImageStyle, timeMs: number, contentBounds: VideoLayerBounds, clipBounds: VideoLayerBounds, layout: LinearComboLayout, overlayBounds: { width: number; height: number }, canvasWidth: number, canvasHeight: number, imageCache: ImageCache, language: AppLanguage, stairMode = false) {
   const x = (contentBounds.x / 100) * canvasWidth;
   const y = (contentBounds.y / 100) * canvasHeight;
   const width = (contentBounds.width / 100) * canvasWidth;
@@ -986,7 +1097,7 @@ function drawComboLayerToCanvas(ctx: CanvasRenderingContext2D, chart: ComboChart
     const chipHeight = Math.max(1, size.height);
     const chipWidth = Math.max(1, size.width);
     const chipX = layout === 'vertical' ? Math.max(0, (sourceWidth - chipWidth) / 2) : cursor;
-    const chipY = layout === 'vertical' ? cursor : (sourceHeight - chipHeight) / 2;
+    const chipY = layout === 'vertical' ? cursor : (sourceHeight - chipHeight) / 2 + (stairMode ? (item.characterSlot - 2) * style.stairRoleOffset : 0);
     const visible = layout === 'vertical' ? chipY + chipHeight >= -12 && chipY <= sourceHeight + 12 : chipX + chipWidth >= -12 && chipX <= sourceWidth + 12;
     if (visible) {
       const active = index === activeIndex;
@@ -1006,7 +1117,7 @@ function drawComboLayerToCanvas(ctx: CanvasRenderingContext2D, chart: ComboChart
         ctx.stroke();
       }
       const fontSize = Math.max(12, Math.round(style.fontSize));
-      const mappings = role.iconMappings ?? style.iconMappings;
+      const mappings = effectiveIconMappings(style, item.characterSlot);
       const parts = comboTextParts(item.displayText || item.step.label, Boolean(item.iconId), mappings);
       const contentWidth = comboTextPartsWidth(measureComboTextParts(ctx, parts, fontSize));
       let textX = chipX + 14;
@@ -1047,7 +1158,7 @@ function drawComboLayerToCanvas(ctx: CanvasRenderingContext2D, chart: ComboChart
         ctx.stroke();
       }
       const activeMergedPart = item.mergedParts?.find((part) => part.stepId === activeStepId);
-      if (activeMergedPart && item.mergedParts) {
+      if (activeMergedPart && item.mergedParts && !item.mergedMoveGroups?.length) {
         const contentLeft = textX;
         const contentRight = chipX + chipWidth - 14;
         let mergedCursor = contentLeft;
@@ -1142,10 +1253,12 @@ function drawComboLayerToCanvas(ctx: CanvasRenderingContext2D, chart: ComboChart
       ctx.fillStyle = style.textColor || '#fff';
       ctx.shadowColor = 'rgba(0,0,0,0.7)';
       ctx.shadowBlur = 6;
-      if (style.blockMode === 'image') {
-        drawComboTextParts(ctx, parts, textX, chipY + chipHeight / 2, Math.max(24, chipWidth - (textX - chipX) - 14), fontSize, imageCache);
+      if (item.mergedMoveGroups?.length) {
+        drawMergedMoveGroups(ctx, item.mergedMoveGroups, textX, chipY + chipHeight / 2, Math.max(24, chipWidth - (textX - chipX) - 14), fontSize, imageCache, mappings, activeStepId, style);
+      } else if (style.blockMode === 'image') {
+        drawComboTextParts(ctx, parts, textX, chipY + chipHeight / 2, Math.max(24, chipWidth - (textX - chipX) - 14), fontSize, imageCache, true, style);
       } else {
-        drawComboTextParts(ctx, parts, textX, chipY + chipHeight / 2, Math.max(24, chipWidth - (textX - chipX) - 12), fontSize, imageCache);
+        drawComboTextParts(ctx, parts, textX, chipY + chipHeight / 2, Math.max(24, chipWidth - (textX - chipX) - 12), fontSize, imageCache, true, style);
       }
       ctx.shadowBlur = 0;
       ctx.restore();
@@ -1155,7 +1268,7 @@ function drawComboLayerToCanvas(ctx: CanvasRenderingContext2D, chart: ComboChart
   ctx.restore();
 }
 
-function VideoComboLayer({ chart, style, timeMs, layout, bounds }: { chart: ComboChart; style: ComboImageStyle; timeMs: number; layout: LinearComboLayout; bounds: { width: number; height: number } }) {
+function VideoComboLayer({ chart, style, timeMs, layout, bounds, stairMode = false }: { chart: ComboChart; style: ComboImageStyle; timeMs: number; layout: LinearComboLayout; bounds: { width: number; height: number }; stairMode?: boolean }) {
   const { language, text } = useI18n();
   const hostRef = useRef<HTMLDivElement | null>(null);
   const [hostSize, setHostSize] = useState(() => bounds);
@@ -1213,12 +1326,12 @@ function VideoComboLayer({ chart, style, timeMs, layout, bounds }: { chart: Comb
               const isActive = comboImageItemContainsStep(item, activeStepId);
               const isNext = style.prePromptEnabled && metricIndex === activeIndex + 1;
               return (
-                <div key={item.step.id} className={`combo-preview-chip ${style.blockMode === 'image' ? 'image-block' : ''} ${item.showAvatar ? 'with-avatar' : ''} ${isActive ? 'active' : ''} ${isNext ? 'next' : ''}`} style={{ width: size.width, height: size.height, color: style.textColor, fontSize: style.fontSize, fontFamily: style.fontFamily, opacity: isNext ? 1 : comboItemOpacity(metrics[metricIndex], activeMetric, renderTrackOffset, layout, bounds, style), backgroundColor: blockColor, borderRadius: style.blockMode === 'capsule' && style.capsuleShape === 'capsule' ? 999 : 4, '--move-color': role.color, ...activeFrameVars(item.showAvatar, style.blockMode, avatarLeft, style.avatarSize, style.avatarOffsetY, size.height), ...blockImageStyle } as CSSProperties}>
+                <div key={item.step.id} className={`combo-preview-chip ${style.blockMode === 'image' ? 'image-block' : ''} ${item.showAvatar ? 'with-avatar' : ''} ${isActive ? 'active' : ''} ${isNext ? 'next' : ''}`} style={{ width: size.width, height: size.height, color: style.textColor, fontSize: style.fontSize, fontFamily: style.fontFamily, transform: stairMode ? `translateY(${(item.characterSlot - 2) * style.stairRoleOffset}px)` : undefined, opacity: isNext ? 1 : comboItemOpacity(metrics[metricIndex], activeMetric, renderTrackOffset, layout, bounds, style), backgroundColor: blockColor, borderRadius: style.blockMode === 'capsule' && style.capsuleShape === 'capsule' ? 999 : 4, '--move-color': role.color, ...activeFrameVars(item.showAvatar, style.blockMode, avatarLeft, style.avatarSize, style.avatarOffsetY, size.height), ...blockImageStyle } as CSSProperties}>
                   {style.blockMode === 'image' && <CapsuleBlockBackground />}
                   {item.showAvatar && <span className="avatar-slot preview-avatar" style={{ width: style.avatarSize, height: style.avatarSize, left: avatarLeft, transform: `translateY(calc(-50% + ${style.avatarOffsetY}px))`, ...imageCropBackground(role.avatar, role.avatarCrop) }}>{role.avatar ? null : item.characterSlot}</span>}
                   {promptText && comboImageItemContainsStep(item, activeStepId) && <div className={`combo-preview-action-prompt ${layout === 'vertical' ? 'vertical right' : 'horizontal above'}`}>{promptText}</div>}
                   {periodLabel && (layout === 'horizontal' ? isActive : item === firstVisibleItem) && <div className={`combo-period-label inline ${layout === 'vertical' ? 'vertical left' : 'horizontal below'}`}>{periodLabel}</div>}
-                  <ComboItemContent item={item} parts={parts} className="combo-preview-content" mappings={mappings} activeStepId={activeStepId} />
+                  <ComboItemContent item={item} parts={parts} mappings={mappings} convertIcons={style.convertIcons} className="combo-preview-content" activeStepId={activeStepId} textStyle={comboTextStrokeStyle(style)} />
                 </div>
               );
             })}
@@ -1229,7 +1342,7 @@ function VideoComboLayer({ chart, style, timeMs, layout, bounds }: { chart: Comb
   );
 }
 function rhythmStepText(step: ComboStep, style: ComboImageStyle): { text: string; useIcons: boolean } {
-  const slot = step.moveId === 'switch_1' ? 1 : step.moveId === 'switch_2' ? 2 : step.moveId === 'switch_3' ? 3 : null;
+  const slot = /^switch_[1234]$/.test(step.moveId) ? Number(step.moveId.slice(-1)) as CharacterSlot : null;
   return {
     text: style.contentLabels[step.id]?.trim() || defaultComboContentLabelForMoveId(step.moveId) || displayMoveLabel(step),
     useIcons: style.convertIcons || slot !== null
@@ -1238,14 +1351,16 @@ function rhythmStepText(step: ComboStep, style: ComboImageStyle): { text: string
 
 function rhythmActiveSlotAt(steps: ComboStep[], timeMs: number): CharacterSlot {
   const first = (steps[0]?.characterSlot ?? 1) as CharacterSlot;
-  const latestSwitch = steps.filter((step) => step.startMin <= timeMs && /^switch_[123]$/.test(step.moveId)).sort((a, b) => b.startMin - a.startMin)[0];
+  const latestSwitch = steps.filter((step) => step.startMin <= timeMs && /^switch_[1234]$/.test(step.moveId)).sort((a, b) => b.startMin - a.startMin)[0];
   if (latestSwitch?.moveId === 'switch_2') return 2;
   if (latestSwitch?.moveId === 'switch_3') return 3;
+  if (latestSwitch?.moveId === 'switch_4') return 4;
   return latestSwitch ? 1 : first;
 }
 
 function VideoRhythmLayer({ chart, style, timeMs, settings, bounds }: { chart: ComboChart; style: ComboImageStyle; timeMs: number; settings: RhythmUiSettings; bounds: { width: number; height: number } }) {
   const { language } = useI18n();
+  const CHARACTER_SLOTS = chart.characterCount === 4 ? ALL_CHARACTER_SLOTS : DEFAULT_CHARACTER_SLOTS;
   const hostRef = useRef<HTMLDivElement | null>(null);
   const [hostSize, setHostSize] = useState(() => bounds);
   const orderedSteps = useMemo(() => [...chart.steps].sort((a, b) => a.startMin - b.startMin || (a.characterSlot ?? 1) - (b.characterSlot ?? 1) || a.id.localeCompare(b.id)), [chart]);
@@ -1284,6 +1399,141 @@ function VideoRhythmLayer({ chart, style, timeMs, settings, bounds }: { chart: C
   return <div ref={hostRef} className="video-rhythm-scale-host"><div className="video-rhythm-shell" style={{ width: stageWidth, height: stageHeight, transform: `scale(${scaleX * scale}, ${scaleY * scale})`, '--rhythm-judge-y': judgeY + 'px', '--rhythm-lane-gap': settings.laneGap + 'px', '--rhythm-role-spacing': settings.roleSpacing + 'px' } as CSSProperties}><div className="rhythm-overlay-lanes">{CHARACTER_SLOTS.map((slot) => <div key={slot} className="rhythm-overlay-lane">{activeSlot === slot && <div className="rhythm-overlay-active-role-gradient" />}{visibleSteps.filter((step) => (step.characterSlot ?? 1) === slot).map((step) => { const parts = notePartsByStepId.get(step.id) ?? []; const height = rhythmNoteHeight(parts.length); const active = timeMs >= step.startMin && timeMs <= step.startMin + step.durationMax; return <div key={step.id} className={'rhythm-overlay-note ' + (step.moveId === 'heavy_attack' || step.moveId.endsWith('_hold') ? 'hold' : 'normal') + (parts.length > 1 ? ' stacked' : '') + (active ? ' active' : '')} style={{ top: rhythmNoteTop(step, height, timeMs, judgeY, settings.fallSpeed), height, opacity: rhythmNoteOpacity(step, timeMs) } as CSSProperties}><ComboInlineContent parts={parts} className="rhythm-overlay-note-content" hideIconAlt /></div>; })}</div>)}</div><div className="rhythm-overlay-judge" /><div className="rhythm-overlay-avatars">{CHARACTER_SLOTS.map((slot) => { const role = style.roleStyles[slot]; const prompt = orderedSteps.find((step) => (step.characterSlot ?? 1) === slot && timeMs <= step.startMin + step.durationMax); const crowdedPrompts = visibleCrowdedGroups.filter((group) => group.characterSlot === slot).map((group) => ({ group, parts: [...group.entries].reverse().flatMap((entry) => notePartsByStepId.get(entry.step.id) ?? []) })).filter((item) => item.parts.length > 1); return <div key={slot} className={`rhythm-overlay-avatar-cell ${activeSlot === slot ? 'active' : ''}`}><span className="rhythm-overlay-lane-prompt">{promptTextForStep(prompt, style, language)}</span>{crowdedPrompts.length > 0 && <span className="rhythm-overlay-crowded-prompts">{crowdedPrompts.map(({ group, parts }) => <span key={group.id} className="rhythm-overlay-crowded-prompt" style={{ '--rhythm-crowded-color': role.color } as CSSProperties}><ComboInlineContent parts={parts} className="rhythm-overlay-crowded-prompt-content" hideIconAlt /></span>)}</span>}<span className="rhythm-overlay-avatar" style={imageCropBackground(role.avatar, role.avatarCrop)}>{role.avatar ? null : slot}</span></div>; })}</div></div></div>;
 }
 
+function videoNoteList(chart: ComboChart, style: ComboImageStyle, timeMs: number): ComboStep[] {
+  const notes = chart.steps
+    .filter((step) => Boolean(step.note?.trim()) && noteStepVisibleAtTime(step, timeMs))
+    .sort((left, right) => left.startMin - right.startMin || left.id.localeCompare(right.id));
+  return style.noteOrder === 'oldest-top' ? notes : notes.reverse();
+}
+
+function VideoNotesLayer({ chart, style, timeMs, bounds, moveMode, hostRef, onBoundsChange }: {
+  chart: ComboChart;
+  style: ComboImageStyle;
+  timeMs: number;
+  bounds: VideoNoteBounds;
+  moveMode: boolean;
+  hostRef: RefObject<HTMLElement | null>;
+  onBoundsChange: (bounds: VideoNoteBounds) => void;
+}) {
+  const dragRef = useRef<VideoNoteDrag | null>(null);
+  const notes = videoNoteList(chart, style, timeMs);
+  if (!style.showNotesSeparately) return null;
+  const beginDrag = (event: ReactPointerEvent<HTMLElement>, edge: VideoNoteDrag['edge'] = '') => {
+    if (!moveMode || event.button !== 0 || dragRef.current) return;
+    const host = hostRef.current;
+    if (!host) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    const rect = host.getBoundingClientRect();
+    dragRef.current = { pointerId: event.pointerId, edge, startX: event.clientX, startY: event.clientY, hostWidth: Math.max(1, rect.width), hostHeight: Math.max(1, rect.height), origin: { ...bounds } };
+  };
+  const moveDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    const dx = (event.clientX - drag.startX) / drag.hostWidth * 100;
+    const dy = (event.clientY - drag.startY) / drag.hostHeight * 100;
+    const base = drag.origin;
+    const next = { ...base };
+    if (!drag.edge) { next.x = base.x + dx; next.y = base.y + dy; }
+    if (drag.edge.includes('e')) next.width = Math.max(8, base.width + dx);
+    if (drag.edge.includes('s')) next.height = Math.max(8, base.height + dy);
+    if (drag.edge.includes('w')) { next.width = Math.max(8, base.width - dx); next.x = next.width === 8 ? base.x + base.width - 8 : base.x + dx; }
+    if (drag.edge.includes('n')) { next.height = Math.max(8, base.height - dy); next.y = next.height === 8 ? base.y + base.height - 8 : base.y + dy; }
+    onBoundsChange({ x: next.x, y: next.y, width: next.width, height: next.height, scale: next.scale });
+  };
+  const finishDrag = (event?: ReactPointerEvent<HTMLDivElement>) => {
+    if (event && dragRef.current?.pointerId !== event.pointerId) return;
+    dragRef.current = null;
+  };
+  const visualScale = clamp(bounds.scale, 0.2, 4);
+  return <div className={`video-note-layer ${moveMode ? 'move-mode' : ''}`} style={{ left: `${bounds.x}%`, top: `${bounds.y}%`, width: `${bounds.width}%`, height: `${bounds.height}%`, fontSize: `clamp(${14 * visualScale}px, ${2.2 * visualScale}vw, ${30 * visualScale}px)`, '--video-note-font-family': style.noteFontFamily, '--video-note-color': style.noteTextColor, '--video-note-order': style.noteOrder === 'oldest-top' ? 'flex-start' : 'flex-end' } as CSSProperties} onPointerDown={(event) => beginDrag(event)} onPointerMove={moveDrag} onPointerUp={finishDrag} onPointerCancel={finishDrag} onLostPointerCapture={() => finishDrag()}>
+    {moveMode && <div className="video-note-frame">{(['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'] as VideoLayerCropEdge[]).map((edge) => <button key={edge} type="button" aria-label={`Resize note area ${edge}`} className={`video-note-handle ${edge}`} onPointerDown={(event) => beginDrag(event, edge)} />)}</div>}
+    <div className="video-note-content" style={{ textShadow: roundedTextOutlineShadow(style.noteTextStrokeEnabled, style.noteTextStrokeWidth, style.noteTextStrokeColor) }}>{notes.map((step) => <DecoratedNoteRow className="video-note-row" key={step.id} step={step} style={style} />)}</div>
+  </div>;
+}
+
+function drawVideoNotesToCanvas(ctx: CanvasRenderingContext2D, chart: ComboChart, style: ComboImageStyle, timeMs: number, bounds: VideoNoteBounds, canvasWidth: number, canvasHeight: number, imageCache: ImageCache) {
+  const notes = videoNoteList(chart, style, timeMs);
+  if (!style.showNotesSeparately || !notes.length) return;
+  const x = canvasWidth * bounds.x / 100;
+  const y = canvasHeight * bounds.y / 100;
+  const width = canvasWidth * bounds.width / 100;
+  const height = canvasHeight * bounds.height / 100;
+  const visualScale = clamp(bounds.scale, 0.2, 4);
+  const fontSize = clamp(canvasWidth * .022, 14, 30) * visualScale;
+  const lineHeight = fontSize * 1.25;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x, y, width, height);
+  ctx.clip();
+  ctx.font = `900 ${Math.max(4, Math.round(fontSize))}px ${style.noteFontFamily}`;
+  ctx.fillStyle = style.noteTextColor;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = style.noteTextStrokeEnabled ? Math.max(0, style.noteTextStrokeWidth * 2) : 0;
+  ctx.strokeStyle = style.noteTextStrokeColor;
+  const startY = style.noteOrder === 'oldest-top' ? y + lineHeight / 2 : y + height - lineHeight / 2;
+  const direction = style.noteOrder === 'oldest-top' ? 1 : -1;
+  notes.forEach((step, index) => {
+    const value = step.note?.trim() ?? '';
+    const textY = startY + direction * index * lineHeight;
+    const slot = (step.characterSlot ?? 1) as CharacterSlot;
+    const role = style.roleStyles[slot];
+    const operationIcon = noteOperationIcon(step, style);
+    const operationHeight = fontSize * 1.2;
+    const operationWidth = operationHeight * (operationIcon?.iconWidthScale ?? 1);
+    const avatarSize = operationHeight;
+    const gap = fontSize * .24;
+    const diamondSlotWidth = fontSize;
+    const outlineSpace = style.noteTextStrokeEnabled ? Math.max(1, style.noteTextStrokeWidth + 1) : 1;
+    const rowX = x + 10 + outlineSpace;
+    const avatarImage = role.avatar ? loadCanvasImage(role.avatar, imageCache) : null;
+    if (avatarImage) drawCroppedCircleImage(ctx, avatarImage, rowX, textY - avatarSize / 2, avatarSize, role.avatarCrop);
+    else {
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(rowX + avatarSize / 2, textY, avatarSize / 2, 0, Math.PI * 2);
+      ctx.fillStyle = role.color;
+      ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.font = `900 ${Math.max(4, Math.round(fontSize * .6))}px ${style.noteFontFamily}`;
+      ctx.textAlign = 'center';
+      ctx.fillText(String(slot), rowX + avatarSize / 2, textY);
+      ctx.restore();
+    }
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(rowX + avatarSize / 2, textY, avatarSize / 2 - Math.max(1, fontSize * .03), 0, Math.PI * 2);
+    ctx.lineWidth = Math.max(1, fontSize * .06);
+    ctx.strokeStyle = role.color;
+    ctx.stroke();
+    ctx.restore();
+    const operationX = rowX + avatarSize + gap;
+    const iconImage = operationIcon ? loadCanvasImage(operationIcon.src, imageCache) : null;
+    if (iconImage) ctx.drawImage(iconImage, operationX, textY - operationHeight / 2, operationWidth, operationHeight);
+    const diamondCenterX = operationX + operationWidth + gap + diamondSlotWidth / 2;
+    const diamondSize = fontSize * .38;
+    ctx.save();
+    ctx.translate(diamondCenterX, textY);
+    ctx.rotate(Math.PI / 4);
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(-diamondSize / 2, -diamondSize / 2, diamondSize, diamondSize);
+    ctx.lineWidth = Math.max(1, fontSize * .14);
+    ctx.strokeStyle = 'rgba(0,0,0,.92)';
+    ctx.strokeRect(-diamondSize / 2, -diamondSize / 2, diamondSize, diamondSize);
+    ctx.restore();
+    const textX = operationX + operationWidth + gap + diamondSlotWidth + gap;
+    const textWidth = Math.max(0, x + width - 10 - outlineSpace - textX);
+    ctx.fillStyle = style.noteTextColor;
+    if (style.noteTextStrokeEnabled && style.noteTextStrokeWidth > 0) ctx.strokeText(value, textX, textY, textWidth);
+    ctx.fillText(value, textX, textY, textWidth);
+  });
+  ctx.restore();
+}
+
 export function VideoAxisWorkbench({ open, desktop, chart, moves, startingCharacterSlot, recognitionBasedOnTextAxis, comboImageStyle, timelineContentLabels, overlaySettings, rhythmUiSettings, shortcutSettings, exportDirectory, ensureExportDirectory, timelineEditor, onApplyChart, onApplyContentLabels, onClose, onSave, getDisplaySize }: VideoAxisWorkbenchProps) {
   const { language, text } = useI18n();
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
@@ -1316,7 +1566,7 @@ export function VideoAxisWorkbench({ open, desktop, chart, moves, startingCharac
   const [timelineToggleDragMoved, setTimelineToggleDragMoved] = useState(false);
   const [previewTransform, setPreviewTransform] = useState({ scale: 1, x: 0, y: 0 });
   const [layerTransformMode, setLayerTransformMode] = useState(false);
-  const [layerTransform, setLayerTransform] = useState<VideoLayerTransform>({ offsetX: 0, offsetY: 0, scale: 1, cropLeft: 0, cropTop: 0, cropRight: 0, cropBottom: 0 });
+  const [layerTransform, setLayerTransform] = useState<VideoLayerTransform>(DEFAULT_VIDEO_LAYER_TRANSFORM);
   const [stageHudVisible, setStageHudVisible] = useState(true);
   const [recognitionDialogOpen, setRecognitionDialogOpen] = useState(false);
   const [recognitionBounds, setRecognitionBounds] = useState<VideoRecognitionBounds>({ x: 58, y: 10, width: 34, height: 28 });
@@ -1324,6 +1574,11 @@ export function VideoAxisWorkbench({ open, desktop, chart, moves, startingCharac
   const [recognitionProgress, setRecognitionProgress] = useState<VideoRecognitionProgress>({ progress: 0, processedFrames: 0, totalFrames: 0 });
   const [recognitionStatus, setRecognitionStatus] = useState<RecognitionStatus>(() => ({ state: 'idle', message: text('调整识别框，使蓝色按键提示完整落在框内。', 'Adjust the frame so the blue key indicators fit inside it.') }));
   const [recognitionResult, setRecognitionResult] = useState<VideoRecognitionResult | null>(null);
+  const [videoNoteMoveMode, setVideoNoteMoveMode] = useState(false);
+  const [videoNoteBounds, setVideoNoteBounds] = useState<VideoNoteBounds>(DEFAULT_VIDEO_NOTE_BOUNDS);
+  useEffect(() => {
+    if (!comboImageStyle.showNotesSeparately) setVideoNoteMoveMode(false);
+  }, [comboImageStyle.showNotesSeparately]);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const trimPreviewRef = useRef<HTMLVideoElement | null>(null);
   const recognitionPreviewRef = useRef<HTMLVideoElement | null>(null);
@@ -1335,11 +1590,14 @@ export function VideoAxisWorkbench({ open, desktop, chart, moves, startingCharac
   const timelineToggleSuppressClickRef = useRef(false);
   const previewPanRef = useRef<{ pointerId: number; startX: number; startY: number; originX: number; originY: number } | null>(null);
   const layerMoveDragRef = useRef<VideoLayerMoveDrag | null>(null);
+  const layerMoveCaptureRef = useRef<HTMLElement | null>(null);
   const layerScaleDragRef = useRef<VideoLayerScaleDrag | null>(null);
   const layerCropDragRef = useRef<VideoLayerCropDrag | null>(null);
+  const videoNoteScaleDragRef = useRef<VideoNoteScaleDrag | null>(null);
   const recognitionBoundsDragRef = useRef<RecognitionBoundsDrag | null>(null);
   const recognitionRunRef = useRef(0);
   const layerScaleSuppressClickRef = useRef(false);
+  const videoNoteScaleSuppressClickRef = useRef(false);
   const stageHudHideTimerRef = useRef<number | null>(null);
   const videoToastTimerRef = useRef<number | null>(null);
   const exportCancelRef = useRef(false);
@@ -1349,6 +1607,14 @@ export function VideoAxisWorkbench({ open, desktop, chart, moves, startingCharac
   const seekByRef = useRef<(deltaMs: number) => void>(() => undefined);
   const undoWorkbenchRef = useRef<() => void>(() => undefined);
   const redoWorkbenchRef = useRef<() => void>(() => undefined);
+  useEffect(() => () => {
+    const layerTimer = layerScaleDragRef.current?.longPressTimer;
+    const noteTimer = videoNoteScaleDragRef.current?.longPressTimer;
+    const timelineTimer = timelinePanelDragRef.current?.longPressTimer;
+    if (layerTimer !== null && layerTimer !== undefined) window.clearTimeout(layerTimer);
+    if (noteTimer !== null && noteTimer !== undefined) window.clearTimeout(noteTimer);
+    if (timelineTimer !== null && timelineTimer !== undefined) window.clearTimeout(timelineTimer);
+  }, []);
   const imageCacheRef = useRef<ImageCache>(new Map());
   const stageShellRef = useRef<HTMLDivElement | null>(null);
   const stageFrameRef = useRef<HTMLDivElement | null>(null);
@@ -1555,17 +1821,17 @@ export function VideoAxisWorkbench({ open, desktop, chart, moves, startingCharac
 
   function beginLayerMoveDrag(event: ReactPointerEvent<HTMLDivElement>) {
     if (!layerTransformMode || event.button !== 0) return;
-    const captureTarget = stageFrameRef.current;
-    if (!captureTarget) return;
     event.preventDefault();
     event.stopPropagation();
+    const captureTarget = event.currentTarget;
     captureTarget.setPointerCapture(event.pointerId);
+    layerMoveCaptureRef.current = captureTarget;
     layerMoveDragRef.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, viewScale: Math.max(0.01, previewTransform.scale), origin: { ...layerTransform }, moved: false, historyCaptured: false };
   }
 
   function moveLayerMoveDrag(event: ReactPointerEvent<HTMLElement>) {
     const drag = layerMoveDragRef.current;
-    if (!drag || drag.pointerId !== event.pointerId || !stageFrameSize) return;
+    if (!drag || drag.pointerId !== event.pointerId) return;
     const deltaX = event.clientX - drag.startX;
     const deltaY = event.clientY - drag.startY;
     if (!drag.moved && Math.hypot(deltaX, deltaY) < 3) return;
@@ -1576,22 +1842,35 @@ export function VideoAxisWorkbench({ open, desktop, chart, moves, startingCharac
     }
     event.preventDefault();
     event.stopPropagation();
-    const frameWidth = Math.max(1, stageFrameSize.width * drag.viewScale);
-    const frameHeight = Math.max(1, stageFrameSize.height * drag.viewScale);
+    const measuredFrame = stageFrameRef.current?.getBoundingClientRect();
+    const frameWidth = Math.max(1, (stageFrameSize?.width ?? measuredFrame?.width ?? 1) * drag.viewScale);
+    const frameHeight = Math.max(1, (stageFrameSize?.height ?? measuredFrame?.height ?? 1) * drag.viewScale);
     setLayerTransform((current) => ({ ...current, offsetX: drag.origin.offsetX + (deltaX / frameWidth) * 100, offsetY: drag.origin.offsetY + (deltaY / frameHeight) * 100 }));
   }
 
   function endLayerMoveDrag(event: ReactPointerEvent<HTMLElement>) {
     if (layerMoveDragRef.current?.pointerId === event.pointerId) layerMoveDragRef.current = null;
-    const captureTarget = stageFrameRef.current;
+    const captureTarget = layerMoveCaptureRef.current;
     if (captureTarget?.hasPointerCapture(event.pointerId)) captureTarget.releasePointerCapture(event.pointerId);
+    layerMoveCaptureRef.current = null;
   }
 
   function beginLayerScaleDrag(event: ReactPointerEvent<HTMLButtonElement>) {
     if (event.button !== 0) return;
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
-    layerScaleDragRef.current = { pointerId: event.pointerId, startX: event.clientX, origin: { ...layerTransform }, moved: false, historyCaptured: false };
+    const drag: VideoLayerScaleDrag = { pointerId: event.pointerId, startX: event.clientX, origin: { ...layerTransform }, moved: false, historyCaptured: false, longPressTimer: null, resetTriggered: false };
+    drag.longPressTimer = window.setTimeout(() => {
+      if (layerScaleDragRef.current !== drag || drag.moved) return;
+      captureWorkbenchHistory();
+      drag.historyCaptured = true;
+      drag.resetTriggered = true;
+      drag.moved = true;
+      layerScaleSuppressClickRef.current = true;
+      setLayerTransform({ ...DEFAULT_VIDEO_LAYER_TRANSFORM });
+      showVideoToast(text('连段图位置、缩放和裁剪已复位。', 'Combo layer position, scale, and crop reset.'));
+    }, MOVE_BUTTON_RESET_HOLD_MS);
+    layerScaleDragRef.current = drag;
     layerScaleSuppressClickRef.current = false;
   }
 
@@ -1599,7 +1878,12 @@ export function VideoAxisWorkbench({ open, desktop, chart, moves, startingCharac
     const drag = layerScaleDragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
     const deltaX = event.clientX - drag.startX;
+    if (drag.resetTriggered) return;
     if (!drag.moved && Math.abs(deltaX) < 4) return;
+    if (drag.longPressTimer !== null) {
+      window.clearTimeout(drag.longPressTimer);
+      drag.longPressTimer = null;
+    }
     drag.moved = true;
     if (!drag.historyCaptured) {
       captureWorkbenchHistory();
@@ -1617,7 +1901,70 @@ export function VideoAxisWorkbench({ open, desktop, chart, moves, startingCharac
   }
 
   function endLayerScaleDrag(event: ReactPointerEvent<HTMLButtonElement>) {
-    if (layerScaleDragRef.current?.pointerId === event.pointerId) layerScaleDragRef.current = null;
+    const drag = layerScaleDragRef.current;
+    if (drag?.pointerId === event.pointerId) {
+      if (drag.longPressTimer !== null) window.clearTimeout(drag.longPressTimer);
+      layerScaleDragRef.current = null;
+    }
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  }
+
+  function toggleVideoNoteMoveMode() {
+    if (videoNoteScaleSuppressClickRef.current) {
+      videoNoteScaleSuppressClickRef.current = false;
+      return;
+    }
+    setVideoNoteMoveMode((active) => !active);
+  }
+
+  function beginVideoNoteScaleDrag(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (event.button !== 0) return;
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    const drag: VideoNoteScaleDrag = { pointerId: event.pointerId, startX: event.clientX, origin: { ...videoNoteBounds }, moved: false, longPressTimer: null, resetTriggered: false };
+    drag.longPressTimer = window.setTimeout(() => {
+      if (videoNoteScaleDragRef.current !== drag || drag.moved) return;
+      drag.resetTriggered = true;
+      drag.moved = true;
+      videoNoteScaleSuppressClickRef.current = true;
+      setVideoNoteBounds({ ...DEFAULT_VIDEO_NOTE_BOUNDS });
+      showVideoToast(text('提示区位置和大小已复位。', 'Note area position and size reset.'));
+    }, MOVE_BUTTON_RESET_HOLD_MS);
+    videoNoteScaleDragRef.current = drag;
+    videoNoteScaleSuppressClickRef.current = false;
+  }
+
+  function moveVideoNoteScaleDrag(event: ReactPointerEvent<HTMLButtonElement>) {
+    const drag = videoNoteScaleDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId || drag.resetTriggered) return;
+    const deltaX = event.clientX - drag.startX;
+    if (!drag.moved && Math.abs(deltaX) < 4) return;
+    if (drag.longPressTimer !== null) {
+      window.clearTimeout(drag.longPressTimer);
+      drag.longPressTimer = null;
+    }
+    drag.moved = true;
+    videoNoteScaleSuppressClickRef.current = true;
+    event.preventDefault();
+    event.stopPropagation();
+    const scale = clamp(1 + deltaX / 240, 0.2, 4);
+    const width = Math.max(8, drag.origin.width * scale);
+    const height = Math.max(8, drag.origin.height * scale);
+    setVideoNoteBounds({
+      x: drag.origin.x + (drag.origin.width - width) / 2,
+      y: drag.origin.y + (drag.origin.height - height) / 2,
+      width,
+      height,
+      scale: clamp(drag.origin.scale * scale, 0.2, 4)
+    });
+  }
+
+  function endVideoNoteScaleDrag(event: ReactPointerEvent<HTMLButtonElement>) {
+    const drag = videoNoteScaleDragRef.current;
+    if (drag?.pointerId === event.pointerId) {
+      if (drag.longPressTimer !== null) window.clearTimeout(drag.longPressTimer);
+      videoNoteScaleDragRef.current = null;
+    }
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
   }
 
@@ -1650,11 +1997,12 @@ export function VideoAxisWorkbench({ open, desktop, chart, moves, startingCharac
     const deltaY = (pointerDeltaY / frameHeight) * 100;
     const contentWidth = baseLayerBounds.width * drag.origin.scale;
     const contentHeight = baseLayerBounds.height * drag.origin.scale;
-    const minWidth = Math.min(contentWidth, Math.max(1.2, (16 / frameWidth) * 100));
+    const minWidth = Math.min(contentWidth, Math.max(0.1, (2 / frameWidth) * 100));
     const minHeight = Math.min(contentHeight, Math.max(1.2, (16 / frameHeight) * 100));
+    const maxWidth = contentWidth * MAX_VIDEO_LAYER_HORIZONTAL_CROP_WIDTH_FACTOR;
     const next = { ...drag.origin };
-    if (drag.edge.includes('w')) next.cropLeft = clamp(drag.origin.cropLeft + deltaX, 0, contentWidth - drag.origin.cropRight - minWidth);
-    if (drag.edge.includes('e')) next.cropRight = clamp(drag.origin.cropRight - deltaX, 0, contentWidth - drag.origin.cropLeft - minWidth);
+    if (drag.edge.includes('w')) next.cropLeft = clamp(drag.origin.cropLeft + deltaX, contentWidth - drag.origin.cropRight - maxWidth, contentWidth - drag.origin.cropRight - minWidth);
+    if (drag.edge.includes('e')) next.cropRight = clamp(drag.origin.cropRight - deltaX, contentWidth - drag.origin.cropLeft - maxWidth, contentWidth - drag.origin.cropLeft - minWidth);
     if (drag.edge.includes('n')) next.cropTop = clamp(drag.origin.cropTop + deltaY, 0, contentHeight - drag.origin.cropBottom - minHeight);
     if (drag.edge.includes('s')) next.cropBottom = clamp(drag.origin.cropBottom - deltaY, 0, contentHeight - drag.origin.cropTop - minHeight);
     setLayerTransform(next);
@@ -1678,7 +2026,7 @@ export function VideoAxisWorkbench({ open, desktop, chart, moves, startingCharac
   function beginTimelinePanelDrag(event: ReactPointerEvent<HTMLButtonElement>) {
     if (event.button !== 0) return;
     event.currentTarget.setPointerCapture(event.pointerId);
-    timelinePanelDragRef.current = {
+    const drag: TimelinePanelDragSnapshot = {
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
@@ -1686,8 +2034,23 @@ export function VideoAxisWorkbench({ open, desktop, chart, moves, startingCharac
       startZoom: timelineZoom,
       moved: false,
       historyCaptured: false,
-      axis: null
+      axis: null,
+      longPressTimer: null,
+      resetTriggered: false
     };
+    drag.longPressTimer = window.setTimeout(() => {
+      if (timelinePanelDragRef.current !== drag || drag.moved) return;
+      captureWorkbenchHistory();
+      drag.historyCaptured = true;
+      drag.resetTriggered = true;
+      drag.moved = true;
+      timelineToggleSuppressClickRef.current = true;
+      setTimelineHeight(Math.round(Math.max(window.innerHeight * 0.25, MIN_VIDEO_TIMELINE_HEIGHT)));
+      setTimelineZoom(1);
+      setTimelineLaneHeight(48);
+      showVideoToast(text('时间轴高度、横向缩放和轨道密度已复位。', 'Timeline height, horizontal zoom, and lane density reset.'));
+    }, MOVE_BUTTON_RESET_HOLD_MS);
+    timelinePanelDragRef.current = drag;
     timelineToggleSuppressClickRef.current = false;
     setTimelineToggleDragMoved(false);
   }
@@ -1695,9 +2058,14 @@ export function VideoAxisWorkbench({ open, desktop, chart, moves, startingCharac
   function moveTimelinePanelDrag(event: ReactPointerEvent<HTMLButtonElement>) {
     const drag = timelinePanelDragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
+    if (drag.resetTriggered) return;
     const deltaX = event.clientX - drag.startX;
     const deltaY = event.clientY - drag.startY;
     if (!drag.axis && Math.hypot(deltaX, deltaY) < TIMELINE_TOGGLE_DRAG_THRESHOLD) return;
+    if (drag.longPressTimer !== null) {
+      window.clearTimeout(drag.longPressTimer);
+      drag.longPressTimer = null;
+    }
     if (!drag.axis) drag.axis = Math.abs(deltaX) >= Math.abs(deltaY) ? 'horizontal' : 'vertical';
     drag.moved = true;
     if (!drag.historyCaptured) {
@@ -1718,6 +2086,7 @@ export function VideoAxisWorkbench({ open, desktop, chart, moves, startingCharac
   function endTimelinePanelDrag(event: ReactPointerEvent<HTMLButtonElement>) {
     const drag = timelinePanelDragRef.current;
     if (drag?.pointerId === event.pointerId) {
+      if (drag.longPressTimer !== null) window.clearTimeout(drag.longPressTimer);
       timelinePanelDragRef.current = null;
       timelineToggleSuppressClickRef.current = drag.moved;
       setTimelineToggleDragMoved(drag.moved);
@@ -2437,10 +2806,10 @@ export function VideoAxisWorkbench({ open, desktop, chart, moves, startingCharac
         return;
       }
     }
-    const nativeClipLeft = clamp(layerBounds.x, 0, 100);
-    const nativeClipTop = clamp(layerBounds.y, 0, 100);
-    const nativeClipRight = clamp(layerBounds.x + layerBounds.width, 0, 100);
-    const nativeClipBottom = clamp(layerBounds.y + layerBounds.height, 0, 100);
+    const nativeClipLeft = clamp(nativeOverlayExport && comboImageStyle.showNotesSeparately ? Math.min(layerBounds.x, videoNoteBounds.x) : layerBounds.x, 0, 100);
+    const nativeClipTop = clamp(nativeOverlayExport && comboImageStyle.showNotesSeparately ? Math.min(layerBounds.y, videoNoteBounds.y) : layerBounds.y, 0, 100);
+    const nativeClipRight = clamp(nativeOverlayExport && comboImageStyle.showNotesSeparately ? Math.max(layerBounds.x + layerBounds.width, videoNoteBounds.x + videoNoteBounds.width) : layerBounds.x + layerBounds.width, 0, 100);
+    const nativeClipBottom = clamp(nativeOverlayExport && comboImageStyle.showNotesSeparately ? Math.max(layerBounds.y + layerBounds.height, videoNoteBounds.y + videoNoteBounds.height) : layerBounds.y + layerBounds.height, 0, 100);
     const nativeClipWidth = Math.max(0.1, nativeClipRight - nativeClipLeft);
     const nativeClipHeight = Math.max(0.1, nativeClipBottom - nativeClipTop);
     const nativeOverlayX = Math.round((nativeClipLeft / 100) * width);
@@ -2453,6 +2822,13 @@ export function VideoAxisWorkbench({ open, desktop, chart, moves, startingCharac
       y: ((layerContentBounds.y - nativeClipTop) / nativeClipHeight) * 100,
       width: (layerContentBounds.width / nativeClipWidth) * 100,
       height: (layerContentBounds.height / nativeClipHeight) * 100
+    };
+    const nativeNoteBounds = {
+      x: ((videoNoteBounds.x - nativeClipLeft) / nativeClipWidth) * 100,
+      y: ((videoNoteBounds.y - nativeClipTop) / nativeClipHeight) * 100,
+      width: (videoNoteBounds.width / nativeClipWidth) * 100,
+      height: (videoNoteBounds.height / nativeClipHeight) * 100,
+      scale: videoNoteBounds.scale
     };
     const nativeCanvasClipBounds = { x: 0, y: 0, width: 100, height: 100 };
     const ctx = canvas.getContext('2d');
@@ -2527,9 +2903,12 @@ export function VideoAxisWorkbench({ open, desktop, chart, moves, startingCharac
           if (waterfallMode) {
             drawRhythmLayerToCanvas(ctx, chart, comboImageStyle, flowchartTimeMs, exportSurfaceBounds, exportClipBounds, rhythmUiSettings, layerSourceBounds, canvas.width, canvas.height, imageCacheRef.current);
           } else {
-            drawComboLayerToCanvas(ctx, chart, comboImageStyle, flowchartTimeMs, exportSurfaceBounds, exportClipBounds, linearLayout, layerSourceBounds, canvas.width, canvas.height, imageCacheRef.current, language);
+            drawComboLayerToCanvas(ctx, chart, comboImageStyle, flowchartTimeMs, exportSurfaceBounds, exportClipBounds, linearLayout, layerSourceBounds, canvas.width, canvas.height, imageCacheRef.current, language, overlaySettings.layout === 'stair');
           }
         }
+        const exportNoteBounds = nativeOverlayExport ? nativeNoteBounds : videoNoteBounds;
+        const exportNoteTimeMs = clamp(timeMs - effectiveFlowchartStartMs, 0, flowchartDurationMs);
+        if (timeMs >= effectiveFlowchartStartMs && timeMs <= effectiveFlowchartEndMs) drawVideoNotesToCanvas(ctx, chart, comboImageStyle, exportNoteTimeMs, exportNoteBounds, canvas.width, canvas.height, imageCacheRef.current);
         const now = performance.now();
         if (now - lastProgressUpdate >= 200 || sourceVideo.ended) {
           lastProgressUpdate = now;
@@ -2643,6 +3022,21 @@ export function VideoAxisWorkbench({ open, desktop, chart, moves, startingCharac
       onScalePointerDown: beginLayerScaleDrag,
       onScalePointerMove: moveLayerScaleDrag,
       onScalePointerUp: endLayerScaleDrag
+    },
+    videoNoteTransformControl: comboImageStyle.showNotesSeparately ? {
+      active: videoNoteMoveMode,
+      onToggle: toggleVideoNoteMoveMode,
+      onScalePointerDown: beginVideoNoteScaleDrag,
+      onScalePointerMove: moveVideoNoteScaleDrag,
+      onScalePointerUp: endVideoNoteScaleDrag,
+      disabled: isExporting
+    } : undefined,
+    historyControl: {
+      canUndo: undoStack.length > 0,
+      canRedo: redoStack.length > 0,
+      onCaptureHistory: captureWorkbenchHistory,
+      onUndo: undoWorkbench,
+      onRedo: redoWorkbench
     },
     videoLaneHeight: timelineLaneHeight,
     keyboardShortcutsEnabled: open,
@@ -2770,16 +3164,17 @@ export function VideoAxisWorkbench({ open, desktop, chart, moves, startingCharac
             >
               <div className="video-stage-content" style={previewTransformStyle}>
                 {videoUrl ? <video ref={videoRef} src={videoUrl} preload="auto" playsInline onLoadedMetadata={(event) => { event.currentTarget.currentTime = trimStartMs / 1000; }} onPlay={() => setIsPlaying(true)} onPause={() => setIsPlaying(false)} onError={(event) => { const message = videoMediaError(event.currentTarget, text); if (message) { setIsPlaying(false); setImportMessage(message); } }} onEnded={() => { setPlaybackMs(trimDurationMs); setIsPlaying(false); }} /> : <div className="video-empty"><FileVideo size={38} /><strong>{text('导入实战视频', 'Import Gameplay Video') }</strong><span>{text('视频不会写入项目文件，只在当前会话中引用。', 'The video is referenced only for this session and is not stored in the project.') }</span></div>}
-                <div className={`video-combo-layer-box synced ${layerTransformMode ? 'transform-active' : ''} ${flowchartVisible ? '' : 'flowchart-hidden'}`} style={{ left: `${layerBounds.x}%`, top: `${layerBounds.y}%`, width: `${layerBounds.width}%`, height: `${layerBounds.height}%` }} title={layerTransformMode ? text('拖动移动整个连段图层', 'Drag to move the entire combo layer') : text('位置和尺寸来自连段图外观设置', 'Position and size come from the combo appearance settings')} onPointerDown={beginLayerMoveDrag}>
+                <div className={`video-combo-layer-box synced ${layerTransformMode ? 'transform-active' : ''} ${flowchartVisible ? '' : 'flowchart-hidden'}`} style={{ left: `${layerBounds.x}%`, top: `${layerBounds.y}%`, width: `${layerBounds.width}%`, height: `${layerBounds.height}%` }} title={layerTransformMode ? text('拖动移动整个连段图层', 'Drag to move the entire combo layer') : text('位置和尺寸来自连段图外观设置', 'Position and size come from the combo appearance settings')} onPointerDownCapture={(event) => { if ((event.target as HTMLElement).closest('.video-layer-crop-handle')) return; beginLayerMoveDrag(event); }}>
                   <div className="video-combo-layer-viewport">
                     <div className="video-combo-layer-content" style={layerContentStyle}>
                       <div className="video-combo-layer-surface" style={layerSurfaceStyle}>
-                        {flowchartVisible && (waterfallMode ? <VideoRhythmLayer chart={chart} style={comboImageStyle} timeMs={chartPlaybackMs} settings={rhythmUiSettings} bounds={layerSourceBounds} /> : <VideoComboLayer chart={chart} style={comboImageStyle} timeMs={chartPlaybackMs} layout={linearLayout} bounds={layerSourceBounds} />)}
+                  {flowchartVisible && (waterfallMode ? <VideoRhythmLayer chart={chart} style={comboImageStyle} timeMs={chartPlaybackMs} settings={rhythmUiSettings} bounds={layerSourceBounds} /> : <VideoComboLayer chart={chart} style={comboImageStyle} timeMs={chartPlaybackMs} layout={linearLayout} stairMode={overlaySettings.layout === 'stair'} bounds={layerSourceBounds} />)}
                       </div>
                     </div>
                   </div>
                   {layerTransformMode && (['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'] as VideoLayerCropEdge[]).map(renderLayerCropHandle)}
                 </div>
+                <VideoNotesLayer chart={chart} style={comboImageStyle} timeMs={chartPlaybackMs} bounds={videoNoteBounds} moveMode={videoNoteMoveMode} hostRef={stageFrameRef} onBoundsChange={setVideoNoteBounds} />
               </div>
               {isExporting && <div className="video-export-overlay" data-export-exclude="true" onPointerDown={(event) => event.stopPropagation()}>
                 <div className="video-export-circle" style={{ '--video-export-progress': `${Math.round(clamp(exportStatus.progress, 0, 1) * 360)}deg` } as CSSProperties}><span>{Math.round(exportStatus.progress * 100)}%</span></div>
@@ -2824,8 +3219,8 @@ export function VideoAxisWorkbench({ open, desktop, chart, moves, startingCharac
         </aside>
 
         <section className={`video-edit-panel ${timelineCollapsed ? 'collapsed' : ''}`}>
-          {timelineCollapsed && <button className="video-timeline-toggle floating icon-button" title={text('展开时间轴；按住拖动：上下调高度，左右调时间轴缩放；悬浮滚轮调轨道密度', 'Expand timeline. Drag vertically to resize or horizontally to zoom; hover and scroll to change lane density.')} onPointerDown={beginTimelinePanelDrag} onPointerMove={moveTimelinePanelDrag} onPointerUp={endTimelinePanelDrag} onPointerCancel={endTimelinePanelDrag} onClick={toggleTimelineCollapsedFromButton} onWheel={changeTimelineLaneHeight}>
-            <PanelBottomOpen size={16} />
+          {timelineCollapsed && <button className="video-timeline-toggle floating icon-button hold-drag-control" title={text('展开时间轴；按住拖动：上下调高度，左右调时间轴缩放；悬浮滚轮调轨道密度；长按3秒复位', 'Expand timeline. Drag vertically to resize or horizontally to zoom; hover and scroll to change lane density; hold 3 seconds to reset.')} onPointerDown={beginTimelinePanelDrag} onPointerMove={moveTimelinePanelDrag} onPointerUp={endTimelinePanelDrag} onPointerCancel={endTimelinePanelDrag} onClick={toggleTimelineCollapsedFromButton} onWheel={changeTimelineLaneHeight}>
+            <PanelBottomOpen size={16} /><HoldDragFeedback vertical wheel />
           </button>}
           {!timelineCollapsed && <div className="video-timeline-compact">
             <div className="video-timeline-topbar" onPointerDown={(event) => event.stopPropagation()}>
@@ -2839,8 +3234,8 @@ export function VideoAxisWorkbench({ open, desktop, chart, moves, startingCharac
                   <Redo2 size={16} />
                 </button>
               </div>
-              <button className="video-timeline-toggle inline icon-button" title={text('多功能：点击收起时间轴；按住拖动时，上下调高度、左右调时间轴缩放；悬浮滚轮调轨道密度', 'Multifunction: click to collapse the timeline; drag vertically to resize or horizontally to zoom; hover and scroll to change lane density.')} onPointerDown={beginTimelinePanelDrag} onPointerMove={moveTimelinePanelDrag} onPointerUp={endTimelinePanelDrag} onPointerCancel={endTimelinePanelDrag} onClick={toggleTimelineCollapsedFromButton} onWheel={changeTimelineLaneHeight}>
-                <PanelBottomClose size={16} />
+              <button className="video-timeline-toggle inline icon-button hold-drag-control" title={text('多功能：点击收起时间轴；按住拖动时，上下调高度、左右调时间轴缩放；悬浮滚轮调轨道密度；长按3秒复位', 'Multifunction: click to collapse the timeline; drag vertically to resize or horizontally to zoom; hover and scroll to change lane density; hold 3 seconds to reset.')} onPointerDown={beginTimelinePanelDrag} onPointerMove={moveTimelinePanelDrag} onPointerUp={endTimelinePanelDrag} onPointerCancel={endTimelinePanelDrag} onClick={toggleTimelineCollapsedFromButton} onWheel={changeTimelineLaneHeight}>
+                <PanelBottomClose size={16} /><HoldDragFeedback vertical wheel />
               </button>
             </div>
             {enhancedTimelineEditor}

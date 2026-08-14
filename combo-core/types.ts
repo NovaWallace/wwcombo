@@ -1,5 +1,8 @@
 export type MoveId = string;
-export type CharacterSlot = 1 | 2 | 3;
+export type CharacterSlot = 1 | 2 | 3 | 4;
+
+export const DEFAULT_CHARACTER_SLOTS: CharacterSlot[] = [1, 2, 3];
+export const ALL_CHARACTER_SLOTS: CharacterSlot[] = [1, 2, 3, 4];
 
 export type InputEventType = 'keydown' | 'keyup' | 'mousedown' | 'mouseup' | 'gamepadbuttondown' | 'gamepadbuttonup';
 export type HoldConversionEvent = {
@@ -24,6 +27,7 @@ export type TrainerInputEvent = {
 export type MoveDefinition = {
   id: MoveId;
   label: string;
+  customLabel?: boolean;
   color: string;
   icon?: string;
   displayOnly?: boolean;
@@ -47,6 +51,7 @@ export type RecordedUnit = {
   id: string;
   moveId: MoveId;
   label: string;
+  customLabel?: boolean;
   characterSlot?: CharacterSlot;
   lane: 'main' | 'independent';
   independent: boolean;
@@ -66,6 +71,7 @@ export type ComboStep = {
   id: string;
   moveId: MoveId;
   label: string;
+  customLabel?: boolean;
   characterSlot?: CharacterSlot;
   lane: 'main' | 'independent';
   independent: boolean;
@@ -110,6 +116,7 @@ export type ComboCommunityMetadata = {
 
 export type ComboChart = {
   id: string;
+  characterCount?: 3 | 4;
   title: string;
   character?: string;
   author?: string;
@@ -227,6 +234,15 @@ export type ComboImageStyle = {
   mergeSameRoleSteps: boolean;
   mergeSameRoleLimit: number;
   mergeSameMoveSteps: boolean;
+  showNotesSeparately: boolean;
+  noteScale: number;
+  noteFontFamily: string;
+  noteTextColor: string;
+  noteTextStrokeEnabled: boolean;
+  noteTextStrokeWidth: number;
+  noteTextStrokeColor: string;
+  noteOrder: 'oldest-bottom' | 'oldest-top';
+  stairRoleOffset: number;
   iconMappings: ComboIconMapping[];
   basePresets: ComboBasePreset[];
   avatarPresets: ComboAvatarPreset[];

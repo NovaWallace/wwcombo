@@ -291,7 +291,7 @@ function stepRecognitionKey(step: ComboChart['steps'][number], contentLabels: Re
     if (content.startsWith('w')) return 'empty:w';
     return 'empty';
   }
-  if (/^switch_[123]$/.test(step.moveId)) return step.moveId;
+  if (/^switch_[1234]$/.test(step.moveId)) return step.moveId;
   if (step.moveId === 'heavy_attack') return 'basic_attack_hold';
   return step.moveId;
 }

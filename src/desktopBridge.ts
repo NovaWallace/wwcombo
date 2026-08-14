@@ -14,12 +14,14 @@ type TauriGlobalInputPayload = {
   source: 'desktop';
   event_type?: DesktopInputEvent['type'];
   type?: DesktopInputEvent['type'];
+  captureMode?: 'keyboard' | 'xbox' | 'playstation';
   code: string;
   time: number;
   shiftKey?: boolean;
 };
 
 type OverlayBounds = { x: number; y: number; width: number; height: number };
+type OverlayNoteBounds = OverlayBounds;
 type DisplaySize = { width: number; height: number; scaleFactor?: number };
 type OverlayPosition = { x: number; y: number };
 type ResizeDirection = 'East' | 'North' | 'NorthEast' | 'NorthWest' | 'South' | 'SouthEast' | 'SouthWest' | 'West';
@@ -37,6 +39,10 @@ const RESIZE_DIRECTIONS: Record<string, ResizeDirection> = {
 
 function isTauriRuntime(): boolean {
   return '__TAURI_INTERNALS__' in window;
+}
+
+function convertDlcFileSrc(filePath: string): string {
+  return convertFileSrc(filePath).replace(/%2F|%5C/gi, '/');
 }
 
 export async function openExternalUrl(url: string): Promise<void> {
@@ -77,11 +83,16 @@ export function createDesktopBridge(): DesktopBridge | null {
     isDesktop: true,
     setOverlayVisible: (visible: boolean) => invoke('set_overlay_visible', { visible }),
     setOverlayClickThrough: (enabled: boolean) => invoke('set_overlay_click_through', { enabled }),
+    setOverlayNotesVisible: (visible: boolean) => invoke('set_overlay_notes_visible', { visible }),
+    setOverlayNotesClickThrough: (enabled: boolean) => invoke('set_overlay_notes_click_through', { enabled }),
+    setOverlayNotesBounds: (bounds: OverlayBounds) => invoke('set_overlay_notes_bounds', { bounds }),
+    getOverlayNotesBounds: () => invoke<OverlayBounds>('get_overlay_notes_bounds'),
     setOverlayBounds: (bounds: OverlayBounds) => invoke('set_overlay_bounds', { bounds }),
     setOverlayPosition: (position: OverlayPosition) => invoke('set_overlay_position', { position }),
     getOverlayBounds: () => invoke<OverlayBounds>('get_overlay_bounds'),
     getDisplaySize: () => invoke<DisplaySize>('get_display_size'),
     updateOverlay: (payload: unknown) => invoke('update_overlay', { payload }),
+    updateOverlayPractice: (practice: unknown) => invoke('update_overlay_practice', { practice }),
     setRhythmFeedbackVisible: (visible: boolean) => invoke('set_rhythm_feedback_visible', { visible }),
     updateRhythmFeedback: (payload: unknown) => invoke('update_rhythm_feedback', { payload }),
     setRhythmFeedbackBounds: (bounds: OverlayBounds) => invoke('set_rhythm_feedback_bounds', { bounds }),
@@ -91,14 +102,41 @@ export function createDesktopBridge(): DesktopBridge | null {
     setKeyMappingBounds: (bounds: OverlayBounds) => invoke('set_key_mapping_bounds', { bounds }),
     getKeyMappingBounds: () => invoke<OverlayBounds>('get_key_mapping_bounds'),
     updateRecordingIndicator: (payload: unknown) => invoke('update_recording_indicator', { payload }),
+    updateRealtimeVision: (payload: unknown) => invoke('update_realtime_vision', { payload }),
     onOverlayBoundsChanged: (callback: (bounds: OverlayBounds) => void) => listenUntilDisposed<OverlayBounds>('overlay:bounds-changed', callback),
+    onOverlayNotesBoundsChanged: (callback: (bounds: OverlayBounds) => void) => listenUntilDisposed<OverlayBounds>('overlay:note-bounds-changed', callback),
     onOverlayMoveModeRequested: (callback: (enabled: boolean) => void) => listenUntilDisposed<{ enabled: boolean }>('overlay:move-mode', (payload) => callback(payload.enabled)),
+    onOverlayNoteBoundsChanged: (callback: (bounds: OverlayNoteBounds) => void) => listenUntilDisposed<OverlayNoteBounds>('overlay:note-bounds-changed', callback),
     onRhythmFeedbackBoundsChanged: (callback: (bounds: OverlayBounds) => void) => listenUntilDisposed<OverlayBounds>('rhythm-feedback:bounds-changed', callback),
     onKeyMappingBoundsChanged: (callback: (bounds: OverlayBounds) => void) => listenUntilDisposed<OverlayBounds>('key-mapping:bounds-changed', callback),
+    setGlobalInputMode: (mode: 'keyboard' | 'xbox' | 'playstation') => invoke<void>('set_global_input_mode', { mode }),
     startGlobalInput: () => invoke<{ ok: boolean; reason?: string }>('start_global_input'),
     getGlobalInputStatus: () => invoke<{ started: boolean; status: string; eventCount: number }>('global_input_status'),
     fetchRemoteCharacterAvatars: () => invoke<unknown>('fetch_remote_character_avatars'),
-    stopGlobalInput: async () => undefined,
+    getDlcStatus: async () => {
+      const status = await invoke<{
+        rootPath: string;
+        ffmpegInstalled: boolean;
+        live2dAssets: Array<{
+          id: string;
+          skeletonPath: string;
+          atlasPath: string;
+          texturePath: string;
+        }>;
+      }>('get_dlc_status');
+      return {
+        rootPath: status.rootPath,
+        ffmpegInstalled: status.ffmpegInstalled,
+        live2dAssets: status.live2dAssets.map((asset) => ({
+          id: asset.id,
+          skeletonUrl: convertDlcFileSrc(asset.skeletonPath),
+          atlasUrl: convertDlcFileSrc(asset.atlasPath),
+          textureUrl: convertDlcFileSrc(asset.texturePath)
+        }))
+      };
+    },
+    openDlcFolder: () => invoke<string>('open_dlc_folder'),
+    stopGlobalInput: () => invoke<void>('stop_global_input'),
     pickExportDirectory: (currentDirectory = '', title = 'Select Export Folder') => invoke<string | null>('pick_export_directory', { currentDirectory, title }),
     pickVideoFile: async () => {
       const picked = await invoke<{ path: string; name: string } | null>('pick_video_file');
@@ -123,6 +161,7 @@ export function createDesktopBridge(): DesktopBridge | null {
         callback({
           source: 'desktop',
           type,
+          captureMode: payload.captureMode,
           code: payload.code,
           time: tauriEventTimeToPerformance(payload.time),
           shiftKey: payload.shiftKey ?? pressedShiftCodes.size > 0
@@ -142,16 +181,44 @@ export function createOverlayBridge() {
     getState: () => invoke<unknown>('get_overlay_state'),
     setOverlayBounds: (bounds: OverlayBounds) => invoke('set_overlay_bounds', { bounds }),
     setOverlayPosition: (position: OverlayPosition) => invoke('set_overlay_position', { position }),
+    getOverlayBounds: () => invoke<OverlayBounds>('get_overlay_bounds'),
+    startDrag: () => getCurrentWindow().startDragging(),
     requestOverlayMoveMode: (enabled: boolean) => invoke('request_overlay_move_mode', { enabled }),
+    notifyOverlayNoteBoundsChanged: (bounds: OverlayNoteBounds) => invoke('notify_overlay_note_bounds_changed', { bounds }),
     notifyOverlayBoundsChanged: (bounds: OverlayBounds) => invoke('notify_overlay_bounds_changed', { bounds }),
     startResize: (edge: string) => {
       const direction = RESIZE_DIRECTIONS[edge];
       if (!direction) return Promise.reject(new Error(`invalid resize edge: ${edge}`));
       return getCurrentWindow().startResizeDragging(direction);
     },
+    onBoundsChanged: (callback: (bounds: OverlayBounds) => void) => listenUntilDisposed<OverlayBounds>('overlay:bounds-changed', callback),
     onWindowBlur: (callback: () => void) => listenUntilDisposed('tauri://blur', callback),
-    onUpdate: (callback: (payload: unknown) => void) => listenUntilDisposed<unknown>('overlay:update', callback)
+    onUpdate: (callback: (payload: unknown) => void) => listenUntilDisposed<unknown>('overlay:update', callback),
+    onPracticeUpdate: (callback: (practice: unknown) => void) => listenUntilDisposed<unknown>('overlay:practice-update', callback)
   };
+}
+
+export function createOverlayNotesBridge() {
+  if (window.trainerOverlayNotes) return window.trainerOverlayNotes;
+  if (!isTauriRuntime()) return null;
+
+  const bridge = {
+    getState: () => invoke<unknown>('get_overlay_notes_state'),
+    setBounds: (bounds: OverlayBounds) => invoke<void>('set_overlay_notes_bounds', { bounds }),
+    getBounds: () => invoke<OverlayBounds>('get_overlay_notes_bounds'),
+    startDrag: () => getCurrentWindow().startDragging(),
+    startResize: (edge: string) => {
+      const direction = RESIZE_DIRECTIONS[edge];
+      if (!direction) return Promise.reject(new Error(`invalid resize edge: ${edge}`));
+      return getCurrentWindow().startResizeDragging(direction);
+    },
+    notifyBoundsChanged: (bounds: OverlayBounds) => invoke<void>('notify_overlay_note_bounds_changed', { bounds }),
+    onBoundsChanged: (callback: (bounds: OverlayBounds) => void) => listenUntilDisposed<OverlayBounds>('overlay:note-bounds-changed', callback),
+    onUpdate: (callback: (payload: unknown) => void) => listenUntilDisposed<unknown>('overlay-notes:update', callback),
+    onPracticeUpdate: (callback: (practice: unknown) => void) => listenUntilDisposed<unknown>('overlay-notes:practice-update', callback)
+  };
+  window.trainerOverlayNotes = bridge;
+  return bridge;
 }
 
 export function createRhythmFeedbackBridge() {
@@ -201,5 +268,15 @@ export function createRecordingIndicatorBridge() {
   return {
     getState: () => invoke<unknown>('get_recording_indicator_state'),
     onUpdate: (callback: (payload: unknown) => void) => listenUntilDisposed<unknown>('recording-indicator:update', callback)
+  };
+}
+
+export function createRealtimeVisionOverlayBridge() {
+  if (window.realtimeVisionOverlay) return window.realtimeVisionOverlay;
+  if (!isTauriRuntime()) return null;
+
+  return {
+    getState: () => invoke<unknown>('get_realtime_vision_state'),
+    onUpdate: (callback: (payload: unknown) => void) => listenUntilDisposed<unknown>('realtime-vision:update', callback)
   };
 }

@@ -90,7 +90,7 @@ export function localizeCharacterName(name: string | undefined, language: AppLan
 export function localizeDefaultCharacterName(name: string | undefined, slot: number, language: AppLanguage): string {
   const chineseDefault = `角色${slot}`;
   if (language === 'zh-CN') return name || chineseDefault;
-  if (!name || /^角色\s*[123]$/.test(name)) return localizeEnglish(`Character ${slot}`, language);
+  if (!name || /^角色\s*[1234]$/.test(name)) return localizeEnglish(`Character ${slot}`, language);
   return localizeCharacterName(name, language);
 }
 

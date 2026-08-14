@@ -47,7 +47,7 @@ function preferredRoleNames(characters: TextAxisCharacter[], language: AppLangua
     return characters.reduce((result, character) => {
       result[character.slot] = character.names.map((name) => name.trim()).find(Boolean) || String(character.slot);
       return result;
-    }, { 1: '1', 2: '2', 3: '3' } as Record<CharacterSlot, string>);
+    }, { 1: '1', 2: '2', 3: '3', 4: '4' } as Record<CharacterSlot, string>);
   }
   const chineseInitials = characters.map((character) => firstChineseCharacter(character.names.find((name) => firstChineseCharacter(name)) ?? ''));
   const counts = new Map<string, number>();
@@ -55,14 +55,14 @@ function preferredRoleNames(characters: TextAxisCharacter[], language: AppLangua
   return characters.reduce((result, character, index) => {
     const names = character.names.map((name) => name.trim()).filter(Boolean);
     const initial = chineseInitials[index];
-    const fullName = names.find((name) => !/^角色\s*[123]$/u.test(name)) ?? names[0];
+    const fullName = names.find((name) => !/^角色\s*[1234]$/u.test(name)) ?? names[0];
     result[character.slot] = initial && counts.get(initial) === 1 ? initial : fullName || String(character.slot);
     return result;
-  }, { 1: '1', 2: '2', 3: '3' } as Record<CharacterSlot, string>);
+  }, { 1: '1', 2: '2', 3: '3', 4: '4' } as Record<CharacterSlot, string>);
 }
 
 function switchSlot(step: ComboStep): CharacterSlot | null {
-  const match = /^switch_([123])$/u.exec(step.moveId);
+  const match = /^switch_([1234])$/u.exec(step.moveId);
   return match ? Number(match[1]) as CharacterSlot : null;
 }
 
@@ -81,7 +81,7 @@ function stepTimeCode(step: ComboStep, contentLabels: Record<string, string>, la
   const custom = contentLabels[step.id]?.trim() ?? '';
   const fallback = defaultTextAxisCodeForMove(step.moveId) ?? step.label;
   const code = preferredTextAxisWord(step, custom, language) ?? fallback;
-  const hasOutro = custom.endsWith('y');
+  const hasOutro = /y$/iu.test(custom);
   return { code: hasOutro && code.endsWith('y') ? code.slice(0, -1) : code, hasOutro  };
 }
 

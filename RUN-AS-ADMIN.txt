@@ -1,0 +1,1 @@
+Right-click wwcombo.exe and choose "Run as administrator".
