@@ -24,6 +24,7 @@
   const REOPEN_KEY = 'wwcombo:afyg-reopen-project';
   const CALC_VIEW_KEY = 'wuwa-afyg:calc-view';
   const CALC_VIEW_DEFAULT_MIGRATION_KEY = 'wwcombo:calc-view-default-v1';
+  let hostLanguage = 'zh-CN';
 
   try {
     const workshopHosted = new URLSearchParams(window.location.hash.replace(/^#/u, '')).get('timeline_host') === 'wwcombo';
@@ -377,6 +378,15 @@
     if (effectTrack.dataset.wwcomboLegacyDamageTrack !== 'true') effectTrack.dataset.wwcomboLegacyDamageTrack = 'true';
   }
 
+  function comboImportLabel() {
+    return {
+      'zh-CN': '从连段谱导入',
+      'en-US': 'Import from Combo Charts',
+      'ja-JP': '連段譜からインポート',
+      'ko-KR': '콤보 차트에서 가져오기'
+    }[hostLanguage] || 'Import from Combo Charts';
+  }
+
   function ensureComboImportButton() {
     if (!timelineHostModeEnabled()) return;
     const toolbar = document.querySelector('[role="toolbar"]');
@@ -395,16 +405,17 @@
     if (!(current instanceof HTMLButtonElement)) {
       button.dataset.wwcomboComboImport = 'true';
       button.disabled = false;
-      button.title = '从连段谱导入';
-      button.setAttribute('aria-label', '从连段谱导入');
-      const label = button.querySelector('span');
-      if (label instanceof HTMLElement) label.textContent = '从连段谱导入';
       button.addEventListener('click', (event) => {
         event.preventDefault();
         event.stopPropagation();
         window.parent.postMessage({ type: 'wwcombo:afyg-open-combo-import', version: 1 }, '*');
       });
     }
+    const importLabel = comboImportLabel();
+    button.title = importLabel;
+    button.setAttribute('aria-label', importLabel);
+    const label = button.querySelector('span');
+    if (label instanceof HTMLElement) label.textContent = importLabel;
     const lockButton = Array.from(toolbar.querySelectorAll('button')).find((candidate) => {
       const copy = `${candidate.getAttribute('title') || ''} ${candidate.textContent || ''}`.trim();
       return copy === '锁定' || copy === '解锁' || copy === 'Lock' || copy === 'Unlock';
@@ -898,6 +909,11 @@
   window.addEventListener('message', (event) => {
     if (event.source !== window.parent) return;
     const message = event.data;
+    if (message?.type === 'wwcombo:afyg-language' && message.version === 1) {
+      if (['zh-CN', 'en-US', 'ja-JP', 'ko-KR'].includes(message.language)) hostLanguage = message.language;
+      ensureComboImportButton();
+      return;
+    }
     if (message?.type === 'wwcombo:afyg-theme' && message.version === 1) {
       void syncThemeFromHost(message.theme, message.appearanceMode).catch(() => undefined);
       return;

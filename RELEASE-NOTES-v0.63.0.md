@@ -70,4 +70,5 @@
 ## Localization
 
 - Added complete Japanese and Korean text for Compatibility Mode, Stair layout, separate Notes, recording-recognition windows, Quick Team, DLC status, controller selection, and move/scale/reset controls.
+- Added complete Japanese and Korean text for Workshop controls, damage/effect binding, combo import, timeline locking, timing markers, and AFYG error states. The injected combo-import control now follows the app language without reloading Workshop.
 - Added the full 0.63.0 changelog to the built-in Chinese, English, Japanese, and Korean help pages.

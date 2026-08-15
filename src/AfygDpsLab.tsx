@@ -160,7 +160,7 @@ function projectTimelineOperationIds(project: Record<string, unknown>): Set<stri
 }
 
 export function AfygDpsLab({ chart, library, style, appearanceMode, timelineEditor, playheadControl, onSelectChart, onUpdateStep, onPeriodsChange, onExport, onOpenTool, onExit }: AfygDpsLabProps) {
-  const { text } = useI18n();
+  const { language, text } = useI18n();
   const pageRef = useRef<HTMLDivElement | null>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const baseProjectInputRef = useRef<HTMLInputElement | null>(null);
@@ -258,6 +258,14 @@ export function AfygDpsLab({ chart, library, style, appearanceMode, timelineEdit
     }, new URL(AFYG_EMBED_URL).origin);
   }
 
+  function postAfygLanguage() {
+    iframeRef.current?.contentWindow?.postMessage({
+      type: 'wwcombo:afyg-language',
+      version: 1,
+      language
+    }, new URL(AFYG_EMBED_URL).origin);
+  }
+
   useEffect(() => {
     playheadControlRef.current = playheadControl;
   }, [playheadControl]);
@@ -266,6 +274,11 @@ export function AfygDpsLab({ chart, library, style, appearanceMode, timelineEdit
     if (frameStatus !== 'ready') return;
     postAfygTheme();
   }, [afygTheme, appearanceMode]);
+
+  useEffect(() => {
+    if (frameStatus !== 'ready') return;
+    postAfygLanguage();
+  }, [frameStatus, language]);
 
   function syncHostedPlayheadLine() {
     const node = timelineScrollNodeRef.current;
@@ -1632,6 +1645,7 @@ export function AfygDpsLab({ chart, library, style, appearanceMode, timelineEdit
         setWebsocketBridgeReady(false);
         if (desktopBridgeExpected && bridgeStatus === 'unavailable') setBridgeStatus('idle');
         postAfygTheme();
+        postAfygLanguage();
       }}
       onError={() => setFrameStatus('error')}
     />
