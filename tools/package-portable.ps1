@@ -70,7 +70,7 @@ $buildInfo = @(
     "Version: $Version",
     "Type: Windows x64 core portable build",
     "Contains: wwcombo.exe, documentation, and an empty wwcombo dlc folder.",
-    "Excluded: FFmpeg, Live2D source assets, Real-time Vision and DPS experimental labs, scripts, community website source, test runtimes, node_modules, and project source."
+    "Excluded: FFmpeg, Live2D source assets, the unfinished Real-time Vision lab, scripts, community website source, test runtimes, node_modules, and project source."
 ) -join "`r`n"
 Set-Content -LiteralPath (Join-Path $packageRoot "BUILD-INFO.txt") -Value $buildInfo -Encoding utf8
 

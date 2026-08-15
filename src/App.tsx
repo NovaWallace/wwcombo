@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState  } from 'react';
 import type { CSSProperties, FocusEvent as ReactFocusEvent, InputHTMLAttributes, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactNode, WheelEvent as ReactWheelEvent  } from 'react';
 import { createPortal  } from 'react-dom';
-import { Activity, ArrowLeft, BookOpen, Bug, Calculator, Check, ChevronLeft, ChevronRight, Download, ExternalLink, Eye, EyeOff, FileText, FileVideo, FolderOpen, Gamepad2, GraduationCap, GripVertical, History, Keyboard, Layers, Lock, Moon, Music2, Move, NotebookPen, Palette, Pause, Pencil, PanelBottomClose, PanelBottomOpen, Plus, Play, RadioTower, RefreshCw, Repeat2, RotateCcw, Save, ScanLine, Scissors, Settings, Share2, Square, Stamp, Sun, Target, Trash2, TriangleAlert, Upload, Users, Waves, X  } from 'lucide-react';
+import { Activity, ArrowLeft, BookOpen, Bug, Calculator, Check, ChevronLeft, ChevronRight, Clock3, Download, ExternalLink, Eye, EyeOff, FileText, FileVideo, FolderOpen, Gamepad2, GraduationCap, GripVertical, History, Keyboard, Layers, Lock, Moon, Music2, Move, NotebookPen, Palette, Pause, Pencil, PanelBottomClose, PanelBottomOpen, Plus, Play, RadioTower, RefreshCw, Repeat2, RotateCcw, Save, Scissors, Settings, Share2, Square, Stamp, Sun, Target, Trash2, TriangleAlert, Upload, Users, Waves, X  } from 'lucide-react';
 import {
   CharacterSlot,
   ALL_CHARACTER_SLOTS,
@@ -51,7 +51,7 @@ import {
   parseQuickInputText,
   verticalComboTrackClipCompensation,
   visibleComboImageItems
- } from './combo-image/comboImage';
+} from './combo-image/comboImage';
 import { AFYG_TOOL_URL  } from './afygAdapter';
 import { defaultKeyboardMouseIconSource, gamepadCodeLabel, gamepadIconSource, iconMappingCustomizationKey, inputIconCustomizationKey, keyboardMouseCodeLabel, keyboardMouseIconSource, keyboardMouseIconToneForMove, keyboardMouseIconWidthScale, normalizeGamepadBindingInput, withGamepadIconMappings, withKeyboardMouseIconMappings  } from './gamepadIcons';
 import type { GamepadIconSet, KeyboardIconMode  } from './gamepadIcons';
@@ -75,17 +75,18 @@ import { DEFAULT_SHORTCUT_SETTINGS, SHORTCUT_DEFINITIONS, TIMELINE_PLACEMENT_SHO
 import type { ShortcutAction, ShortcutSettings  } from './shortcutSettings';
 import { parseTextAxis, textAxisExampleForLanguage  } from './textAxisParser';
 import type { TextAxisCharacter, TextAxisParseResult  } from './textAxisParser';
-import { serializeTextAxis, textAxisResultFromChart  } from './textAxisModel';
+import { reconcileTextAxisResult, serializeTextAxis, textAxisResultFromChart  } from './textAxisModel';
 import type { TextAxisDisplaySegment  } from './textAxisModel';
 import { roundedTextOutlineShadow  } from './textOutline';
 import './styles.css';
 
 const EXPERIMENTAL_ANALYSIS_LABS_ENABLED = __EXPERIMENTAL_ANALYSIS_LABS__;
-
 const AxisRhythmGame = lazy(() => import('./AxisRhythmGame').then((module) => ({ default: module.AxisRhythmGame })));
 const AfygDpsLab = lazy(() => import('./AfygDpsLab').then((module) => ({ default: module.AfygDpsLab })));
 const FullChartExportLab = lazy(() => import('./FullChartExportLab').then((module) => ({ default: module.FullChartExportLab })));
-const RealtimeVisionLab = lazy(() => import('./RealtimeVisionLab').then((module) => ({ default: module.RealtimeVisionLab })));
+const RealtimeVisionLab = EXPERIMENTAL_ANALYSIS_LABS_ENABLED
+  ? lazy(() => import('./RealtimeVisionLab').then((module) => ({ default: module.RealtimeVisionLab })))
+  : null;
 const VideoAxisWorkbench = lazy(() => import('./VideoAxisWorkbench').then((module) => ({ default: module.VideoAxisWorkbench })));
 
 type Page = 'home' | 'record' | 'practice' | 'appearance' | 'experiment' | 'community' | 'settings';
@@ -3016,23 +3017,27 @@ export default function App() {
 
   function applyTextAxisImport(result: TextAxisParseResult) {
     captureTimelineHistory();
+    const previousResult = chart
+      ? textAxisResultFromChart(chart, contentLabelsForChart(chart, comboImageStyleRef.current.contentLabels), startingCharacterSlot)
+      : null;
+    const reconciledResult = previousResult ? reconcileTextAxisResult(previousResult, result) : result;
     const nextChart = applyFreeFirePeriods({
-      ...(chart ?? result.chart),
-      ...result.chart,
-      id: chart?.id ?? result.chart.id,
+      ...(chart ?? reconciledResult.chart),
+      ...reconciledResult.chart,
+      id: chart?.id ?? reconciledResult.chart.id,
       characterCount: compatibilityMode ? 4 : 3,
-      title: chartTitle.trim() || chart?.title || result.chart.title,
-      createdAt: chart?.createdAt ?? result.chart.createdAt,
+      title: chartTitle.trim() || chart?.title || reconciledResult.chart.title,
+      createdAt: chart?.createdAt ?? reconciledResult.chart.createdAt,
       updatedAt: Date.now(),
-      steps: result.chart.steps.map(normalizeStep),
-      periods: constrainAxisPeriods(result.chart.periods ?? []),
-      contentLabels: result.contentLabels
+      steps: reconciledResult.chart.steps.map(normalizeStep),
+      periods: constrainAxisPeriods(reconciledResult.chart.periods ?? []),
+      contentLabels: reconciledResult.contentLabels
      });
     setChart(nextChart);
-    setStartingCharacterSlot(result.startingCharacterSlot);
-    setComboImageStyle((current) => normalizeComboImageStyle({ ...current, contentLabels: result.contentLabels }));
-    setVerticalComboImageStyle((current) => normalizeComboImageStyle({ ...current, contentLabels: result.contentLabels }));
-    setWaterfallComboImageStyle((current) => normalizeWaterfallComboImageStyle({ ...current, contentLabels: result.contentLabels }, current));
+    setStartingCharacterSlot(reconciledResult.startingCharacterSlot);
+    setComboImageStyle((current) => normalizeComboImageStyle({ ...current, contentLabels: reconciledResult.contentLabels }));
+    setVerticalComboImageStyle((current) => normalizeComboImageStyle({ ...current, contentLabels: reconciledResult.contentLabels }));
+    setWaterfallComboImageStyle((current) => normalizeWaterfallComboImageStyle({ ...current, contentLabels: reconciledResult.contentLabels }, current));
     setChartTitle(nextChart.title);
     setEditorPlaybackMs(0);
     setTextAxisImportOpen(false);
@@ -3742,19 +3747,6 @@ export default function App() {
     setKeyMappingVisible(next);
    }
 
-  function requestStopRealtimeVision() {
-    setRealtimeVisionStopRequestToken((current) => current + 1);
-   }
-
-  function toggleRealtimeVisionQuickTool() {
-    if (realtimeVisionActive) {
-      requestStopRealtimeVision();
-      return;
-     }
-    setExperimentPage('realtime-vision');
-    navigateToPage('experiment');
-   }
-
   function openGlobalMappingSettings() {
     setSettingsView('keybindings');
     navigateToPage('settings');
@@ -3764,11 +3756,6 @@ export default function App() {
     setExperimentPage('keymap');
     navigateToPage('experiment');
     setKeyMappingSettingsRequestToken((current) => current + 1);
-   }
-
-  function openRealtimeVisionSettings() {
-    setExperimentPage('realtime-vision');
-    navigateToPage('experiment');
    }
 
   function navigateToPage(nextPage: Page) {
@@ -3784,7 +3771,7 @@ export default function App() {
   const updateDownloadLinks = appReleaseDownloadLinks(availableUpdate);
   const hasUpdateDownload = updateDownloadLinks.some((channel) => Boolean(channel.url));
   const moduleLoadingFallback = <div className="panel module-loading" role="status">{text('正在加载模块...', 'Loading module...') }</div>;
-  const workshopLoadingFallback = <div className="afyg-frame-loading" role="status">{text('正在准备工坊……', 'Preparing Workshop...') }</div>;
+  const workshopLoadingFallback = <div className="afyg-frame-loading" role="status">{text('正在开启椰果工具箱……', 'Opening Yeguo Toolbox...') }</div>;
   const sidebarDestination: HomeDestination | null = page === 'experiment'
     ? experimentPage === 'axis' || experimentPage === 'export-axis'
       ? 'practice'
@@ -3824,7 +3811,6 @@ export default function App() {
             <span className="sidebar-quick-diamonds" aria-hidden="true">
               <i className={globalInputEnabled ? 'is-active' : ''} />
               <i className={keyMappingVisible ? 'is-active' : ''} />
-              <i className={realtimeVisionActive ? 'is-active' : ''} />
             </span>
           </button>
           <div className="sidebar-quick-actions" role="group" aria-label={text('快捷工具', 'Quick Tools')}>
@@ -3836,10 +3822,6 @@ export default function App() {
               <button className="sidebar-quick-settings" type="button" aria-label={text('打开按键映射设置', 'Open Key Mapping Settings')} title={text('按键映射设置', 'Key Mapping Settings')} onClick={openKeyMappingSettings}><Settings size={14} /></button>
               <button className={`sidebar-quick-action ${keyMappingVisible ? 'active' : ''}`} type="button" aria-pressed={keyMappingVisible} aria-label={text('按键映射', 'Key Mapping')} title={text('按键映射', 'Key Mapping')} onClick={() => void toggleKeyMappingQuickTool()}><Keyboard size={18} /></button>
             </div>
-            {EXPERIMENTAL_ANALYSIS_LABS_ENABLED && <div className="sidebar-quick-action-item">
-              <button className="sidebar-quick-settings" type="button" aria-label={text('打开画面识别设置', 'Open Screen Recognition Settings')} title={text('画面识别设置', 'Screen Recognition Settings')} onClick={openRealtimeVisionSettings}><Settings size={14} /></button>
-              <button className={`sidebar-quick-action ${realtimeVisionActive ? 'active' : ''} ${realtimeVisionSettingsOpen ? 'configuring' : ''}`} type="button" aria-pressed={realtimeVisionActive} aria-label={text('画面识别', 'Screen Recognition')} title={realtimeVisionActive ? text('关闭画面识别', 'Stop Screen Recognition') : text('开启画面识别', 'Start Screen Recognition')} onClick={toggleRealtimeVisionQuickTool}><ScanLine size={18} /></button>
-            </div>}
           </div>
         </div>
         <div className="sidebar-illustration" aria-hidden="true" />
@@ -3934,7 +3916,7 @@ export default function App() {
           <KeyMappingLab inputSignal={keyMappingInputSignal } inputMode={inputMode } bindings={activeBindings } onBindingChange={inputMode === 'gamepad' ? updateGamepadBinding : updateBinding } visible={keyMappingVisible } onVisibleChange={setKeyMappingVisible } onRequestGlobalInput={startGlobalInput } settingsRequestToken={keyMappingSettingsRequestToken } />
         </div>
 
-        {EXPERIMENTAL_ANALYSIS_LABS_ENABLED && (realtimeVisionSettingsOpen || realtimeVisionActive) && <Suspense fallback={moduleLoadingFallback }><RealtimeVisionLab
+        {RealtimeVisionLab && EXPERIMENTAL_ANALYSIS_LABS_ENABLED && (realtimeVisionSettingsOpen || realtimeVisionActive) && <Suspense fallback={moduleLoadingFallback }><RealtimeVisionLab
           desktop={desktop }
           chart={practiceChart }
           practice={practice }
@@ -4802,6 +4784,7 @@ type TimelineContext = {
 type TimelineSubmenuKey = 'change';
 type VideoLayerTransformControl = { active: boolean; onToggle: () => void; onScalePointerDown: (event: ReactPointerEvent<HTMLButtonElement>) => void; onScalePointerMove: (event: ReactPointerEvent<HTMLButtonElement>) => void; onScalePointerUp: (event: ReactPointerEvent<HTMLButtonElement>) => void;  };
 type TimelinePanelControl = { collapsed: boolean; onToggleCollapsed: () => void; onPointerDown: (event: ReactPointerEvent<HTMLButtonElement>) => void; onPointerMove: (event: ReactPointerEvent<HTMLButtonElement>) => void; onPointerUp: (event: ReactPointerEvent<HTMLButtonElement>) => void; onPointerCancel: (event: ReactPointerEvent<HTMLButtonElement>) => void; onWheel: (event: ReactWheelEvent<HTMLButtonElement>) => void;  };
+type TimelineReferenceTimingControl = { onOpen: () => void; disabled?: boolean; busy?: boolean;  };
 
 type TimelineLane = {
   slot?: CharacterSlot;
@@ -4823,12 +4806,13 @@ type TimelinePlayheadControl = {
   autoFollow?: boolean;
   onAutoFollowChange?: (enabled: boolean) => void;
  };
-function createDraftStep(point: { slot?: CharacterSlot; lane: LaneKind; startMs: number  }): ComboStep {
+function createDraftStep(point: { slot?: CharacterSlot; lane: LaneKind; auxiliary?: boolean; startMs: number  }): ComboStep {
   return normalizeStep({
     id: crypto.randomUUID(),
     moveId: DRAFT_MOVE_ID,
     label: '待设置指令',
     ...(point.slot ? { characterSlot: point.slot } : {}),
+    ...(point.auxiliary ? { workshopLane: 'effects' as const } : {}),
     lane: point.lane,
     independent: false,
     startMin: Math.max(0, Math.round(point.startMs)),
@@ -4844,13 +4828,14 @@ function createDraftStep(point: { slot?: CharacterSlot; lane: LaneKind; startMs:
  }
 
 
-function createPlacedMoveStep(move: MoveDefinition, point: { slot?: CharacterSlot; lane: LaneKind; startMs: number  }): ComboStep {
+function createPlacedMoveStep(move: MoveDefinition, point: { slot?: CharacterSlot; lane: LaneKind; auxiliary?: boolean; startMs: number  }): ComboStep {
   const startMs = Math.max(0, Math.round(point.startMs));
   return normalizeStep({
     id: crypto.randomUUID(),
     moveId: move.id,
     label: move.label,
     ...(point.slot ? { characterSlot: point.slot } : {}),
+    ...(point.auxiliary ? { workshopLane: 'effects' as const } : {}),
     lane: point.lane,
     independent: move.independent,
     startMin: startMs,
@@ -5014,14 +4999,15 @@ function TextAxisImportDialog({ moves, characters, chart, contentLabels, startin
 
   function parseCurrentSource(value: string): TextAxisParseResult {
     const parsed = parseTextAxis(value, { moves, characters, title  });
-    const canonical = serializeTextAxis(parsed, characters, language).source;
-    setResult(parsed);
-    setDraftContentLabels(parsed.contentLabels);
-    setDraftNotes(Object.fromEntries(parsed.chart.steps.flatMap((step) => step.note?.trim() ? [[step.id, step.note]] : [])));
+    const reconciled = reconcileTextAxisResult(effectiveResult, parsed);
+    const canonical = serializeTextAxis(reconciled, characters, language).source;
+    setResult(reconciled);
+    setDraftContentLabels(reconciled.contentLabels);
+    setDraftNotes(Object.fromEntries(reconciled.chart.steps.flatMap((step) => step.note?.trim() ? [[step.id, step.note]] : [])));
     setSource(canonical);
     sourceDirtyRef.current = false;
     setEditorRevision((current) => current + 1);
-    return parsed;
+    return reconciled;
    }
 
   function commitTimeEditor(): TextAxisParseResult {
@@ -5114,7 +5100,7 @@ function TextAxisImportDialog({ moves, characters, chart, contentLabels, startin
   );
  }
 
-function TimelineEditor({ chart, moves, bindings, shortcutSettings, inputSignal, comboImageStyle, clipboardControl, mode, onModeChange, zoom, onZoomChange, playheadControl, onUpdate, onInsert, onDelete, onPeriodsChange, onContentChange, onQuickInput, onSelectionChange, onPeriodSelectionChange, onSave, historyControl, videoCompactMode = false, videoLayerTransformControl, videoNoteTransformControl, videoLaneHeight, inspectorPortalTarget, toolbarPortalTarget, hideInspector = false, renderTotalOverride, keyboardShortcutsEnabled = true, videoAutoFollow = false, timelinePanelControl, readOnly = false, auxiliaryLane }: { chart: ComboChart; moves: MoveDefinition[]; bindings: KeyBinding[]; shortcutSettings: ShortcutSettings; inputSignal?: (TrainerLikeInputEvent & { id: string  }) | null; comboImageStyle: ComboImageStyle; clipboardControl: TimelineClipboardControl; mode: EditorTab; onModeChange?: (mode: EditorTab) => void; zoom: number; onZoomChange: (value: number) => void; playheadControl?: TimelinePlayheadControl; onUpdate: (stepId: string, patch: Partial<ComboStep>) => void; onInsert: (steps: ComboStep[]) => void; onDelete: (stepIds: string[]) => void; onPeriodsChange: (periods: ComboPeriod[]) => void; onContentChange: (patch: Partial<ComboImageStyle>) => void; onQuickInput: (stepId: string | null) => void; onSelectionChange?: (stepIds: string[]) => void; onPeriodSelectionChange?: (period: ComboPeriod | null) => void; onSave: () => void; historyControl?: TimelineHistoryControl; videoCompactMode?: boolean; videoLayerTransformControl?: VideoLayerTransformControl; videoNoteTransformControl?: VideoLayerTransformControl & { disabled?: boolean }; videoLaneHeight?: number; inspectorPortalTarget?: HTMLElement | null; toolbarPortalTarget?: HTMLElement | null; hideInspector?: boolean; renderTotalOverride?: number; keyboardShortcutsEnabled?: boolean; videoAutoFollow?: boolean; timelinePanelControl?: TimelinePanelControl; readOnly?: boolean; auxiliaryLane?: { label: string }  }) {
+function TimelineEditor({ chart, moves, bindings, shortcutSettings, inputSignal, comboImageStyle, clipboardControl, mode, onModeChange, zoom, onZoomChange, playheadControl, onUpdate, onInsert, onDelete, onPeriodsChange, onContentChange, onQuickInput, onSelectionChange, onPeriodSelectionChange, onSave, historyControl, videoCompactMode = false, videoLayerTransformControl, videoNoteTransformControl, videoLaneHeight, inspectorPortalTarget, toolbarPortalTarget, hideInspector = false, renderTotalOverride, keyboardShortcutsEnabled = true, videoAutoFollow = false, timelinePanelControl, referenceTimingControl, readOnly = false, auxiliaryLane }: { chart: ComboChart; moves: MoveDefinition[]; bindings: KeyBinding[]; shortcutSettings: ShortcutSettings; inputSignal?: (TrainerLikeInputEvent & { id: string  }) | null; comboImageStyle: ComboImageStyle; clipboardControl: TimelineClipboardControl; mode: EditorTab; onModeChange?: (mode: EditorTab) => void; zoom: number; onZoomChange: (value: number) => void; playheadControl?: TimelinePlayheadControl; onUpdate: (stepId: string, patch: Partial<ComboStep>) => void; onInsert: (steps: ComboStep[]) => void; onDelete: (stepIds: string[]) => void; onPeriodsChange: (periods: ComboPeriod[]) => void; onContentChange: (patch: Partial<ComboImageStyle>) => void; onQuickInput: (stepId: string | null) => void; onSelectionChange?: (stepIds: string[]) => void; onPeriodSelectionChange?: (period: ComboPeriod | null) => void; onSave: () => void; historyControl?: TimelineHistoryControl; videoCompactMode?: boolean; videoLayerTransformControl?: VideoLayerTransformControl; videoNoteTransformControl?: VideoLayerTransformControl & { disabled?: boolean }; videoLaneHeight?: number; inspectorPortalTarget?: HTMLElement | null; toolbarPortalTarget?: HTMLElement | null; hideInspector?: boolean; renderTotalOverride?: number; keyboardShortcutsEnabled?: boolean; videoAutoFollow?: boolean; timelinePanelControl?: TimelinePanelControl; referenceTimingControl?: TimelineReferenceTimingControl; readOnly?: boolean; auxiliaryLane?: { label: string }  }) {
   const { language, text  } = useI18n();
   const CHARACTER_SLOTS = chart.characterCount === 4 ? ALL_CHARACTER_SLOTS : DEFAULT_CHARACTER_SLOTS;
   const [selectedId, setSelectedId] = useState(chart.steps[0]?.id ?? '');
@@ -5368,8 +5354,8 @@ function TimelineEditor({ chart, moves, bindings, shortcutSettings, inputSignal,
     ? [{ lane: 'main', id: 'auxiliary:effects', auxiliary: true, label: auxiliaryLane.label }, ...characterLanes]
     : characterLanes;
   const laneMatchesStep = (lane: TimelineLane, step: ComboStep) => lane.auxiliary
-    ? step.characterSlot === undefined
-    : (step.characterSlot ?? 1) === lane.slot && step.lane === lane.lane;
+    ? step.workshopLane === 'effects'
+    : step.workshopLane !== 'effects' && (step.characterSlot ?? 1) === lane.slot && step.lane === lane.lane;
   const globalPeriods = periods.filter((period) => period.characterSlot === undefined || period.kind !== 'free_fire');
 
   useEffect(() => {
@@ -6099,7 +6085,7 @@ function TimelineEditor({ chart, moves, bindings, shortcutSettings, inputSignal,
     const isPeriodPlacement = pending.kind === 'period';
     if (pending.kind === 'step' && point.lane && (point.slot || point.auxiliary)) {
       activeHistoryControl?.onCaptureHistory();
-      const step = createDraftStep({ slot: point.slot, lane: point.lane, startMs: point.startMs  });
+      const step = createDraftStep({ slot: point.slot, lane: point.lane, auxiliary: point.auxiliary, startMs: point.startMs  });
       onInsert([step]);
       setSelectedId(step.id);
       setSelectedIds([step.id]);
@@ -6110,7 +6096,7 @@ function TimelineEditor({ chart, moves, bindings, shortcutSettings, inputSignal,
       const move = placeableMoves.find((candidate) => candidate.id === moveId);
       if (move) {
         activeHistoryControl?.onCaptureHistory();
-        const step = createPlacedMoveStep(move, { slot: point.slot, lane: point.lane, startMs: point.startMs  });
+        const step = createPlacedMoveStep(move, { slot: point.slot, lane: point.lane, auxiliary: point.auxiliary, startMs: point.startMs  });
         onInsert([step]);
         const defaultContent = defaultComboContentLabelForMoveId(move.id) ?? '';
         const contentLabel = pending.contentLabel ?? (pending.contentSuffix ? `${defaultContent }${pending.contentSuffix }` : '');
@@ -6133,7 +6119,7 @@ function TimelineEditor({ chart, moves, bindings, shortcutSettings, inputSignal,
       const placementStartMs = copyPlacementStartMs(pending, point.startMs);
       const delta = Math.round(placementStartMs - pending.anchorMs);
       const singleStepTarget = pending.steps.length === 1 && point.lane && (point.slot || point.auxiliary)
-        ? { characterSlot: point.auxiliary ? undefined : point.slot, lane: point.lane }
+        ? { characterSlot: point.auxiliary ? undefined : point.slot, workshopLane: point.auxiliary ? 'effects' as const : undefined, lane: point.lane }
         : { };
       const stepIdMap = new Map<string, string>();
       const insertedSteps = pending.steps.map((step) => {
@@ -6293,7 +6279,7 @@ function TimelineEditor({ chart, moves, bindings, shortcutSettings, inputSignal,
         originals.forEach((snapshot, id) => {
           const startMin = snapshot.startMin + sharedDeltaMs;
           const startMax = snapshot.startMax + sharedDeltaMs;
-          onUpdate(id, { startMin: Math.round(startMin), startMax: Math.round(startMax), ...(lane ? { characterSlot: lane.auxiliary ? undefined : lane.slot, lane: lane.lane, independent: snapshot.independent  } : { })  });
+          onUpdate(id, { startMin: Math.round(startMin), startMax: Math.round(startMax), ...(lane ? { characterSlot: lane.auxiliary ? undefined : lane.slot, workshopLane: lane.auxiliary ? 'effects' : undefined, lane: lane.lane, independent: snapshot.independent  } : { })  });
          });
        }
       if (mode === 'start') {
@@ -6615,7 +6601,7 @@ function TimelineEditor({ chart, moves, bindings, shortcutSettings, inputSignal,
     const hits = laneSteps.filter((candidate) => pointerMs >= candidate.startMin && pointerMs <= candidate.startMin + candidate.durationMax).sort((a, b) => b.durationMax - a.durationMax);
     const target = step ?? hits[0] ?? null;
     const lane = target
-      ? target.characterSlot === undefined && auxiliaryLane
+      ? target.workshopLane === 'effects' && auxiliaryLane
         ? { lane: target.lane, auxiliary: true }
         : { slot: target.characterSlot ?? 1, lane: target.lane }
       : laneHit(event.clientX, event.clientY) ?? undefined;
@@ -6718,8 +6704,8 @@ function TimelineEditor({ chart, moves, bindings, shortcutSettings, inputSignal,
       .sort((left, right) => left.startMin - right.startMin || left.startMax - right.startMax || left.id.localeCompare(right.id));
     if (steps.length < 2) return [];
     const first = steps[0];
-    const firstSlot = auxiliaryLane ? first.characterSlot : first.characterSlot ?? 1;
-    return steps.every((step) => step.moveId === first.moveId && (auxiliaryLane ? step.characterSlot : step.characterSlot ?? 1) === firstSlot && step.lane === first.lane) ? steps : [];
+    const firstSlot = auxiliaryLane ? `${first.workshopLane ?? 'character'}:${first.characterSlot ?? 1}` : String(first.characterSlot ?? 1);
+    return steps.every((step) => step.moveId === first.moveId && (auxiliaryLane ? `${step.workshopLane ?? 'character'}:${step.characterSlot ?? 1}` : String(step.characterSlot ?? 1)) === firstSlot && step.lane === first.lane) ? steps : [];
    }
 
   function mergeableContextSteps(): ComboStep[] {
@@ -6898,6 +6884,7 @@ function TimelineEditor({ chart, moves, bindings, shortcutSettings, inputSignal,
       {timelinePanelControl?.collapsed ? <>{timelineReadOnly && <span className="timeline-lock-status" role="status"><Lock size={14 } />{text('已锁定', 'Locked') }</span>}{timelinePanelToggle}</> : <>
         {timelineReadOnly && <span className="timeline-lock-status" role="status"><Lock size={14 } />{text('已锁定', 'Locked') }</span>}
         {onModeChange && <button type="button" className={`icon-button video-timeline-mode-toggle ${mode === 'content' ? 'active' : ''}`} title={mode === 'timeline' ? text('切换到备注', 'Switch to Notes') : text('切换到时间', 'Switch to Timing')} aria-label={mode === 'timeline' ? text('切换到备注', 'Switch to Notes') : text('切换到时间', 'Switch to Timing')} onClick={() => onModeChange(mode === 'timeline' ? 'content' : 'timeline')}><NotebookPen size={16} /></button>}
+       {referenceTimingControl && <button type="button" className="icon-button afyg-reference-timing-tool" title={referenceTimingControl.disabled ? text('AFYG 时间记点配置当前不可用', 'AFYG timing markers are currently unavailable') : text('打开 AFYG 时间记点配置', 'Open AFYG timing marker settings')} aria-label={text('AFYG 时间记点配置', 'AFYG timing marker settings')} disabled={referenceTimingControl.disabled || referenceTimingControl.busy} onClick={referenceTimingControl.onOpen}>{referenceTimingControl.busy ? <RefreshCw className="spin" size={16} /> : <Clock3 size={16} />}</button>}
        <button className={`icon-button ${pending?.kind === 'delete' ? 'active' : ''}`} disabled={timelineReadOnly } title={text('连续删除招式块；右键退出', 'Continuously delete action blocks; right-click to exit') } onClick={toggleContinuousDelete}><Trash2 size={16} /></button>
        <button className={`icon-button ${pending?.kind === 'cut' ? 'active' : ''}`} disabled={timelineReadOnly } title={text('裁剪招式块', 'Split Action Block') } onClick={() => { if (pending?.kind === 'cut') endSpecialPlacement(); else { setPending({ kind: 'cut' }); setPendingPoint(null); setCompactAddMenuOpen(false); } }}><Scissors size={16} /></button>
        {videoLayerTransformControl && <button className={`icon-button hold-drag-control ${videoLayerTransformControl.active ? 'active' : ''}`} title={text('点击移动连段图；左右拖动缩放；长按3秒复位', 'Click to move the combo layer; drag horizontally to scale; hold 3 seconds to reset') } aria-label={text('移动缩放连段图', 'Move or scale combo layer')} onClick={videoLayerTransformControl.onToggle} onPointerDown={videoLayerTransformControl.onScalePointerDown} onPointerMove={videoLayerTransformControl.onScalePointerMove} onPointerUp={videoLayerTransformControl.onScalePointerUp} onPointerCancel={videoLayerTransformControl.onScalePointerUp}><Move size={16} /><HoldDragFeedback /></button>}
@@ -7004,7 +6991,8 @@ function TimelineEditor({ chart, moves, bindings, shortcutSettings, inputSignal,
                 {copiedGhost && copiedGhostPoint && copiedGhost.steps.filter((step) => {
                   const targetSlot = copiedGhost.steps.length === 1 && (copiedGhostPoint.slot || copiedGhostPoint.auxiliary) ? copiedGhostPoint.slot : auxiliaryLane ? step.characterSlot : step.characterSlot ?? 1;
                   const targetLane = copiedGhost.steps.length === 1 && copiedGhostPoint.lane ? copiedGhostPoint.lane : step.lane;
-                  return targetSlot === lane.slot && (!auxiliaryLane || Boolean(targetSlot === undefined) === Boolean(lane.auxiliary)) && (lane.auxiliary || targetLane === lane.lane);
+                  const targetAuxiliary = copiedGhost.steps.length === 1 && (copiedGhostPoint.slot || copiedGhostPoint.auxiliary) ? Boolean(copiedGhostPoint.auxiliary) : step.workshopLane === 'effects';
+                  return targetSlot === lane.slot && (!auxiliaryLane || targetAuxiliary === Boolean(lane.auxiliary)) && (lane.auxiliary || targetLane === lane.lane);
                  }).map((step) => {
                   const delta = copyPlacementStartMs(copiedGhost, copiedGhostPoint!.startMs) - copiedGhost.anchorMs;
                   return <div key={`ghost-${step.id }` } className={`timeline-placement-ghost copy step ${step.free ? 'free' : '' }`  } style={{ left: `${((step.startMin + delta) / renderTotal) * 100 }%`, width: `${Math.max(0.01, (step.durationMax / renderTotal) * 100) }%`, '--move-color': step.color  } as CSSProperties }><strong>{displayMoveLabel(step) }</strong></div>;

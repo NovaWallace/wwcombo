@@ -20,6 +20,119 @@ export type SerializedTextAxis = {
   segments: TextAxisDisplaySegment[];
 };
 
+type TextAxisStepMatch = {
+  previousIndex: number;
+  nextIndex: number;
+};
+
+function textAxisStepIdentity(step: ComboStep): string {
+  return [
+    step.moveId,
+    step.characterSlot ?? 0,
+    step.lane,
+    step.workshopLane ?? ''
+  ].join('|');
+}
+
+function normalizedTextAxisContent(value: string | undefined): string {
+  return value?.trim().toLocaleLowerCase() ?? '';
+}
+
+function hasOwnProperty<T extends object>(value: T, key: PropertyKey): boolean {
+  return Object.prototype.hasOwnProperty.call(value, key);
+}
+
+function alignTextAxisSteps(previous: TextAxisParseResult, next: TextAxisParseResult): TextAxisStepMatch[] {
+  const previousSteps = previous.chart.steps;
+  const nextSteps = next.chart.steps;
+  const width = nextSteps.length + 1;
+  const gapPenalty = -36;
+  const impossible = Number.NEGATIVE_INFINITY;
+  const scores = Array.from({ length: previousSteps.length + 1 }, () => Array<number>(width).fill(impossible));
+  const choices = Array.from({ length: previousSteps.length + 1 }, () => Array<'match' | 'delete' | 'insert' | null>(width).fill(null));
+  scores[0][0] = 0;
+  for (let previousIndex = 1; previousIndex <= previousSteps.length; previousIndex += 1) {
+    scores[previousIndex][0] = scores[previousIndex - 1][0] + gapPenalty;
+    choices[previousIndex][0] = 'delete';
+  }
+  for (let nextIndex = 1; nextIndex <= nextSteps.length; nextIndex += 1) {
+    scores[0][nextIndex] = scores[0][nextIndex - 1] + gapPenalty;
+    choices[0][nextIndex] = 'insert';
+  }
+
+  for (let previousIndex = 1; previousIndex <= previousSteps.length; previousIndex += 1) {
+    for (let nextIndex = 1; nextIndex <= nextSteps.length; nextIndex += 1) {
+      const previousStep = previousSteps[previousIndex - 1];
+      const nextStep = nextSteps[nextIndex - 1];
+      const identityMatches = textAxisStepIdentity(previousStep) === textAxisStepIdentity(nextStep);
+      const contentMatches = normalizedTextAxisContent(previous.contentLabels[previousStep.id])
+        === normalizedTextAxisContent(next.contentLabels[nextStep.id]);
+      const timeDistance = Math.abs(previousStep.startMin - nextStep.startMin);
+      const matchScore = identityMatches
+        ? 100 + (contentMatches ? 24 : 0) + Math.max(0, 8 - timeDistance / 1000)
+        : impossible;
+      const candidates: Array<{ score: number; choice: 'match' | 'delete' | 'insert'; priority: number }> = [
+        { score: scores[previousIndex - 1][nextIndex - 1] + matchScore, choice: 'match', priority: 3 },
+        { score: scores[previousIndex - 1][nextIndex] + gapPenalty, choice: 'delete', priority: 2 },
+        { score: scores[previousIndex][nextIndex - 1] + gapPenalty, choice: 'insert', priority: 1 }
+      ];
+      const best = candidates.reduce((current, candidate) => candidate.score > current.score || (candidate.score === current.score && candidate.priority > current.priority) ? candidate : current);
+      scores[previousIndex][nextIndex] = best.score;
+      choices[previousIndex][nextIndex] = best.choice;
+    }
+  }
+
+  const matches: TextAxisStepMatch[] = [];
+  let previousIndex = previousSteps.length;
+  let nextIndex = nextSteps.length;
+  while (previousIndex > 0 || nextIndex > 0) {
+    const choice = choices[previousIndex][nextIndex];
+    if (choice === 'match') {
+      matches.push({ previousIndex: previousIndex - 1, nextIndex: nextIndex - 1 });
+      previousIndex -= 1;
+      nextIndex -= 1;
+    } else if (choice === 'delete') {
+      previousIndex -= 1;
+    } else if (choice === 'insert') {
+      nextIndex -= 1;
+    } else {
+      break;
+    }
+  }
+  return matches.reverse();
+}
+
+/**
+ * Reuses the IDs of steps that still represent the same action after a text-axis edit.
+ * Notes and content labels are keyed by those IDs, so this keeps them attached to the
+ * action instead of to its position in the parsed array.
+ */
+export function reconcileTextAxisResult(previous: TextAxisParseResult, next: TextAxisParseResult): TextAxisParseResult {
+  const matches = alignTextAxisSteps(previous, next);
+  const previousByNextIndex = new Map(matches.map((match) => [match.nextIndex, match.previousIndex]));
+  const previousSteps = previous.chart.steps;
+  const nextSteps = next.chart.steps;
+  const contentLabels: Record<string, string> = {};
+  const steps = nextSteps.map((step, nextIndex) => {
+    const previousIndex = previousByNextIndex.get(nextIndex);
+    if (previousIndex === undefined) {
+      if (hasOwnProperty(next.contentLabels, step.id)) contentLabels[step.id] = next.contentLabels[step.id];
+      return step;
+    }
+    const previousStep = previousSteps[previousIndex];
+    const id = previousStep.id;
+    if (hasOwnProperty(next.contentLabels, step.id)) contentLabels[id] = next.contentLabels[step.id];
+    else if (hasOwnProperty(previous.contentLabels, previousStep.id)) contentLabels[id] = previous.contentLabels[previousStep.id];
+    const note = hasOwnProperty(step, 'note') ? step.note : previousStep.note;
+    return { ...step, id, ...(note === undefined ? { note: undefined } : { note }) };
+  });
+  return {
+    ...next,
+    chart: { ...next.chart, steps },
+    contentLabels
+  };
+}
+
 export function textAxisResultFromChart(
   chart: ComboChart,
   contentLabels: Record<string, string>,

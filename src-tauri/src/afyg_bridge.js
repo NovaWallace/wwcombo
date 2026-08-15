@@ -11,6 +11,8 @@
   const WS_UPSTREAM_TYPE = 'wwcombo:afyg-ws-upstream';
   const WS_DOWNSTREAM_TYPE = 'wwcombo:afyg-ws-downstream';
   const HOST_LAYOUT_TYPE = 'wwcombo:afyg-host-layout';
+  const HOST_SPLIT_TYPE = 'wwcombo:afyg-host-split';
+  const AI_ASSISTANT_LAYOUT_TYPE = 'wwcombo:afyg-ai-assistant-layout';
   const SIDEBAR_OVERLAY_TYPE = 'wwcombo:afyg-sidebar-overlay';
   const BRIDGE_STATUS_TYPE = 'wwcombo:afyg-bridge-status';
   const DB_NAME = 'wuwa-v1';
@@ -20,6 +22,18 @@
   const ACTIVE_KEY = 'project-active';
   const THEME_KEY = 'theme-active';
   const REOPEN_KEY = 'wwcombo:afyg-reopen-project';
+  const CALC_VIEW_KEY = 'wuwa-afyg:calc-view';
+  const CALC_VIEW_DEFAULT_MIGRATION_KEY = 'wwcombo:calc-view-default-v1';
+
+  try {
+    const workshopHosted = new URLSearchParams(window.location.hash.replace(/^#/u, '')).get('timeline_host') === 'wwcombo';
+    if (workshopHosted && localStorage.getItem(CALC_VIEW_DEFAULT_MIGRATION_KEY) !== '1') {
+      localStorage.setItem(CALC_VIEW_KEY, 'dropdown');
+      localStorage.setItem(CALC_VIEW_DEFAULT_MIGRATION_KEY, '1');
+    }
+  } catch {
+    // Storage may be unavailable in hardened WebView contexts; AFYG's own default is still dropdown.
+  }
 
   const virtualSockets = new Set();
 
@@ -147,11 +161,50 @@
   let damageSeekClientX = 0;
   let damageSeekEdgeFrame = 0;
   let layoutFrame = 0;
+  let legacyDamageHeightOverride = null;
   let observedProjectSidebar = null;
   let projectSidebarResizeHandle = null;
   let projectSidebarPlaceholder = null;
   const hostResizeObserver = new ResizeObserver(() => scheduleHostLayout());
   const damageResizeObserver = new ResizeObserver(() => applyTimelineScrollRatio());
+
+  function ensureWorkshopHostStyle() {
+    if (document.querySelector('style[data-wwcombo-workshop-host-style]')) return;
+    const style = document.createElement('style');
+    style.dataset.wwcomboWorkshopHostStyle = 'true';
+    style.textContent = `
+      [data-wwcombo-legacy-timeline="true"] { overflow: hidden !important; }
+      [data-wwcombo-legacy-timeline="true"]:not([data-wwcombo-original-editor="true"]) > [data-wwcombo-legacy-damage-scroller="true"] {
+        flex: 0 0 var(--wwcombo-legacy-damage-height, 190px) !important;
+        width: 100% !important;
+        height: var(--wwcombo-legacy-damage-height, 190px) !important;
+        min-height: var(--wwcombo-legacy-damage-height, 190px) !important;
+        overflow: auto !important;
+      }
+      [data-wwcombo-legacy-timeline="true"]:not([data-wwcombo-original-editor="true"]) [data-wwcombo-legacy-content="true"] { height: 100% !important; min-height: 100% !important; }
+      [data-wwcombo-legacy-timeline="true"]:not([data-wwcombo-original-editor="true"]) [data-wwcombo-legacy-content="true"] > :not([data-wwcombo-legacy-track-stack="true"]) { display: none !important; }
+      [data-wwcombo-legacy-timeline="true"]:not([data-wwcombo-original-editor="true"]) [data-wwcombo-legacy-track-stack="true"] > :not([data-wwcombo-legacy-damage-track="true"]) { display: none !important; }
+      [data-wwcombo-legacy-timeline="true"]:not([data-wwcombo-original-editor="true"]) [data-wwcombo-legacy-track-stack="true"] > [data-wwcombo-legacy-damage-track="true"] {
+        display: block !important;
+        flex: 1 1 100% !important;
+        width: 100% !important;
+        height: 100% !important;
+        min-height: 100% !important;
+      }
+      [data-wwcombo-legacy-timeline="true"][data-wwcombo-original-editor="true"] [data-wwcombo-legacy-track-stack="true"] > [data-wwcombo-legacy-damage-track="true"] {
+        order: 1 !important;
+      }
+      [data-wwcombo-legacy-timeline="true"][data-wwcombo-original-editor="true"] [data-wwcombo-legacy-track-stack="true"] {
+        box-sizing: border-box !important;
+        padding-bottom: 52px !important;
+      }
+      [data-wwcombo-legacy-timeline="true"][data-wwcombo-original-editor="true"] [data-wwcombo-legacy-track-stack="true"] > [data-track-index]:not([data-wwcombo-legacy-damage-track="true"]) {
+        order: 2 !important;
+      }
+      button[data-wwcombo-combo-import="true"] { flex: 0 0 auto; }
+    `;
+    (document.head || document.documentElement).append(style);
+  }
 
   function ensureProjectSidebarStyle() {
     if (document.querySelector('style[data-wwcombo-auto-sidebar-style]')) return;
@@ -292,6 +345,111 @@
     return new URLSearchParams(window.location.hash.replace(/^#/u, '')).get('timeline_host') === 'wwcombo';
   }
 
+  function findLegacyDamageTrack(root) {
+    if (!(root instanceof HTMLElement)) return null;
+    return Array.from(root.querySelectorAll('[data-track-index]')).find((track) => {
+      if (!(track instanceof HTMLElement)) return false;
+      const copy = track.textContent?.replace(/\s+/gu, ' ').trim() || '';
+      if (copy.includes('伤害绑定') || copy.includes('Damage Binding')) return true;
+      return Array.from(track.children).some((child) => child instanceof HTMLElement
+        && child.classList.contains('pointer-events-auto')
+        && child.classList.contains('theme-scrollbar')
+        && child.classList.contains('overflow-y-auto'));
+    }) || null;
+  }
+
+  function prepareLegacyTimelineHost(host, damageHeight) {
+    if (!(host instanceof HTMLElement)) return;
+    ensureWorkshopHostStyle();
+    const scroller = Array.from(host.children).find((element) => element instanceof HTMLElement && element.classList.contains('theme-scrollbar'));
+    const content = scroller instanceof HTMLElement
+      ? Array.from(scroller.children).find((element) => element instanceof HTMLElement && element.classList.contains('relative'))
+      : null;
+    const effectTrack = findLegacyDamageTrack(content);
+    const trackStack = effectTrack?.parentElement;
+    if (!(scroller instanceof HTMLElement) || !(content instanceof HTMLElement) || !(effectTrack instanceof HTMLElement) || !(trackStack instanceof HTMLElement)) return;
+    if (host.dataset.wwcomboLegacyTimeline !== 'true') host.dataset.wwcomboLegacyTimeline = 'true';
+    const heightValue = `${Math.round(damageHeight)}px`;
+    if (host.style.getPropertyValue('--wwcombo-legacy-damage-height') !== heightValue) host.style.setProperty('--wwcombo-legacy-damage-height', heightValue);
+    if (scroller.dataset.wwcomboLegacyDamageScroller !== 'true') scroller.dataset.wwcomboLegacyDamageScroller = 'true';
+    if (content.dataset.wwcomboLegacyContent !== 'true') content.dataset.wwcomboLegacyContent = 'true';
+    if (trackStack.dataset.wwcomboLegacyTrackStack !== 'true') trackStack.dataset.wwcomboLegacyTrackStack = 'true';
+    if (effectTrack.dataset.wwcomboLegacyDamageTrack !== 'true') effectTrack.dataset.wwcomboLegacyDamageTrack = 'true';
+  }
+
+  function ensureComboImportButton() {
+    if (!timelineHostModeEnabled()) return;
+    const toolbar = document.querySelector('[role="toolbar"]');
+    if (!(toolbar instanceof HTMLElement)) return;
+    const damageButton = Array.from(toolbar.querySelectorAll('button')).find((button) => {
+      const copy = `${button.getAttribute('title') || ''} ${button.textContent || ''}`;
+      return copy.includes('查看所有伤害') || copy.includes('View all damage');
+    });
+    const current = toolbar.querySelector('button[data-wwcombo-combo-import="true"]');
+    if (!(damageButton instanceof HTMLButtonElement)) {
+      current?.remove();
+      return;
+    }
+    const button = current instanceof HTMLButtonElement ? current : damageButton.cloneNode(true);
+    if (!(button instanceof HTMLButtonElement)) return;
+    if (!(current instanceof HTMLButtonElement)) {
+      button.dataset.wwcomboComboImport = 'true';
+      button.disabled = false;
+      button.title = '从连段谱导入';
+      button.setAttribute('aria-label', '从连段谱导入');
+      const label = button.querySelector('span');
+      if (label instanceof HTMLElement) label.textContent = '从连段谱导入';
+      button.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        window.parent.postMessage({ type: 'wwcombo:afyg-open-combo-import', version: 1 }, '*');
+      });
+    }
+    const lockButton = Array.from(toolbar.querySelectorAll('button')).find((candidate) => {
+      const copy = `${candidate.getAttribute('title') || ''} ${candidate.textContent || ''}`.trim();
+      return copy === '锁定' || copy === '解锁' || copy === 'Lock' || copy === 'Unlock';
+    });
+    if (lockButton instanceof HTMLButtonElement) {
+      if (lockButton.previousElementSibling !== button) lockButton.before(button);
+    } else if (toolbar.lastElementChild !== button) {
+      toolbar.append(button);
+    }
+  }
+
+  function resolveAiAssistant() {
+    const known = document.querySelector('[data-wwcombo-ai-assistant="true"]');
+    if (known instanceof HTMLElement) return known;
+    const trigger = Array.from(document.querySelectorAll('[title]')).find((element) => {
+      const title = element.getAttribute('title') || '';
+      return title.includes('AI 助手') || title.includes('AI Assistant');
+    });
+    const root = trigger?.closest('.fixed');
+    if (!(root instanceof HTMLElement)) return null;
+    root.dataset.wwcomboAiAssistant = 'true';
+    return root;
+  }
+
+  function reportAiAssistantLayout() {
+    const assistant = resolveAiAssistant();
+    if (!(assistant instanceof HTMLElement)) {
+      window.parent.postMessage({ type: AI_ASSISTANT_LAYOUT_TYPE, version: 1, visible: false }, '*');
+      return;
+    }
+    const usesDefaultCorner = assistant.classList.contains('right-4') && assistant.classList.contains('bottom-4')
+      && !assistant.style.left && !assistant.style.top;
+    if (usesDefaultCorner && assistant.style.bottom !== '92px') {
+      assistant.style.setProperty('bottom', '92px');
+    }
+    const rect = assistant.getBoundingClientRect();
+    const style = getComputedStyle(assistant);
+    window.parent.postMessage({
+      type: AI_ASSISTANT_LAYOUT_TYPE,
+      version: 1,
+      visible: rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden',
+      rect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height }
+    }, '*');
+  }
+
   function findLegacyTimelineRoot() {
     if (!timelineHostModeEnabled()) return null;
     return Array.from(document.querySelectorAll('div')).find((element) => {
@@ -303,7 +461,7 @@
         || !classes.includes('flex-col')
         || !classes.includes('--theme-timeline-bg')) return false;
       const rect = element.getBoundingClientRect();
-      return rect.width >= 320 && rect.height >= 320;
+      return rect.width >= 320 && rect.height >= 320 && Boolean(findLegacyDamageTrack(element));
     }) || null;
   }
 
@@ -317,12 +475,7 @@
   function resolveDamageHost() {
     const explicitHost = document.querySelector('[data-wwcombo-damage-host]');
     if (explicitHost instanceof HTMLElement) return explicitHost;
-    return Array.from(document.querySelectorAll('.theme-glass-surface')).find((element) => {
-      if (!(element instanceof HTMLElement)) return false;
-      const copy = element.textContent?.replace(/\s+/gu, ' ').trim() || '';
-      return (copy.includes('伤害绑定') || copy.includes('Damage Binding'))
-        && Boolean(element.querySelector('.theme-scrollbar .relative'));
-    }) || null;
+    return findLegacyTimelineRoot();
   }
 
   function resolveDamageScroller() {
@@ -417,16 +570,10 @@
 
   function updateDamageSeekLine() {
     if (!damageSeekLine) return;
-    const display = damageSeekState.enabled ? 'block' : 'none';
     const timelineRect = observedDamageTimeline?.getBoundingClientRect();
-    const sharedViewportX = typeof damageSeekState.viewportX === 'number' && Number.isFinite(damageSeekState.viewportX)
-      ? damageSeekState.viewportX
-      : null;
-    const left = `${sharedViewportX !== null && timelineRect
-      ? sharedViewportX - timelineRect.left
-      : 80 + 48 + Math.max(0, damageSeekState.playbackMs) * timelineGeometry.pixelsPerMs}px`;
-    if (damageSeekLine.style.display !== display) damageSeekLine.style.display = display;
-    if (damageSeekLine.style.left !== left) damageSeekLine.style.left = left;
+    // The parent draws one shared line across both surfaces. Keeping a second
+    // iframe line creates a visible split while either scroller is moving.
+    if (damageSeekLine.style.display !== 'none') damageSeekLine.style.display = 'none';
     window.parent.postMessage({
       type: 'wwcombo:afyg-damage-playhead-layout',
       version: 1,
@@ -459,11 +606,31 @@
   }
 
   function damageTimelineLayers(timeline) {
+    const legacyEffectTrack = timeline?.querySelector('[data-wwcombo-legacy-damage-track="true"]') || findLegacyDamageTrack(timeline);
+    if (legacyEffectTrack instanceof HTMLElement) {
+      const damageViewport = Array.from(legacyEffectTrack.children).find((element) => element instanceof HTMLElement && element.querySelector(':scope > .relative'));
+      const damageLayer = damageViewport instanceof HTMLElement ? damageViewport.querySelector(':scope > .relative') : null;
+      return {
+        referenceLayer: null,
+        damageLayer: damageLayer instanceof HTMLElement ? damageLayer : null,
+        legacy: true
+      };
+    }
     const layers = Array.from(timeline?.children || []).filter((element) => element instanceof HTMLElement);
     return {
       referenceLayer: layers.find((element) => typeof element.className === 'string' && element.className.includes('z-[1]')) || null,
-      damageLayer: layers.find((element) => typeof element.className === 'string' && element.className.includes('z-[2]')) || null
+      damageLayer: layers.find((element) => typeof element.className === 'string' && element.className.includes('z-[2]')) || null,
+      legacy: false
     };
+  }
+
+  function damageTranslatePosition(transform) {
+    const match = String(transform || '').match(/^translate\(\s*(-?[\d.]+)px\s*,\s*(-?[\d.]+)px\s*\)\s*(.*)$/u);
+    if (!match) return null;
+    const x = Number(match[1]);
+    const y = Number(match[2]);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    return { x, y, suffix: match[3].trim() };
   }
 
   function applyDamageTimelineScale() {
@@ -473,7 +640,7 @@
     if (timelineGeometry.renderTotalMs > 0 && timeline.style.width !== `${desiredWidth}px`) {
       timeline.style.width = `${desiredWidth}px`;
     }
-    const { referenceLayer, damageLayer } = damageTimelineLayers(timeline);
+    const { referenceLayer, damageLayer, legacy } = damageTimelineLayers(timeline);
     for (const layer of [referenceLayer, damageLayer]) {
       if (!(layer instanceof HTMLElement)) continue;
       if (layer.style.right) layer.style.removeProperty('right');
@@ -502,11 +669,29 @@
       const baseAnchors = timelineGeometry.anchorsMs.map((timeMs) => ({ timeMs, baseLeft: 48 + timeMs * 0.06 }));
       for (const child of damageLayer.children) {
         if (!(child instanceof HTMLElement)) continue;
-        const currentLeft = Number.parseFloat(child.style.left);
+        const translated = legacy ? damageTranslatePosition(child.style.transform) : null;
+        const positionMode = translated ? 'translate' : 'left';
+        const currentLeft = translated?.x ?? Number.parseFloat(child.style.left);
         const appliedLeft = Number(child.dataset.wwcomboAppliedLeft);
-        if (!child.dataset.wwcomboBaseLeft || (Number.isFinite(currentLeft) && Number.isFinite(appliedLeft) && Math.abs(currentLeft - appliedLeft) > 0.5)) {
+        const appliedTop = Number(child.dataset.wwcomboAppliedTop);
+        if (child.dataset.wwcomboPositionMode !== positionMode
+          || !child.dataset.wwcomboBaseLeft
+          || (Number.isFinite(currentLeft) && Number.isFinite(appliedLeft) && Math.abs(currentLeft - appliedLeft) > 0.5)
+          || (translated && Number.isFinite(appliedTop) && Math.abs(translated.y - appliedTop) > 0.5)) {
           if (!Number.isFinite(currentLeft)) continue;
+          child.dataset.wwcomboPositionMode = positionMode;
           child.dataset.wwcomboBaseLeft = String(currentLeft);
+          if (translated) {
+            child.dataset.wwcomboBaseTop = String(translated.y);
+            child.dataset.wwcomboTransformSuffix = translated.suffix;
+          }
+        }
+        if (translated
+          && Number.isFinite(appliedLeft)
+          && Math.abs(translated.x - appliedLeft) <= 0.5
+          && (!Number.isFinite(appliedTop) || Math.abs(translated.y - appliedTop) <= 0.5)
+          && translated.suffix !== (child.dataset.wwcomboTransformSuffix || '')) {
+          child.dataset.wwcomboTransformSuffix = translated.suffix;
         }
         const baseLeft = Number(child.dataset.wwcomboBaseLeft);
         if (!Number.isFinite(baseLeft)) continue;
@@ -514,10 +699,18 @@
         const fallbackTimeMs = Math.max(0, (baseLeft - 48) / 0.06);
         const nextLeftValue = 48 + (anchor?.timeMs ?? fallbackTimeMs) * timelineGeometry.pixelsPerMs;
         child.dataset.wwcomboAppliedLeft = String(nextLeftValue);
-        const nextLeft = `${nextLeftValue}px`;
-        if (child.style.left !== nextLeft) child.style.left = nextLeft;
-        if (child.style.transform) child.style.removeProperty('transform');
-        if (child.style.transformOrigin) child.style.removeProperty('transform-origin');
+        if (positionMode === 'translate') {
+          const baseTop = Number(child.dataset.wwcomboBaseTop);
+          const suffix = child.dataset.wwcomboTransformSuffix || '';
+          const nextTransform = `translate(${nextLeftValue}px, ${Number.isFinite(baseTop) ? baseTop : 0}px)${suffix ? ` ${suffix}` : ''}`;
+          child.dataset.wwcomboAppliedTop = String(Number.isFinite(baseTop) ? baseTop : 0);
+          if (child.style.left !== '0px') child.style.left = '0px';
+          if (child.style.top !== '0px') child.style.top = '0px';
+          if (child.style.transform !== nextTransform) child.style.transform = nextTransform;
+        } else {
+          const nextLeft = `${nextLeftValue}px`;
+          if (child.style.left !== nextLeft) child.style.left = nextLeft;
+        }
       }
     }
     updateDamageSeekLine();
@@ -648,23 +841,31 @@
   function reportHostLayout() {
     layoutFrame = 0;
     bindProjectSidebar();
+    ensureComboImportButton();
+    reportAiAssistantLayout();
     const resolvedHost = resolveTimelineHost();
-    bindDamageScroller();
     const host = resolvedHost?.element ?? null;
     if (host !== observedTimelineHost) {
       hostResizeObserver.disconnect();
+      legacyDamageHeightOverride = null;
       observedTimelineHost = host;
       if (host instanceof HTMLElement) hostResizeObserver.observe(host);
     }
     if (!(host instanceof HTMLElement)) {
+      bindDamageScroller();
       window.parent.postMessage({ type: HOST_LAYOUT_TYPE, version: 1, visible: false }, '*');
       return;
     }
     const rect = host.getBoundingClientRect();
     const style = getComputedStyle(host);
-    const legacyDamageHeight = resolvedHost?.legacy
+    const defaultLegacyDamageHeight = resolvedHost?.legacy
       ? Math.min(300, Math.max(190, rect.height * 0.3))
       : 0;
+    const legacyDamageHeight = resolvedHost?.legacy && Number.isFinite(legacyDamageHeightOverride)
+      ? Math.min(Math.max(0, rect.height - 52), Math.max(0, legacyDamageHeightOverride))
+      : defaultLegacyDamageHeight;
+    if (resolvedHost?.legacy) prepareLegacyTimelineHost(host, legacyDamageHeight);
+    bindDamageScroller();
     window.parent.postMessage({
       type: HOST_LAYOUT_TYPE,
       version: 1,
@@ -673,7 +874,10 @@
         left: rect.left,
         top: rect.top + legacyDamageHeight,
         width: rect.width,
-        height: rect.height - legacyDamageHeight
+        height: rect.height - legacyDamageHeight,
+        fullTop: rect.top,
+        fullHeight: rect.height,
+        defaultHeight: rect.height - defaultLegacyDamageHeight
       }
     }, '*');
   }
@@ -696,6 +900,22 @@
     const message = event.data;
     if (message?.type === 'wwcombo:afyg-theme' && message.version === 1) {
       void syncThemeFromHost(message.theme, message.appearanceMode).catch(() => undefined);
+      return;
+    }
+    if (message?.type === HOST_SPLIT_TYPE && message.version === 1 && typeof message.timelineTop === 'number' && Number.isFinite(message.timelineTop)) {
+      const resolvedHost = resolveTimelineHost();
+      const host = resolvedHost?.element;
+      if (resolvedHost?.legacy && host instanceof HTMLElement) {
+        const restoreOriginalEditor = message.collapsed === true;
+        if (restoreOriginalEditor && host.dataset.wwcomboOriginalEditor !== 'true') host.dataset.wwcomboOriginalEditor = 'true';
+        if (!restoreOriginalEditor && host.dataset.wwcomboOriginalEditor === 'true') delete host.dataset.wwcomboOriginalEditor;
+        const rect = host.getBoundingClientRect();
+        const nextHeight = Math.min(Math.max(0, rect.height - 52), Math.max(0, message.timelineTop - rect.top));
+        if (!Number.isFinite(legacyDamageHeightOverride) || Math.abs(legacyDamageHeightOverride - nextHeight) >= 0.5) {
+          legacyDamageHeightOverride = nextHeight;
+          scheduleHostLayout();
+        }
+      }
       return;
     }
     if (message?.type === 'wwcombo:afyg-playhead' && message.version === 1) {

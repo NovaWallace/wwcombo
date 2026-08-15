@@ -73,6 +73,7 @@ export type ComboStep = {
   label: string;
   customLabel?: boolean;
   characterSlot?: CharacterSlot;
+  workshopLane?: 'effects';
   lane: 'main' | 'independent';
   independent: boolean;
   startMin: number;

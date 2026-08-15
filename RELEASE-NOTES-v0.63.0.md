@@ -52,6 +52,7 @@
 
 ## Reliability
 
+- Removed the unfinished Real-time Vision entry from the distributed client while retaining the independent Video recognition workflow.
 - Existing saved settings remain compatible; new Live2D transform settings use each character's existing defaults until changed.
 - Optional characters fail visibly when their separate resource pack is not installed instead of replacing the selected character with another asset.
 - Leaving Home destroys the active Live2D renderer and releases loaded character assets.
