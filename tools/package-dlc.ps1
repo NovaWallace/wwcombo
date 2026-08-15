@@ -114,7 +114,7 @@ Then choose Refresh under Settings > wwcombo DLC and select this character under
 The animation is loaded only on the home page and released after leaving it.
 These copyrighted game assets are provided for a non-commercial fan project.
 "@
-        $archiveName = "wwcombo-v$Version-Live2D-$($character.characterId)-$($names.'zh-CN')-$($names.'en-US').zip"
+        $archiveName = "wwcombo-v$Version-Live2D-$($character.characterId)-$($names.'en-US').zip"
         $archives += Compress-DlcStage $archiveName
     }
 }
