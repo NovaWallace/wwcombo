@@ -46,6 +46,7 @@ export type HelpContent = {
   firstRunTitle: string;
   firstRunDescription: string;
   firstRunFreeWarning: string;
+  tutorialVideoLabel: string;
   openHelp: string;
   continueWithoutHelp: string;
   articles: Record<HelpTab, HelpArticle>;
@@ -66,6 +67,7 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
     firstRunTitle: '第一次使用鸣潮训练场？',
     firstRunDescription: '建议先花一分钟查看帮助。教程会说明 JSON 导入、全局捕获、管理员运行、练习模式与攻略制作流程。',
     firstRunFreeWarning: '本软件完全免费。如果你在任何平台付费购买，说明你被骗了，请立即申请退款。',
+    tutorialVideoLabel: '观看视频教程',
     openHelp: '查看帮助',
     continueWithoutHelp: '先继续',
     articles: {
@@ -347,6 +349,13 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
         summary: '记录公开版本和当前开发版的重要变化。',
         groups: [
           {
+            title: 'v0.64.0 · 2026-08-15',
+            items: [
+              '首次使用引导与“设置 → 帮助”新增官方视频教程入口，点击后会通过系统浏览器打开；按钮文案已适配中文、英文、日文和韩文。',
+              'Windows 发布包调整为三个明确下载项：本体、视频编辑 FFmpeg DLC、主界面 Live2D DLC 总包，避免可选模块在 Release 中遗漏。'
+            ]
+          },
+          {
             title: 'v0.63.0 · 2026-08-09',
             items: [
               '新增兼容模式：最多支持 4 名角色，并同步扩展角色轨道、自适应切人和第 4 个切人按键；兼容模式下可直接编辑角色名与招式名，招式名会同步成为默认提示。',
@@ -466,6 +475,7 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
     firstRunTitle: 'New to Wuthering Waves Trainer?',
     firstRunDescription: 'Take a minute to read the help. It covers JSON import, Global Input Capture, administrator mode, practice modes, and guide creation.',
     firstRunFreeWarning: 'This software is completely free. If you paid for it on any platform, you were scammed. Request a refund immediately.',
+    tutorialVideoLabel: 'Watch Video Tutorial',
     openHelp: 'View Help',
     continueWithoutHelp: 'Continue',
     articles: {
@@ -747,6 +757,13 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
         summary: 'Important changes in public releases and the current development build.',
         groups: [
           {
+            title: 'v0.64.0 · 2026-08-15',
+            items: [
+              'Added the official video tutorial to the first-run guide and Settings > Help. It opens in the system browser and includes Chinese, English, Japanese, and Korean labels.',
+              'Reorganized the Windows release into three clear downloads: the core app, the FFmpeg video DLC, and the complete Live2D home-screen DLC pack.'
+            ]
+          },
+          {
             title: 'v0.63.0 · 2026-08-09',
             items: [
               'Added Compatibility Mode with up to four characters, matching character lanes, adaptive switches, and a fourth switch binding. Character and action names are editable in this mode, and custom action names become their default prompts.',
@@ -866,6 +883,7 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
     firstRunTitle: '鳴潮トレーナーを初めて使いますか？',
     firstRunDescription: 'まず1分ほどヘルプをご覧ください。JSONの読み込み、グローバル入力監視、管理者実行、練習モード、攻略制作の流れを説明します。',
     firstRunFreeWarning: '本ソフトは完全無料です。どこかのプラットフォームで購入した場合は詐欺です。直ちに返金を申請してください。',
+    tutorialVideoLabel: '動画チュートリアルを見る',
     openHelp: 'ヘルプを見る',
     continueWithoutHelp: '先に進む',
     articles: {
@@ -1059,6 +1077,13 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
         summary: '公開版と現在の開発版における主な変更です。',
         groups: [
           {
+            title: 'v0.64.0 · 2026-08-15',
+            items: [
+              '初回ガイドと「設定 → ヘルプ」に公式動画チュートリアルを追加しました。システムブラウザーで開き、中国語・英語・日本語・韓国語のラベルに対応しています。',
+              'Windows版の配布を、本体、動画編集用FFmpeg DLC、ホーム画面用Live2D DLC一式の3つに整理しました。'
+            ]
+          },
+          {
             title: 'v0.63.0 · 2026-08-09',
             items: [
               '互換モードを追加しました。最大4キャラクターに対応し、キャラクターレーン、自動切替、4番目の切替キーも連動します。このモードではキャラクター名とアクション名を編集でき、変更したアクション名が既定の案内になります。',
@@ -1164,6 +1189,7 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
     firstRunTitle: '명조 트레이너를 처음 사용하시나요?',
     firstRunDescription: '먼저 1분 정도 도움말을 확인해 보세요. JSON 가져오기, 전역 입력 캡처, 관리자 실행, 연습 모드와 공략 제작 과정을 설명합니다.',
     firstRunFreeWarning: '이 소프트웨어는 완전히 무료입니다. 어떤 플랫폼에서든 돈을 내고 구매했다면 사기를 당한 것이므로 즉시 환불을 요청하세요.',
+    tutorialVideoLabel: '동영상 튜토리얼 보기',
     openHelp: '도움말 보기',
     continueWithoutHelp: '계속하기',
     articles: {
@@ -1356,6 +1382,13 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
         title: '업데이트 기록',
         summary: '공개 버전과 현재 개발 빌드의 주요 변경 사항입니다.',
         groups: [
+          {
+            title: 'v0.64.0 · 2026-08-15',
+            items: [
+              '첫 실행 안내와 “설정 → 도움말”에 공식 동영상 튜토리얼을 추가했습니다. 시스템 브라우저에서 열리며 중국어, 영어, 일본어, 한국어 버튼을 지원합니다.',
+              'Windows 배포 파일을 본체, 영상 편집용 FFmpeg DLC, 홈 화면용 전체 Live2D DLC의 세 가지 다운로드로 정리했습니다.'
+            ]
+          },
           {
             title: 'v0.63.0 · 2026-08-09',
             items: [

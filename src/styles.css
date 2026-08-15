@@ -1192,7 +1192,8 @@ html[lang='ko-KR'] .role-mode-control { width: auto; min-width: 64px; }
 .first-run-help-dialog > svg { color: var(--red); }
 .first-run-help-dialog h3, .first-run-help-dialog p { margin: 0; }
 .first-run-help-dialog p { max-width: 410px; color: var(--muted); line-height: 1.65; }
-.first-run-help-dialog > div { display: flex; justify-content: center; gap: 8px; margin-top: 7px; }
+.first-run-help-dialog > div { display: flex; justify-content: center; flex-wrap: wrap; gap: 8px; margin-top: 7px; }
+.first-run-video-link, .help-guide-video-link { display: inline-flex; align-items: center; justify-content: center; gap: 7px; white-space: nowrap; }
 .first-run-free-warning { width: 100%; padding: 10px 12px; border: 1px solid rgba(255,71,71,.72); border-radius: 4px; background: rgba(110,0,0,.28); color: #ff8f8f; font-weight: 950; line-height: 1.55; }
 .text-axis-import-backdrop { position: fixed; inset: 0; z-index: 10030; display: grid; place-items: center; padding: 24px; background: rgba(3,7,10,.78); }
 .text-axis-import-dialog { width: min(860px, calc(100vw - 48px)); max-height: calc(100vh - 48px); overflow: auto; display: grid; gap: 13px; padding: 22px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); box-shadow: 0 24px 80px rgba(0,0,0,.62); }
@@ -1252,6 +1253,8 @@ html[lang='ko-KR'] .role-mode-control { width: auto; min-width: 64px; }
 .settings-view-tabs button, .help-guide-tabs button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; white-space: nowrap; }
 .settings-view-tabs button { min-width: 120px; }
 .help-guide { display: grid; gap: 18px; }
+.help-guide-title-actions { display: flex; align-items: center; gap: 12px; }
+.help-guide-video-link { min-height: 34px; padding-inline: 12px; }
 .help-guide-tabs { width: max-content; max-width: 100%; overflow-x: auto; }
 .help-guide-tabs button { min-width: 132px; }
 .help-guide-article { min-width: 0; }
