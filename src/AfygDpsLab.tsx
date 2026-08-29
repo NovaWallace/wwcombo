@@ -1,9 +1,10 @@
-import { cloneElement, isValidElement, useEffect, useMemo, useRef, useState } from 'react';
+import { cloneElement, isValidElement, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactElement, ReactNode, WheelEvent as ReactWheelEvent } from 'react';
-import { CheckCircle2, Download, ExternalLink, FileInput, Link2, Lock, RefreshCw, Send, TriangleAlert } from 'lucide-react';
-import type { CharacterSlot, ComboChart, ComboImageStyle, ComboPeriod, ComboStep } from '../combo-core';
+import { CheckCircle2, Download, ExternalLink, FileInput, Link2, Lock, PanelBottomOpen, RefreshCw, Send, TriangleAlert } from 'lucide-react';
+import type { AfygTimingSettings, CharacterSlot, ComboChart, ComboImageStyle, ComboPeriod, ComboStep } from '../combo-core';
 import { AFYG_EMBED_URL, afygOperationIdForStepId, buildAfygDirectImportUrl, buildAfygProject, defaultAfygOperationKey } from './afygAdapter';
 import type { AfygOperationKeyOverrides } from './afygAdapter';
+import { afygAxisBoundaries, createAfygTimingKeyframe, deleteAfygTimingKeyframe, moveAfygTimingKeyframe, normalizeAfygTimingSettings, pairAfygTimingKeyframe, updateAfygTimingKeyframe } from './afygTiming';
 import { EmbeddedBrowserExitControl } from './EmbeddedBrowserExitControl';
 import { useI18n } from './i18n';
 
@@ -17,6 +18,7 @@ type AfygDpsLabProps = {
   onSelectChart: (id: string) => void;
   onUpdateStep?: (stepId: string, patch: Partial<ComboStep>) => void;
   onPeriodsChange?: (periods: ComboPeriod[]) => void;
+  onTimingChange: (settings: AfygTimingSettings | undefined) => void;
   onExport: (filename: string, bytes: Uint8Array) => Promise<void>;
   onOpenTool: (url?: string) => void;
   onExit: () => void;
@@ -25,6 +27,7 @@ type AfygDpsLabProps = {
 type FloatingPosition = { x: number; y: number };
 type HostedTimelineLayout = { left: number; top: number; width: number; height: number; fullTop?: number; fullHeight?: number; defaultHeight?: number };
 type AfygOverlayLayout = { left: number; top: number; width: number; height: number };
+type AfygToolbarAnchor = { left: number; top: number; height: number };
 type AfygPlayheadControl = { playbackMs: number; onSeek: (timeMs: number) => void; disabled?: boolean; autoFollow?: boolean };
 type AdapterTab = 'direct' | 'effects';
 type AfygSkillOption = { skillType: string; hitName: string; ratio: string; element: string };
@@ -53,6 +56,11 @@ type PendingAfygToolRequest = {
   resolve: (data: unknown) => void;
   reject: (error: Error) => void;
   timer: number;
+};
+type PendingAfygReloadRestore = {
+  projectId: string;
+  startedAt: number;
+  restoring: boolean;
 };
 type AfygRemoteState = {
   project?: { id?: string; name?: string } | null;
@@ -159,16 +167,62 @@ function projectTimelineOperationIds(project: Record<string, unknown>): Set<stri
   }));
 }
 
-export function AfygDpsLab({ chart, library, style, appearanceMode, timelineEditor, playheadControl, onSelectChart, onUpdateStep, onPeriodsChange, onExport, onOpenTool, onExit }: AfygDpsLabProps) {
+function timelineDamageBoundOperationIds(timeline: unknown): Set<string> {
+  const source = timeline && typeof timeline === 'object' && !Array.isArray(timeline)
+    ? timeline as Record<string, unknown>
+    : null;
+  return new Set((Array.isArray(source?.damageBlocks) ? source.damageBlocks : []).flatMap((block) => {
+    if (!block || typeof block !== 'object' || Array.isArray(block)) return [];
+    const record = block as { sourceType?: unknown; sourceId?: unknown; skillHits?: unknown; nonDirectEntries?: unknown };
+    const populated = Array.isArray(record.skillHits) && record.skillHits.length > 0
+      || Array.isArray(record.nonDirectEntries) && record.nonDirectEntries.length > 0;
+    return record.sourceType === 'op' && typeof record.sourceId === 'string' && populated ? [record.sourceId] : [];
+  }));
+}
+
+function projectDamageBoundOperationIds(project: Record<string, unknown>): Set<string> {
+  const phases = project.phases && typeof project.phases === 'object' && !Array.isArray(project.phases)
+    ? project.phases as Record<string, unknown>
+    : null;
+  const timelinePhase = phases?.timeline && typeof phases.timeline === 'object' && !Array.isArray(phases.timeline)
+    ? phases.timeline as Record<string, unknown>
+    : null;
+  return timelineDamageBoundOperationIds(timelinePhase?.data);
+}
+
+function afygTimingSyncPayload(result: ReturnType<typeof buildAfygProject>) {
+  const project = result.file.project;
+  const resultAnalysis = project.resultAnalysis && typeof project.resultAnalysis === 'object' && !Array.isArray(project.resultAnalysis)
+    ? project.resultAnalysis as Record<string, unknown>
+    : { timings: [] };
+  const adapterMetadata = project.wwcomboAdapter && typeof project.wwcomboAdapter === 'object' && !Array.isArray(project.wwcomboAdapter)
+    ? project.wwcomboAdapter as Record<string, unknown>
+    : {};
+  return { resultAnalysis, adapterMetadata };
+}
+
+function afygTimingSignature(chart: ComboChart): string {
+  const durationMs = Math.max(
+    chart.timelineDurationMs ?? 0,
+    ...chart.steps.map((step) => step.startMin + step.durationMax),
+    ...(chart.periods ?? []).map((period) => period.endMs),
+    1
+  );
+  return JSON.stringify({ timing: normalizeAfygTimingSettings(chart.afygTiming) ?? null, periods: chart.periods ?? [], durationMs });
+}
+
+export function AfygDpsLab({ chart, library, style, appearanceMode, timelineEditor, playheadControl, onSelectChart, onUpdateStep, onPeriodsChange, onTimingChange, onExport, onOpenTool, onExit }: AfygDpsLabProps) {
   const { language, text } = useI18n();
   const pageRef = useRef<HTMLDivElement | null>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const baseProjectInputRef = useRef<HTMLInputElement | null>(null);
   const pendingBridgeRequestsRef = useRef(new Map<string, PendingAfygBridgeRequest>());
   const pendingToolRequestsRef = useRef(new Map<string, PendingAfygToolRequest>());
+  const pendingAfygReloadRestoreRef = useRef<PendingAfygReloadRestore | null>(null);
   const orbDragRef = useRef<FloatingDrag | null>(null);
   const drawerDragRef = useRef<FloatingDrag | null>(null);
   const autoSyncTimerRef = useRef<number | null>(null);
+  const timingSyncSignatureRef = useRef('');
   const bindingSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const ensuringOperationIdRef = useRef('');
   const nonDirectDirtyRef = useRef(false);
@@ -196,10 +250,15 @@ export function AfygDpsLab({ chart, library, style, appearanceMode, timelineEdit
   const [comboImportOpen, setComboImportOpen] = useState(false);
   const [comboImportBusyId, setComboImportBusyId] = useState('');
   const [comboImportError, setComboImportError] = useState('');
+  const [timingPlacementActive, setTimingPlacementActive] = useState(false);
+  const [editingTimingKeyframeId, setEditingTimingKeyframeId] = useState('');
+  const [editingTimingSeconds, setEditingTimingSeconds] = useState('0.00');
+  const [globalTimingLines, setGlobalTimingLines] = useState<Array<{ id: string; left: number; top: number; height: number; solid: boolean }>>([]);
   const [hostedTimelineLayout, setHostedTimelineLayout] = useState<HostedTimelineLayout | null>(null);
   const [afygAiAssistantLayout, setAfygAiAssistantLayout] = useState<AfygOverlayLayout | null>(null);
   const [afygSidebarOverlayRight, setAfygSidebarOverlayRight] = useState(0);
-  const [afygTimelineCollapsed, setAfygTimelineCollapsed] = useState(false);
+  const [afygTimelineCollapsed, setAfygTimelineCollapsed] = useState(true);
+  const [afygToolbarAnchor, setAfygToolbarAnchor] = useState<AfygToolbarAnchor | null>(null);
   const [afygTimelineHeight, setAfygTimelineHeight] = useState(0);
   const [afygTimelineZoom, setAfygTimelineZoom] = useState(DEFAULT_AFYG_TIMELINE_ZOOM);
   const [afygTimelineLaneHeight, setAfygTimelineLaneHeight] = useState(DEFAULT_AFYG_TIMELINE_LANE_HEIGHT);
@@ -209,6 +268,7 @@ export function AfygDpsLab({ chart, library, style, appearanceMode, timelineEdit
   const [selectedPeriod, setSelectedPeriod] = useState<ComboPeriod | null>(null);
   const [syncedProjectId, setSyncedProjectId] = useState('');
   const [remoteOperationIds, setRemoteOperationIds] = useState<Set<string>>(() => new Set());
+  const [damageBoundOperationIds, setDamageBoundOperationIds] = useState<Set<string>>(() => new Set());
   const [bindingBusy, setBindingBusy] = useState(false);
   const [bindingSaving, setBindingSaving] = useState(false);
   const [referenceTimingOpening, setReferenceTimingOpening] = useState(false);
@@ -223,6 +283,7 @@ export function AfygDpsLab({ chart, library, style, appearanceMode, timelineEdit
   const [drawerPosition, setDrawerPosition] = useState<FloatingPosition | null>(null);
   const [frameSrc, setFrameSrc] = useState(() => buildAfygWsEmbedUrl(AFYG_EMBED_URL));
   const [frameStatus, setFrameStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [reloadRestoreActive, setReloadRestoreActive] = useState(false);
   const desktopBridgeExpected = '__TAURI_INTERNALS__' in window;
   const afygTimelinePanelDragRef = useRef<AfygTimelinePanelDrag | null>(null);
   const afygTimelineSuppressClickRef = useRef(false);
@@ -248,6 +309,24 @@ export function AfygDpsLab({ chart, library, style, appearanceMode, timelineEdit
     Math.round(afygTimelineDurationMs)
   ])].sort((left, right) => left - right), [afygTimelineDurationMs, chart]);
   const afygTheme = appearanceMode === 'day' || appearanceMode === 'coast' ? 'light' : 'dark';
+  const timingSettings = useMemo(() => normalizeAfygTimingSettings(chart?.afygTiming), [chart?.afygTiming]);
+  const timingKeyframes = useMemo(() => timingSettings?.keyframes ?? [], [timingSettings]);
+  const timingBoundaries = useMemo(() => chart ? afygAxisBoundaries(chart) : [], [chart]);
+
+  useEffect(() => {
+    const page = pageRef.current;
+    if (!page) return;
+    const updateLayout = () => {
+      const width = page.clientWidth;
+      const pageHeight = page.clientHeight;
+      const defaultHeight = Math.round(clampAfyg(pageHeight * 0.36, 250, 420));
+      setHostedTimelineLayout({ left: 0, top: Math.max(0, pageHeight - defaultHeight), width, height: defaultHeight, defaultHeight });
+    };
+    updateLayout();
+    const observer = new ResizeObserver(updateLayout);
+    observer.observe(page);
+    return () => observer.disconnect();
+  }, []);
 
   function postAfygTheme() {
     iframeRef.current?.contentWindow?.postMessage({
@@ -314,8 +393,58 @@ export function AfygDpsLab({ chart, library, style, appearanceMode, timelineEdit
       'https://wuwa-afyg-tool.200503.xyz',
       'https://wuwa-hpyg-tool.200503.xyz'
     ]);
+    let latestRemoteTools: string[] = [];
+    let latestRemoteState: AfygRemoteState | null = null;
+    let restoreRetryTimer: number | null = null;
+
+    const finishReloadRestore = (pending: PendingAfygReloadRestore, confirmed = false) => {
+      if (pendingAfygReloadRestoreRef.current !== pending) return;
+      pendingAfygReloadRestoreRef.current = null;
+      if (restoreRetryTimer !== null) window.clearTimeout(restoreRetryTimer);
+      restoreRetryTimer = null;
+      setReloadRestoreActive(false);
+      if (confirmed) void readCurrentAfygProject();
+    };
+
+    const attemptReloadRestore = () => {
+      const pending = pendingAfygReloadRestoreRef.current;
+      if (!pending) return;
+      if (Date.now() - pending.startedAt >= 30000) {
+        finishReloadRestore(pending);
+        return;
+      }
+      const projectId = typeof latestRemoteState?.project?.id === 'string' ? latestRemoteState.project.id : '';
+      if (projectId === pending.projectId && latestRemoteState?.view === 'timeline') {
+        finishReloadRestore(pending, true);
+        return;
+      }
+      if (pending.restoring
+        || !latestRemoteTools.includes('set_active_project')
+        || !latestRemoteTools.includes('switch_view')) return;
+      pending.restoring = true;
+      void (async () => {
+        if (projectId !== pending.projectId) await requestAfygTool('set_active_project', { id: pending.projectId });
+        await requestAfygTool('switch_view', { view: 'timeline' });
+      })().catch(() => undefined).finally(() => {
+        if (pendingAfygReloadRestoreRef.current !== pending) return;
+        pending.restoring = false;
+        if (restoreRetryTimer !== null) window.clearTimeout(restoreRetryTimer);
+        restoreRetryTimer = window.setTimeout(attemptReloadRestore, 260);
+      });
+    };
+
     const handleBridgeResponse = (event: MessageEvent) => {
       if (!allowedOrigins.has(event.origin) || event.source !== iframeRef.current?.contentWindow) return;
+      const external = event.data as { type?: unknown; version?: unknown; url?: unknown } | null;
+      if (external?.type === 'wwcombo:open-external' && external.version === 1 && typeof external.url === 'string') {
+        try {
+          const url = new URL(external.url);
+          if (url.protocol === 'https:' || url.protocol === 'http:') onOpenTool(url.href);
+        } catch {
+          // Ignore malformed URLs from embedded content.
+        }
+        return;
+      }
       const bridgeStatusMessage = event.data as { type?: string; version?: number; ready?: boolean; websocketReady?: boolean } | null;
       const damageSeekMessage = event.data as { type?: string; version?: number; timeMs?: unknown } | null;
       if (damageSeekMessage?.type === 'wwcombo:afyg-damage-seek' && damageSeekMessage.version === 1 && typeof damageSeekMessage.timeMs === 'number' && Number.isFinite(damageSeekMessage.timeMs)) {
@@ -382,6 +511,22 @@ export function AfygDpsLab({ chart, library, style, appearanceMode, timelineEdit
       if (openComboImport?.type === 'wwcombo:afyg-open-combo-import' && openComboImport.version === 1) {
         setComboImportError('');
         setComboImportOpen(true);
+        return;
+      }
+      const toolbarAnchor = event.data as { type?: string; version?: number; visible?: boolean; rect?: Partial<AfygToolbarAnchor> } | null;
+      if (toolbarAnchor?.type === 'wwcombo:afyg-toolbar-anchor' && toolbarAnchor.version === 1) {
+        const rect = toolbarAnchor.rect;
+        if (!toolbarAnchor.visible || !rect || ![rect.left, rect.top, rect.height].every(Number.isFinite)) {
+          setAfygToolbarAnchor(null);
+        } else {
+          const next = { left: Number(rect.left), top: Number(rect.top), height: Number(rect.height) };
+          setAfygToolbarAnchor((current) => current
+            && current.left === next.left
+            && current.top === next.top
+            && current.height === next.height
+            ? current
+            : next);
+        }
         return;
       }
       const aiAssistantLayout = event.data as { type?: string; version?: number; visible?: boolean; rect?: Partial<AfygOverlayLayout> } | null;
@@ -461,19 +606,26 @@ export function AfygDpsLab({ chart, library, style, appearanceMode, timelineEdit
         }
         if (message.type === 'hello' && message.app === 'wuwa-afyg') {
           const tools = Array.isArray(message.tools) ? message.tools.flatMap((item) => {
+            if (typeof item === 'string') return [item];
             if (!item || typeof item !== 'object') return [];
-            const fn = (item as { function?: { name?: unknown } }).function;
-            return typeof fn?.name === 'string' ? [fn.name] : [];
+            const record = item as { name?: unknown; function?: { name?: unknown } };
+            if (typeof record.name === 'string') return [record.name];
+            return typeof record.function?.name === 'string' ? [record.function.name] : [];
           }) : [];
+          latestRemoteTools = tools;
+          latestRemoteState = message.state && typeof message.state === 'object' ? message.state as AfygRemoteState : null;
           setWsTools(tools);
-          setWsState(message.state && typeof message.state === 'object' ? message.state as AfygRemoteState : null);
+          setWsState(latestRemoteState);
           setWsConnected(true);
           setBridgeStatus('idle');
           setBaseProjectError('');
+          attemptReloadRestore();
           return;
         }
         if (message.type === 'state') {
-          setWsState(message.state && typeof message.state === 'object' ? message.state as AfygRemoteState : null);
+          latestRemoteState = message.state && typeof message.state === 'object' ? message.state as AfygRemoteState : null;
+          setWsState(latestRemoteState);
+          attemptReloadRestore();
           return;
         }
         if (message.type === 'result' && typeof message.id === 'string') {
@@ -510,6 +662,7 @@ export function AfygDpsLab({ chart, library, style, appearanceMode, timelineEdit
       });
       pendingToolRequestsRef.current.clear();
       if (autoSyncTimerRef.current !== null) window.clearTimeout(autoSyncTimerRef.current);
+      if (restoreRetryTimer !== null) window.clearTimeout(restoreRetryTimer);
       if (timelineScrollSendFrameRef.current !== null) cancelAnimationFrame(timelineScrollSendFrameRef.current);
       if (timelineScrollSettleTimerRef.current !== null) window.clearTimeout(timelineScrollSettleTimerRef.current);
     };
@@ -622,6 +775,33 @@ export function AfygDpsLab({ chart, library, style, appearanceMode, timelineEdit
   }, [afygTimelineAnchorsMs, afygTimelineCollapsed, afygTimelineDurationMs, afygTimelinePixelsPerMs, afygTimelineZoom, chart?.id, frameStatus, hostedTimelineLayout?.height, hostedTimelineLayout?.left, hostedTimelineLayout?.top, hostedTimelineLayout?.width]);
 
   useEffect(() => {
+    if (frameStatus !== 'ready' || afygTimelineCollapsed) return;
+    const frame = requestAnimationFrame(() => {
+      const node = timelineScrollNodeRef.current;
+      const iframeRect = iframeRef.current?.getBoundingClientRect();
+      if (!node) return;
+      const nodeRect = node.getBoundingClientRect();
+      const maximum = Math.max(0, node.scrollWidth - node.clientWidth);
+      timelineScrollSequenceRef.current += 1;
+      iframeRef.current?.contentWindow?.postMessage({
+        type: 'wwcombo:afyg-timeline-scroll',
+        version: 1,
+        source: 'timeline',
+        sequence: timelineScrollSequenceRef.current,
+        inputAt: Date.now(),
+        ratio: maximum > 0 ? clampAfyg(node.scrollLeft / maximum, 0, 1) : 0,
+        scrollLeft: node.scrollLeft,
+        viewportOffsetX: iframeRect ? nodeRect.left - iframeRect.left : 0,
+        contentOffset: TIMELINE_CONTENT_OFFSET_PX,
+        pixelsPerMs: afygTimelinePixelsPerMs,
+        renderTotalMs: afygTimelineDurationMs,
+        anchorsMs: afygTimelineAnchorsMs
+      }, new URL(frameSrc).origin);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [afygTimelineAnchorsMs, afygTimelineCollapsed, afygTimelineDurationMs, afygTimelinePixelsPerMs, afygTimelineZoom, frameSrc, frameStatus]);
+
+  useEffect(() => {
     setRoleNames({
       1: style.roleStyles[1].name,
       2: style.roleStyles[2].name,
@@ -643,9 +823,16 @@ export function AfygDpsLab({ chart, library, style, appearanceMode, timelineEdit
       setActiveAfygProjectId('');
       setSyncedProjectId('');
       setRemoteOperationIds(new Set());
+      setDamageBoundOperationIds(new Set());
       setBridgeStatus('idle');
     }
   }, [activeAfygProjectId, wsConnected, wsState]);
+
+  useEffect(() => {
+    if (!wsState?.view || wsState.view === 'timeline') return;
+    setAfygTimelineCollapsed(true);
+    setComboImportOpen(false);
+  }, [wsState?.view]);
 
   useEffect(() => {
     if (!adapterOpen || !desktopBridgeExpected || frameStatus !== 'ready' || injectedBridgeStatus !== 'ready') return;
@@ -702,6 +889,9 @@ export function AfygDpsLab({ chart, library, style, appearanceMode, timelineEdit
     () => selectedStepIds.length === 1 ? chart?.steps.find((step) => step.id === selectedStepIds[0]) ?? null : null,
     [chart, selectedStepIds]
   );
+  const damageBoundStepIds = useMemo(() => new Set((chart?.steps ?? []).flatMap((step) =>
+    damageBoundOperationIds.has(afygOperationIdForStepId(step.id)) ? [step.id] : []
+  )), [chart, damageBoundOperationIds]);
   const adapterTab: AdapterTab = selectedStep?.workshopLane === 'effects' ? 'effects' : 'direct';
   const selectedOperationId = selectedStep ? afygOperationIdForStepId(selectedStep.id) : '';
   const selectedOperationReady = Boolean(
@@ -738,6 +928,49 @@ export function AfygDpsLab({ chart, library, style, appearanceMode, timelineEdit
     () => ([1, 2, 3] as CharacterSlot[]).map((slot) => roleNames[slot]).filter((name, index, names) => Boolean(name) && names.indexOf(name) === index),
     [roleNames]
   );
+  const afygTimelineLocked = wsState?.locked?.timeline === true;
+  function createTimingKeyframeAt(timelineMs: number) {
+    if (!chart || afygTimelineLocked) return;
+    const keyframe = createAfygTimingKeyframe(timelineMs, timingSettings);
+    onTimingChange(normalizeAfygTimingSettings({ version: 1, keyframes: [...timingKeyframes, keyframe] }));
+  }
+
+  function createTimingPausePair(keyframeId: string, endTimelineMs: number) {
+    if (afygTimelineLocked) return;
+    onTimingChange(pairAfygTimingKeyframe(timingSettings, keyframeId, endTimelineMs));
+  }
+
+  function moveTimingKeyframe(keyframeId: string, timelineMs: number) {
+    if (afygTimelineLocked) return;
+    onTimingChange(moveAfygTimingKeyframe(timingSettings, keyframeId, timelineMs));
+  }
+
+  function deleteTimingKeyframe(keyframeId: string) {
+    if (afygTimelineLocked) return;
+    onTimingChange(deleteAfygTimingKeyframe(timingSettings, keyframeId));
+    if (editingTimingKeyframeId === keyframeId) setEditingTimingKeyframeId('');
+  }
+
+  function openTimingKeyframeEditor(keyframeId: string) {
+    const keyframe = timingKeyframes.find((entry) => entry.id === keyframeId);
+    if (!keyframe) return;
+    setEditingTimingKeyframeId(keyframeId);
+    setEditingTimingSeconds((keyframe.gameTimeMs / 1000).toFixed(3));
+  }
+
+  function saveTimingKeyframeEditor() {
+    const seconds = Number(editingTimingSeconds);
+    if (!editingTimingKeyframeId || !Number.isFinite(seconds) || seconds < 0) return;
+    onTimingChange(updateAfygTimingKeyframe(timingSettings, editingTimingKeyframeId, Math.round(seconds * 1000)));
+    setEditingTimingKeyframeId('');
+  }
+
+  function removeTimingKeyframe() {
+    if (!editingTimingKeyframeId) return;
+    onTimingChange(deleteAfygTimingKeyframe(timingSettings, editingTimingKeyframeId));
+    setEditingTimingKeyframeId('');
+  }
+
   const afygTimelinePanelControl: AfygTimelinePanelControl = {
     collapsed: afygTimelineCollapsed,
     onToggleCollapsed: toggleAfygTimelineCollapsed,
@@ -747,11 +980,10 @@ export function AfygDpsLab({ chart, library, style, appearanceMode, timelineEdit
     onPointerCancel: endAfygTimelinePanelDrag,
     onWheel: changeAfygTimelineLaneHeight
   };
-  const afygTimelineLocked = wsState?.locked?.timeline === true;
   const referenceTimingToolsReady = wsConnected
     && ['switch_view', 'get_panels_state', 'open_panel'].every((tool) => wsTools.includes(tool));
   const enhancedTimelineEditor = isValidElement(timelineEditor)
-    ? cloneElement(timelineEditor as ReactElement<{ onSelectionChange?: (stepIds: string[]) => void; onPeriodSelectionChange?: (period: ComboPeriod | null) => void; videoCompactMode?: boolean; videoLaneHeight?: number; hideInspector?: boolean; zoom?: number; onZoomChange?: (value: number) => void; timelinePanelControl?: AfygTimelinePanelControl; referenceTimingControl?: { onOpen: () => void; disabled?: boolean; busy?: boolean }; playheadControl?: AfygPlayheadControl; readOnly?: boolean }>, {
+    ? cloneElement(timelineEditor as ReactElement<{ onSelectionChange?: (stepIds: string[]) => void; onPeriodSelectionChange?: (period: ComboPeriod | null) => void; videoCompactMode?: boolean; videoLaneHeight?: number; hideInspector?: boolean; zoom?: number; onZoomChange?: (value: number) => void; timelinePanelControl?: AfygTimelinePanelControl; referenceTimingControl?: { onOpen: () => void; disabled?: boolean; busy?: boolean }; timingKeyframeControl?: unknown; workshopImportControl?: unknown; playheadControl?: AfygPlayheadControl; highlightedStepIds?: Set<string>; readOnly?: boolean }>, {
         onSelectionChange: setSelectedStepIds,
         onPeriodSelectionChange: setSelectedPeriod,
         videoCompactMode: true,
@@ -764,56 +996,111 @@ export function AfygDpsLab({ chart, library, style, appearanceMode, timelineEdit
           disabled: !referenceTimingToolsReady,
           busy: referenceTimingOpening
         },
+        timingKeyframeControl: {
+          active: timingPlacementActive,
+          disabled: afygTimelineLocked,
+          keyframes: timingKeyframes,
+          boundaries: timingBoundaries,
+          onToggle: () => setTimingPlacementActive((active) => !active),
+          onCreate: createTimingKeyframeAt,
+          onEdit: openTimingKeyframeEditor,
+          onCreatePair: createTimingPausePair,
+          onMove: moveTimingKeyframe,
+          onDelete: deleteTimingKeyframe
+        },
+        workshopImportControl: {
+          onOpen: () => {
+            setComboImportError('');
+            setComboImportOpen(true);
+          },
+          disabled: !library.length
+        },
         playheadControl,
+        highlightedStepIds: damageBoundStepIds,
         hideInspector: true,
         readOnly: afygTimelineLocked
       })
     : timelineEditor;
   const hostedTimelineStyle = hostedTimelineLayout ? (() => {
-    const height = afygTimelineCollapsed ? 52 : afygTimelineHeight || hostedTimelineLayout.height;
+    const maximumHeight = hostedTimelineLayout.fullHeight
+      ? Math.max(AFYG_TIMELINE_MIN_HEIGHT, hostedTimelineLayout.fullHeight - 190)
+      : hostedTimelineLayout.height;
+    const height = clampAfyg(afygTimelineHeight || hostedTimelineLayout.height, AFYG_TIMELINE_MIN_HEIGHT, maximumHeight);
     const bottom = hostedTimelineLayout.top + hostedTimelineLayout.height;
-    const sidebarOverlap = Math.max(0, afygSidebarOverlayRight - hostedTimelineLayout.left);
     const sectionTop = bottom - height;
-    const aiLeft = afygAiAssistantLayout ? afygAiAssistantLayout.left - hostedTimelineLayout.left - 8 : 0;
-    const aiTop = afygAiAssistantLayout ? afygAiAssistantLayout.top - sectionTop - 8 : 0;
-    const aiRight = afygAiAssistantLayout ? aiLeft + afygAiAssistantLayout.width + 16 : 0;
-    const aiBottom = afygAiAssistantLayout ? aiTop + afygAiAssistantLayout.height + 16 : 0;
-    const hasAiOverlap = Boolean(afygAiAssistantLayout
-      && aiRight > sidebarOverlap
-      && aiLeft < hostedTimelineLayout.width
-      && aiBottom > 0
-      && aiTop < height);
-    const clipPath = hasAiOverlap
-      ? `polygon(evenodd, ${sidebarOverlap}px 0, 100% 0, 100% 100%, ${sidebarOverlap}px 100%, ${sidebarOverlap}px 0, ${clampAfyg(aiLeft, sidebarOverlap, hostedTimelineLayout.width)}px ${clampAfyg(aiTop, 0, height)}px, ${clampAfyg(aiRight, sidebarOverlap, hostedTimelineLayout.width)}px ${clampAfyg(aiTop, 0, height)}px, ${clampAfyg(aiRight, sidebarOverlap, hostedTimelineLayout.width)}px ${clampAfyg(aiBottom, 0, height)}px, ${clampAfyg(aiLeft, sidebarOverlap, hostedTimelineLayout.width)}px ${clampAfyg(aiBottom, 0, height)}px, ${clampAfyg(aiLeft, sidebarOverlap, hostedTimelineLayout.width)}px ${clampAfyg(aiTop, 0, height)}px)`
-      : `inset(0 0 0 ${sidebarOverlap}px)`;
+    const sidebarOcclusion = clampAfyg(
+      afygSidebarOverlayRight - hostedTimelineLayout.left,
+      0,
+      hostedTimelineLayout.width
+    );
     return {
       left: hostedTimelineLayout.left,
       top: sectionTop,
       width: hostedTimelineLayout.width,
       height,
-      clipPath,
-      transition: hasAiOverlap ? 'none' : 'clip-path .18s ease'
+      clipPath: sidebarOcclusion > 0 ? `inset(0 0 0 ${sidebarOcclusion}px)` : undefined
     } as CSSProperties;
   })() : undefined;
   useEffect(() => {
     if (frameStatus !== 'ready' || !hostedTimelineLayout || !chart) return;
     const frame = requestAnimationFrame(() => {
-      const section = pageRef.current?.querySelector<HTMLElement>('.afyg-hosted-timeline');
       const iframeRect = iframeRef.current?.getBoundingClientRect();
-      if (!section || !iframeRect) return;
+      const section = pageRef.current?.querySelector<HTMLElement>('.afyg-hosted-timeline') ?? null;
+      if (!iframeRect) return;
       iframeRef.current?.contentWindow?.postMessage({
         type: 'wwcombo:afyg-host-split',
         version: 1,
-        timelineTop: section.getBoundingClientRect().top - iframeRect.top,
+        timelineTop: section
+          ? section.getBoundingClientRect().top - iframeRect.top
+          : hostedTimelineLayout.top + hostedTimelineLayout.height,
         collapsed: afygTimelineCollapsed
       }, new URL(frameSrc).origin);
     });
     return () => cancelAnimationFrame(frame);
-  }, [afygTimelineCollapsed, afygTimelineHeight, chart?.id, frameSrc, frameStatus, hostedTimelineLayout?.height, hostedTimelineLayout?.left, hostedTimelineLayout?.top, hostedTimelineLayout?.width]);
+  }, [afygTimelineCollapsed, afygTimelineHeight, chart?.id, frameSrc, frameStatus, hostedTimelineLayout?.fullHeight, hostedTimelineLayout?.height, hostedTimelineLayout?.left, hostedTimelineLayout?.top, hostedTimelineLayout?.width]);
+  useLayoutEffect(() => {
+    const page = pageRef.current;
+    const section = page?.querySelector<HTMLElement>('.afyg-hosted-timeline') ?? null;
+    const scroll = section?.querySelector<HTMLElement>('.timeline-editor-scroll') ?? null;
+    if (!page || !section || !scroll || afygTimelineCollapsed) {
+      setGlobalTimingLines([]);
+      return;
+    }
+    const update = () => {
+      const pageRect = page.getBoundingClientRect();
+      const sectionRect = section.getBoundingClientRect();
+      const next = Array.from(section.querySelectorAll<HTMLElement>('[data-afyg-global-line="true"]')).flatMap((line) => {
+        const rect = line.getBoundingClientRect();
+        if (rect.left < Math.max(sectionRect.left, afygSidebarOverlayRight) || rect.left > sectionRect.right) return [];
+        return [{
+          id: line.dataset.keyframeId || `${rect.left}`,
+          left: rect.left - pageRect.left,
+          top: 0,
+          height: Math.max(0, sectionRect.bottom - pageRect.top),
+          solid: line.classList.contains('automatic')
+        }];
+      });
+      setGlobalTimingLines(next);
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(page);
+    observer.observe(section);
+    scroll.addEventListener('scroll', update, { passive: true });
+    window.addEventListener('resize', update);
+    return () => {
+      observer.disconnect();
+      scroll.removeEventListener('scroll', update);
+      window.removeEventListener('resize', update);
+    };
+  }, [afygSidebarOverlayRight, afygTimelineCollapsed, afygTimelineHeight, afygTimelineZoom, timingBoundaries, timingKeyframes]);
   const iframeViewportRect = iframeRef.current?.getBoundingClientRect();
-  const pagePlayheadStyle = hostedTimelineLayout && hostedPlayheadLeft !== null && damagePlayheadRange && iframeViewportRect
+  const pagePlayheadLeft = hostedTimelineLayout && hostedPlayheadLeft !== null
+    ? hostedTimelineLayout.left + hostedPlayheadLeft
+    : null;
+  const pagePlayheadStyle = hostedTimelineLayout && pagePlayheadLeft !== null && pagePlayheadLeft >= afygSidebarOverlayRight && damagePlayheadRange && iframeViewportRect
     ? {
-        left: hostedTimelineLayout.left + hostedPlayheadLeft,
+        left: pagePlayheadLeft,
         top: iframeViewportRect.top + damagePlayheadRange.top,
         height: Math.max(0, hostedTimelineLayout.top + hostedTimelineLayout.height - iframeViewportRect.top - damagePlayheadRange.top)
       } as CSSProperties
@@ -877,6 +1164,11 @@ export function AfygDpsLab({ chart, library, style, appearanceMode, timelineEdit
     });
   }
 
+  function prepareAfygReloadRestore(projectId: string) {
+    pendingAfygReloadRestoreRef.current = { projectId, startedAt: Date.now(), restoring: false };
+    setReloadRestoreActive(true);
+  }
+
   async function openAfygReferenceTiming() {
     if (referenceTimingOpening || !referenceTimingToolsReady) return;
     setReferenceTimingOpening(true);
@@ -902,18 +1194,34 @@ export function AfygDpsLab({ chart, library, style, appearanceMode, timelineEdit
     }
   }
 
-  async function readSelectedDamageBinding(): Promise<{ skillHits?: unknown; nonDirectEntries?: unknown }> {
+  async function readDamageBinding(operationId: string): Promise<{ skillHits?: unknown; nonDirectEntries?: unknown }> {
     if (desktopBridgeExpected && injectedBridgeStatus === 'ready') {
       const response = await requestAfygBridge('get-block-damage-binding', {
         projectId: activeAfygProjectId,
-        blockId: selectedOperationId
+        blockId: operationId
       });
       return response.binding && typeof response.binding === 'object'
         ? response.binding as { skillHits?: unknown; nonDirectEntries?: unknown }
         : {};
     }
-    const value = await requestAfygTool('get_block_damage_binding', { blockId: selectedOperationId });
+    const value = await requestAfygTool('get_block_damage_binding', { blockId: operationId });
     return value && typeof value === 'object' ? value as { skillHits?: unknown; nonDirectEntries?: unknown } : {};
+  }
+
+  async function refreshDamageBoundOperation(operationId: string) {
+    const binding = await readDamageBinding(operationId);
+    const populated = Array.isArray(binding.skillHits) && binding.skillHits.length > 0
+      || Array.isArray(binding.nonDirectEntries) && binding.nonDirectEntries.length > 0;
+    setDamageBoundOperationIds((current) => {
+      const next = new Set(current);
+      if (populated) next.add(operationId);
+      else next.delete(operationId);
+      return next;
+    });
+  }
+
+  function readSelectedDamageBinding() {
+    return readDamageBinding(selectedOperationId);
   }
 
   async function loadDirectBinding() {
@@ -1001,6 +1309,7 @@ export function AfygDpsLab({ chart, library, style, appearanceMode, timelineEdit
           hits: binding.hits ?? 1
         }))
       });
+      await refreshDamageBoundOperation(selectedOperationId);
     }).catch(() => {
       setBindingError(text('保存直伤绑定失败。', 'Could not save direct-damage bindings.'));
     }).finally(() => setBindingSaving(false));
@@ -1038,6 +1347,7 @@ export function AfygDpsLab({ chart, library, style, appearanceMode, timelineEdit
           hits: binding.hits ?? 1
         }))
       });
+      await refreshDamageBoundOperation(selectedOperationId);
     } catch {
       setBindingError(text('保存直伤绑定失败，AFYG 原数据未被覆盖。', 'Could not save direct-damage bindings. Existing AFYG data was not overwritten.'));
     } finally {
@@ -1058,6 +1368,7 @@ export function AfygDpsLab({ chart, library, style, appearanceMode, timelineEdit
           responders: binding.responders ?? []
         }))
       });
+      await refreshDamageBoundOperation(selectedOperationId);
     }).catch(() => {
       setBindingError(text('保存效应 / 处决绑定失败。', 'Could not save effect/execution bindings.'));
     }).finally(() => setBindingSaving(false));
@@ -1136,6 +1447,7 @@ export function AfygDpsLab({ chart, library, style, appearanceMode, timelineEdit
           responders: binding.responders ?? []
         }))
       });
+      await refreshDamageBoundOperation(selectedOperationId);
     } catch {
       setBindingError(text('保存效应与处决绑定失败，AFYG 原数据未被覆盖。', 'Could not save effect/execution bindings. Existing AFYG data was not overwritten.'));
     } finally {
@@ -1155,6 +1467,7 @@ export function AfygDpsLab({ chart, library, style, appearanceMode, timelineEdit
     setActiveAfygProjectId(projectId);
     const operationIds = projectTimelineOperationIds(project);
     setRemoteOperationIds(operationIds);
+    setDamageBoundOperationIds(projectDamageBoundOperationIds(project));
     const expectedOperationIds = (chart?.steps ?? [])
       .filter((step) => (step.characterSlot ?? 1) <= 3)
       .map((step) => afygOperationIdForStepId(step.id));
@@ -1204,6 +1517,7 @@ export function AfygDpsLab({ chart, library, style, appearanceMode, timelineEdit
       setBaseProject(null);
       setActiveAfygProjectId('');
       setRemoteOperationIds(new Set());
+      setDamageBoundOperationIds(new Set());
       if (code === 'no-active-project') {
         setBridgeStatus('no-project');
         setBaseProjectError(text('请先在 AFYG 中新建或点选一个工程。', 'Create or select a project in AFYG first.'));
@@ -1257,32 +1571,51 @@ export function AfygDpsLab({ chart, library, style, appearanceMode, timelineEdit
         operationKeyOverrides: operationKeys,
         baseProject: current.project
       });
-      if (desktopBridgeExpected && injectedBridgeStatus === 'ready') {
-        await requestAfygBridge('replace-current-timeline', {
-          projectId: current.projectId,
-          timeline: syncResult.timeline
-        });
-      } else if (wsConnected && wsTools.includes('replace_timeline')) {
+      const timingPayload = afygTimingSyncPayload(syncResult);
+      const wsTimelineToolReady = wsConnected && wsTools.includes('replace_timeline');
+      if (wsTimelineToolReady) {
         await requestAfygTool('replace_timeline', {
           projectId: current.projectId,
           timeline: syncResult.timeline,
-          preserveDamageBindings: true
+          preserveDamageBindings: true,
+          resultTimings: timingPayload.resultAnalysis.timings,
+          wwcomboTimingMap: timingPayload.adapterMetadata.timeMap
         });
+        if (wsTools.includes('set_result_timings')) {
+          await requestAfygTool('set_result_timings', {
+            projectId: current.projectId,
+            timings: timingPayload.resultAnalysis.timings,
+            timeMap: timingPayload.adapterMetadata.timeMap
+          });
+        }
         if (wsTools.includes('switch_view')) {
           await requestAfygTool('switch_view', { view: 'timeline' }).catch(() => undefined);
         }
-      } else {
+      } else if (desktopBridgeExpected && injectedBridgeStatus === 'ready') {
+        prepareAfygReloadRestore(current.projectId);
         await requestAfygBridge('replace-current-timeline', {
           projectId: current.projectId,
-          timeline: syncResult.timeline
+          timeline: syncResult.timeline,
+          ...timingPayload
+        });
+      } else {
+        prepareAfygReloadRestore(current.projectId);
+        await requestAfygBridge('replace-current-timeline', {
+          projectId: current.projectId,
+          timeline: syncResult.timeline,
+          ...timingPayload
         });
       }
       setBridgeStatus('ready');
       setSyncedProjectId(current.projectId);
       setRemoteOperationIds(new Set(syncResult.timeline.opBlocks.map((block) => block.id)));
+      setDamageBoundOperationIds(timelineDamageBoundOperationIds(syncResult.timeline));
+      timingSyncSignatureRef.current = afygTimingSignature(targetChart);
       onSelectChart(targetChart.id);
       return true;
     } catch (error) {
+      pendingAfygReloadRestoreRef.current = null;
+      setReloadRestoreActive(false);
       const code = error instanceof Error ? error.message : '';
       setBridgeStatus(code === 'active-project-changed' || code === 'no-active-project' ? 'no-project' : 'unavailable');
       setBaseProjectError(code === 'active-project-changed'
@@ -1323,21 +1656,24 @@ export function AfygDpsLab({ chart, library, style, appearanceMode, timelineEdit
         baseProject
       });
       if (!next.timeline.opBlocks.some((block) => block.id === operationId)) return;
-      if (desktopBridgeExpected && injectedBridgeStatus === 'ready') {
-        await requestAfygBridge('replace-current-timeline', {
-          projectId: activeAfygProjectId,
-          timeline: next.timeline
-        });
-      } else if (wsConnected && wsTools.includes('replace_timeline')) {
+      if (wsConnected && wsTools.includes('replace_timeline')) {
         await requestAfygTool('replace_timeline', {
           projectId: activeAfygProjectId,
           timeline: next.timeline,
           preserveDamageBindings: true
         });
+      } else if (desktopBridgeExpected && injectedBridgeStatus === 'ready') {
+        prepareAfygReloadRestore(activeAfygProjectId);
+        await requestAfygBridge('replace-current-timeline', {
+          projectId: activeAfygProjectId,
+          timeline: next.timeline,
+          ...afygTimingSyncPayload(next)
+        });
       } else {
         return;
       }
       setRemoteOperationIds(new Set(next.timeline.opBlocks.map((block) => block.id)));
+      setDamageBoundOperationIds(timelineDamageBoundOperationIds(next.timeline));
       setSyncedProjectId(activeAfygProjectId);
       setBaseProject((current) => {
         if (!current) return current;
@@ -1356,6 +1692,8 @@ export function AfygDpsLab({ chart, library, style, appearanceMode, timelineEdit
         };
       });
     } catch {
+      pendingAfygReloadRestoreRef.current = null;
+      setReloadRestoreActive(false);
       setBindingError(text('当前招式块尚未同步到 AFYG。', 'The selected action block could not be synced to AFYG yet.'));
     } finally {
       ensuringOperationIdRef.current = '';
@@ -1369,12 +1707,15 @@ export function AfygDpsLab({ chart, library, style, appearanceMode, timelineEdit
   }, [activeAfygProjectId, adapterOpen, adapterTab, baseProject, chart, injectedBridgeStatus, operationKeys, remoteOperationIds, roleNames, selectedOperationId, selectedOperationReady, selectedStep, style, syncedProjectId, wsConnected, wsTools]);
 
   useEffect(() => {
-    if (!chart || !baseProject || !wsConnected || !wsTools.includes('replace_timeline')) return;
+    if (!chart || !baseProject) return;
     if (!syncedProjectId || syncedProjectId !== activeAfygProjectId) return;
+    const canSyncTimelineByWs = wsConnected && wsTools.includes('replace_timeline');
+    const canSyncTimingByBridge = desktopBridgeExpected && injectedBridgeStatus === 'ready';
+    if (!canSyncTimelineByWs && !canSyncTimingByBridge) return;
     if (autoSyncTimerRef.current !== null) window.clearTimeout(autoSyncTimerRef.current);
     autoSyncTimerRef.current = window.setTimeout(() => {
       const remoteProjectId = typeof wsState?.project?.id === 'string' ? wsState.project.id : '';
-      if (remoteProjectId !== syncedProjectId) return;
+      if (canSyncTimelineByWs && remoteProjectId !== syncedProjectId) return;
       const next = buildAfygProject({
         chart,
         style,
@@ -1382,11 +1723,37 @@ export function AfygDpsLab({ chart, library, style, appearanceMode, timelineEdit
         operationKeyOverrides: operationKeys,
         baseProject
       });
-      void requestAfygTool('replace_timeline', {
-        projectId: syncedProjectId,
-        timeline: next.timeline,
-        preserveDamageBindings: true
-      }).catch(() => {
+      const timingPayload = afygTimingSyncPayload(next);
+      const signature = afygTimingSignature(chart);
+      const timingChanged = timingSyncSignatureRef.current !== signature;
+      void (async () => {
+        if (canSyncTimelineByWs) {
+          await requestAfygTool('replace_timeline', {
+            projectId: syncedProjectId,
+            timeline: next.timeline,
+            preserveDamageBindings: true,
+            resultTimings: timingPayload.resultAnalysis.timings,
+            wwcomboTimingMap: timingPayload.adapterMetadata.timeMap
+          });
+        }
+        if (canSyncTimelineByWs && wsTools.includes('set_result_timings')) {
+          await requestAfygTool('set_result_timings', {
+            projectId: syncedProjectId,
+            timings: timingPayload.resultAnalysis.timings,
+            timeMap: timingPayload.adapterMetadata.timeMap
+          });
+        } else if (timingChanged && desktopBridgeExpected && injectedBridgeStatus === 'ready') {
+          prepareAfygReloadRestore(syncedProjectId);
+          await requestAfygBridge('replace-current-timeline', {
+            projectId: syncedProjectId,
+            timeline: next.timeline,
+            ...timingPayload
+          });
+        }
+        timingSyncSignatureRef.current = signature;
+      })().catch(() => {
+        pendingAfygReloadRestoreRef.current = null;
+        setReloadRestoreActive(false);
         setSyncedProjectId('');
         setBindingError(text('时间轴自动同步已暂停，请重新进入工坊并确认加载连段。', 'Timeline auto-sync was paused. Re-enter Workshop and confirm loading the combo.'));
       });
@@ -1397,7 +1764,7 @@ export function AfygDpsLab({ chart, library, style, appearanceMode, timelineEdit
         autoSyncTimerRef.current = null;
       }
     };
-  }, [activeAfygProjectId, baseProject, chart?.updatedAt, operationKeys, roleNames, style, syncedProjectId, wsConnected, wsState?.project?.id, wsTools]);
+  }, [activeAfygProjectId, baseProject, chart?.updatedAt, desktopBridgeExpected, injectedBridgeStatus, operationKeys, roleNames, style, syncedProjectId, wsConnected, wsState?.project?.id, wsTools]);
 
   async function loadBaseProject(file: File | null) {
     if (!file) return;
@@ -1617,11 +1984,24 @@ export function AfygDpsLab({ chart, library, style, appearanceMode, timelineEdit
 
   const orbStyle = orbPosition ? { left: orbPosition.x, top: orbPosition.y, right: 'auto', bottom: 'auto' } as CSSProperties : undefined;
   const drawerStyle = drawerPosition ? { left: drawerPosition.x, top: drawerPosition.y, right: 'auto' } as CSSProperties : undefined;
+  const afygToolbarVisible = frameStatus === 'ready'
+    && Boolean(afygToolbarAnchor)
+    && (wsState?.view === 'timeline' || !wsConnected);
+  const afygToolbarStyle = afygToolbarAnchor
+    ? { left: afygToolbarAnchor.left + 8, top: afygToolbarAnchor.top, height: afygToolbarAnchor.height } as CSSProperties
+    : undefined;
+  const comboImportDialogStyle = comboImportOpen && afygToolbarAnchor && hostedTimelineLayout
+    ? {
+        left: clampAfyg(afygToolbarAnchor.left + 8, 12, Math.max(12, hostedTimelineLayout.width - 512)),
+        bottom: Math.max(12, hostedTimelineLayout.height - afygToolbarAnchor.top + 10)
+      } as CSSProperties
+    : undefined;
 
   return <div ref={pageRef} className="afyg-page" data-trainer-capture-suspend="true">
     <EmbeddedBrowserExitControl onExit={onExit} />
-    {comboImportOpen && <div className="afyg-combo-import-backdrop" role="presentation" onPointerDown={(event) => { if (event.target === event.currentTarget && !comboImportBusyId) setComboImportOpen(false); }}><section className="afyg-combo-import-dialog" role="dialog" aria-modal="true" aria-labelledby="afyg-combo-import-title"><header><FileInput size={22} /><strong id="afyg-combo-import-title">{text('从连段谱导入', 'Import from Combo Charts')}</strong><button type="button" aria-label={text('关闭', 'Close')} disabled={Boolean(comboImportBusyId)} onClick={() => setComboImportOpen(false)}>×</button></header><div className="afyg-combo-import-list">{library.length ? library.map((item) => <button key={item.id} type="button" className={item.id === chart?.id ? 'current' : ''} disabled={Boolean(comboImportBusyId)} onClick={() => void importComboChart(item)}><strong>{item.title}</strong><span>{[item.character, item.author].filter(Boolean).join(' · ') || text(`${item.steps.length} 个招式块`, `${item.steps.length} action blocks`)}</span>{comboImportBusyId === item.id && <em>{text('导入中……', 'Importing...')}</em>}</button>) : <div className="afyg-combo-import-empty">{text('还没有可导入的连段谱。', 'There are no combo charts to import yet.')}</div>}</div>{comboImportError && <p className="afyg-combo-import-error">{comboImportError}</p>}</section></div>}
+    {comboImportOpen && afygToolbarVisible && <div className="afyg-combo-import-backdrop afyg-combo-import-floating" role="presentation" onPointerDown={(event) => { if (event.target === event.currentTarget && !comboImportBusyId) setComboImportOpen(false); }}><section className="afyg-combo-import-dialog" style={comboImportDialogStyle} role="dialog" aria-modal="true" aria-labelledby="afyg-combo-import-title"><header><FileInput size={22} /><strong id="afyg-combo-import-title">{text('从连段谱导入', 'Import from Combo Charts')}</strong><button type="button" aria-label={text('关闭', 'Close')} disabled={Boolean(comboImportBusyId)} onClick={() => setComboImportOpen(false)}>×</button></header><div className="afyg-combo-import-list">{library.length ? library.map((item) => <button key={item.id} type="button" className={item.id === chart?.id ? 'current' : ''} disabled={Boolean(comboImportBusyId)} onClick={() => void importComboChart(item)}><strong>{item.title}</strong><span>{[item.character, item.author].filter(Boolean).join(' · ') || text(`${item.steps.length} 个招式块`, `${item.steps.length} action blocks`)}</span>{comboImportBusyId === item.id && <em>{text('导入中……', 'Importing...')}</em>}</button>) : <div className="afyg-combo-import-empty">{text('还没有可导入的连段谱。', 'There are no combo charts to import yet.')}</div>}</div>{comboImportError && <p className="afyg-combo-import-error">{comboImportError}</p>}</section></div>}
     {frameStatus === 'loading' && <div className="afyg-frame-loading">{text('正在开启椰果工具箱……', 'Opening Yeguo Toolbox...')}</div>}
+    {reloadRestoreActive && <div className="afyg-frame-loading afyg-reload-restore">{text('正在载入连段并返回排轴……', 'Loading the combo and returning to the timeline...')}</div>}
     {frameStatus === 'error' && <div className="afyg-frame-error" role="alert">
       <TriangleAlert size={24} />
       <strong>{text('AFYG 网站加载失败', 'AFYG could not be loaded')}</strong>
@@ -1650,12 +2030,36 @@ export function AfygDpsLab({ chart, library, style, appearanceMode, timelineEdit
       onError={() => setFrameStatus('error')}
     />
 
+    {globalTimingLines.map((line) => <div key={line.id} className={`afyg-global-timing-line ${line.solid ? 'solid' : ''}`} style={{ left: line.left, top: line.top, height: line.height }} aria-hidden="true" />)}
+    {editingTimingKeyframeId && <div className="afyg-timing-editor-backdrop" role="presentation" onPointerDown={(event) => { if (event.target === event.currentTarget) setEditingTimingKeyframeId(''); }}><section className="afyg-timing-editor" role="dialog" aria-modal="true" aria-labelledby="afyg-timing-editor-title"><header><strong id="afyg-timing-editor-title">{text('编辑游戏内时间', 'Edit In-game Time')}</strong><button type="button" aria-label={text('关闭', 'Close')} onClick={() => setEditingTimingKeyframeId('')}>×</button></header><label>{text('当前点时间（秒）', 'Time at this point (seconds)')}<input autoFocus type="number" min="0" step="0.001" value={editingTimingSeconds} onChange={(event) => setEditingTimingSeconds(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') saveTimingKeyframeEditor(); }} /></label><p>{text('配对关键帧会保持相同时间，二者之间视为游戏计时暂停。', 'Paired keyframes share the same time; game time is paused between them.')}</p><footer><button type="button" className="danger" onClick={removeTimingKeyframe}>{text('删除关键帧', 'Delete Keyframe')}</button><button type="button" className="afyg-primary" onClick={saveTimingKeyframeEditor}>{text('保存', 'Save')}</button></footer></section></div>}
+
     {pagePlayheadStyle && <div className="afyg-page-playhead-line" style={pagePlayheadStyle} aria-hidden="true" />}
-    {hostedTimelineLayout && chart && <section
-      className={`afyg-hosted-timeline ${afygTimelineCollapsed ? 'is-collapsed' : ''}`}
+    {hostedTimelineLayout && chart && !afygTimelineCollapsed && <section
+      className="afyg-hosted-timeline"
       style={hostedTimelineStyle}
       aria-label={text('WWCombo 时间轴', 'WWCombo Timeline')}
-    >{afygTimelineLocked && !afygTimelineCollapsed && <div className="afyg-timeline-lock-watermark" aria-hidden="true"><div><Lock /><span>{text('已锁定', 'Locked')}</span></div></div>}<div className={`video-timeline-compact ${afygTimelineCollapsed ? 'afyg-timeline-collapsed' : ''}`}>{enhancedTimelineEditor}</div></section>}
+    >{afygTimelineLocked && <div className="afyg-timeline-lock-watermark" aria-hidden="true"><div><Lock /><span>{text('已锁定', 'Locked')}</span></div></div>}<div className="video-timeline-compact">{enhancedTimelineEditor}</div></section>}
+
+    {afygToolbarVisible && afygTimelineCollapsed && <div className="afyg-toolbar-extensions" style={afygToolbarStyle}>
+      <button
+        className="afyg-timeline-launcher"
+        type="button"
+        title={text('展开 WWCombo 时间轴', 'Open WWCombo Timeline')}
+        aria-label={text('展开 WWCombo 时间轴', 'Open WWCombo Timeline')}
+        onClick={() => setAfygTimelineCollapsed(false)}
+      ><PanelBottomOpen size={17} /><span>{text('时间轴', 'Timeline')}</span></button>
+      <button
+        className="afyg-combo-import-launcher"
+        type="button"
+        title={text('从连段谱导入操作块', 'Import action blocks from a combo chart')}
+        aria-label={text('从连段谱导入', 'Import from Combo Charts')}
+        aria-expanded={comboImportOpen}
+        onClick={() => {
+          setComboImportError('');
+          setComboImportOpen((open) => !open);
+        }}
+      ><FileInput size={17} /><span>{text('从连段谱导入', 'Import Combo')}</span></button>
+    </div>}
 
     <button
       className={`afyg-import-orb ${adapterOpen ? 'drawer-open' : ''}`}

@@ -9,6 +9,8 @@ import type {
 declare global {
   const __APP_VERSION__: string;
   const __EXPERIMENTAL_ANALYSIS_LABS__: boolean;
+  const __BUFF_TIMER_ENABLED__: boolean;
+  const __SIMULATED_INPUT_ENABLED__: boolean;
   interface Window {
     __TAURI_INTERNALS__?: unknown;
     trainerDesktop?: {
@@ -24,6 +26,7 @@ declare global {
       getOverlayBounds?(): Promise<{ x: number; y: number; width: number; height: number }>;
       getDisplaySize?(): Promise<{ width: number; height: number; scaleFactor?: number }>;
       updateOverlay(payload: unknown): Promise<void>;
+      updateOverlayVisibleNotes?(stepIds: string[]): Promise<void>;
       updateOverlayPractice?(practice: unknown): Promise<void>;
       setRhythmFeedbackVisible?(visible: boolean): Promise<void>;
       updateRhythmFeedback?(payload: unknown): Promise<void>;
@@ -35,6 +38,12 @@ declare global {
       getKeyMappingBounds?(): Promise<{ x: number; y: number; width: number; height: number }>;
       updateRecordingIndicator?(payload: unknown): Promise<void>;
       updateRealtimeVision?(payload: unknown): Promise<void>;
+      setRealtimeVisionBounds?(bounds: { x: number; y: number; width: number; height: number }): Promise<void>;
+      setRealtimeVisionPosition?(position: { x: number; y: number }): Promise<void>;
+      getRealtimeVisionBounds?(): Promise<{ x: number; y: number; width: number; height: number }>;
+      setRealtimeVisionClickThrough?(enabled: boolean): Promise<void>;
+      startSimulatedInput?(events: Array<{ atMs: number; type: 'keydown' | 'keyup' | 'mousedown' | 'mouseup'; code: string; cursorDx?: number; cursorDy?: number }>): Promise<{ startsInMs?: number }>;
+      stopSimulatedInput?(): Promise<void>;
       onOverlayBoundsChanged?(callback: (bounds: { x: number; y: number; width: number; height: number }) => void): () => void;
       onOverlayNotesBoundsChanged?(callback: (bounds: { x: number; y: number; width: number; height: number }) => void): () => void;
       onOverlayMoveModeRequested?(callback: (enabled: boolean) => void): () => void;
@@ -83,6 +92,7 @@ declare global {
       onWindowBlur?(callback: () => void): () => void;
       onUpdate(callback: (payload: unknown) => void): () => void;
       onPracticeUpdate?(callback: (practice: unknown) => void): () => void;
+      updateOverlayVisibleNotes?(stepIds: string[]): Promise<void>;
     };
     trainerOverlayNotes?: {
       getState(): Promise<unknown>;
@@ -121,6 +131,9 @@ declare global {
     };
     realtimeVisionOverlay?: {
       getState(): Promise<unknown>;
+      getBounds(): Promise<{ x: number; y: number; width: number; height: number }>;
+      setBounds(bounds: { x: number; y: number; width: number; height: number }): Promise<void>;
+      setPosition(position: { x: number; y: number }): Promise<void>;
       onUpdate(callback: (payload: unknown) => void): () => void;
     };
   }

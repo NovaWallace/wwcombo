@@ -11,6 +11,10 @@ export type RealtimeBuffDefinition = {
   id: string;
   name: string;
   enabled: boolean;
+  triggerCode: string;
+  triggerMode: RealtimeBuffTriggerMode;
+  triggerInputMode: RealtimeBuffInputMode;
+  holdThresholdMs: number;
   durationSeconds: number;
   warningLeadSeconds: number;
   matchThreshold: number;
@@ -20,7 +24,17 @@ export type RealtimeBuffDefinition = {
   templateDataUrl?: string;
 };
 
+export type RealtimeBuffTriggerMode = 'press' | 'hold-release';
+export type RealtimeBuffInputMode = 'keyboard' | 'gamepad';
+
 export type RealtimeVisionOverlayCorner = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+
+export type RealtimeVisionOverlayBounds = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
 
 export type RealtimeVisionSettings = {
   sampleFps: number;
@@ -29,6 +43,7 @@ export type RealtimeVisionSettings = {
   timerLuminanceThreshold: number;
   overlayEnabled: boolean;
   overlayCorner: RealtimeVisionOverlayCorner;
+  overlayBounds?: RealtimeVisionOverlayBounds;
   soundEnabled: boolean;
   buffs: RealtimeBuffDefinition[];
 };
@@ -120,23 +135,26 @@ export const DEFAULT_BUFF_SEARCH_ROI: VisionRect = {
 };
 
 export const DEFAULT_REALTIME_VISION_SETTINGS: RealtimeVisionSettings = {
-  sampleFps: 10,
+  sampleFps: 5,
   timerEnabled: true,
   timerRoi: UPSTREAM_TIMER_ROI,
   timerLuminanceThreshold: 200,
   overlayEnabled: true,
-  overlayCorner: 'top-right',
+  overlayCorner: 'top-left',
   soundEnabled: true,
   buffs: [{
     id: 'buff-1',
-    name: '绯雪变奏 Buff',
+    name: 'Buff 1',
     enabled: true,
-    durationSeconds: 30,
+    triggerCode: '',
+    triggerMode: 'press',
+    triggerInputMode: 'keyboard',
+    holdThresholdMs: 300,
+    durationSeconds: 15,
     warningLeadSeconds: 3,
     matchThreshold: 0.86,
     roi: DEFAULT_BUFF_SEARCH_ROI,
-    detectionWindowSeconds: 5,
-    templateDataUrl: BUILTIN_FEIXUE_BUFF_TEMPLATE_URL
+    detectionWindowSeconds: 5
   }]
 };
 
@@ -178,6 +196,16 @@ let cachedDigitTemplates: Map<number, BinaryGlyph[]> | null = null;
 function clamp(value: number, min: number, max: number): number {
   if (!Number.isFinite(value)) return min;
   return Math.min(max, Math.max(min, value));
+}
+
+function normalizeRealtimeVisionOverlayBounds(value: Partial<RealtimeVisionOverlayBounds> | null | undefined): RealtimeVisionOverlayBounds | undefined {
+  if (!value || ![value.x, value.y, value.width, value.height].every(Number.isFinite)) return undefined;
+  return {
+    x: clamp(Number(value.x), -100000, 100000),
+    y: clamp(Number(value.y), -100000, 100000),
+    width: clamp(Number(value.width), 180, 1440),
+    height: clamp(Number(value.height), 64, 1000)
+  };
 }
 
 function rectApproximatelyEquals(value: Partial<VisionRect> | null | undefined, expected: VisionRect): boolean {
@@ -264,20 +292,20 @@ export function normalizeRealtimeVisionSettings(value: Partial<RealtimeVisionSet
       && (!entry?.roi || rectApproximatelyEquals(entry.roi, DEFAULT_BUFF_ROI));
     const rawThreshold = Number(entry?.matchThreshold);
     const matchThreshold = rawThreshold || DEFAULT_REALTIME_VISION_SETTINGS.buffs[0].matchThreshold;
-    const templateSource = typeof entry?.templateDataUrl === 'string'
-      && (entry.templateDataUrl.startsWith('data:image/') || entry.templateDataUrl.startsWith('/vision/'))
-      ? entry.templateDataUrl
-      : builtInDefault
-        ? BUILTIN_FEIXUE_BUFF_TEMPLATE_URL
-        : undefined;
     const fallbackName = builtInDefault ? DEFAULT_REALTIME_VISION_SETTINGS.buffs[0].name : `Buff ${index + 1}`;
     const rawName = typeof entry?.name === 'string' && entry.name.trim() ? entry.name.trim() : fallbackName;
+    const triggerMode: RealtimeBuffTriggerMode = entry?.triggerMode === 'hold-release' ? 'hold-release' : 'press';
+    const triggerInputMode: RealtimeBuffInputMode = entry?.triggerInputMode === 'gamepad' ? 'gamepad' : 'keyboard';
     return {
       id,
       name: builtInDefault && rawName === 'Buff 1' ? fallbackName : rawName.slice(0, 40),
       enabled: entry?.enabled !== false,
+      triggerCode: typeof entry?.triggerCode === 'string' ? entry.triggerCode.trim().slice(0, 80) : '',
+      triggerMode,
+      triggerInputMode,
+      holdThresholdMs: clamp(Math.round(Number(entry?.holdThresholdMs) || 300), 100, 5000),
       durationSeconds: clamp(
-        Number(entry?.durationSeconds) || (builtInDefault ? DEFAULT_REALTIME_VISION_SETTINGS.buffs[0].durationSeconds : 20),
+        Number(entry?.durationSeconds) || DEFAULT_REALTIME_VISION_SETTINGS.buffs[0].durationSeconds,
         0.1,
         600
       ),
@@ -285,8 +313,7 @@ export function normalizeRealtimeVisionSettings(value: Partial<RealtimeVisionSet
       matchThreshold: clamp(matchThreshold, 0.35, 0.99),
       roi: normalizeVisionRect(migrateDefaultRoi ? DEFAULT_BUFF_SEARCH_ROI : entry?.roi, builtInDefault ? DEFAULT_BUFF_SEARCH_ROI : DEFAULT_BUFF_ROI),
       triggerStepId: typeof entry?.triggerStepId === 'string' && entry.triggerStepId.trim() ? entry.triggerStepId : undefined,
-      detectionWindowSeconds: clamp(Number(entry?.detectionWindowSeconds) || 5, 0.5, 30),
-      templateDataUrl: templateSource
+      detectionWindowSeconds: clamp(Number(entry?.detectionWindowSeconds) || 5, 0.5, 30)
     };
   });
   const migrateTimerRoi = rectApproximatelyEquals(value?.timerRoi, LEGACY_UPSTREAM_TIMER_ROI);
@@ -303,9 +330,10 @@ export function normalizeRealtimeVisionSettings(value: Partial<RealtimeVisionSet
     timerRoi: normalizeVisionRect(timerRoi, UPSTREAM_TIMER_ROI),
     timerLuminanceThreshold: clamp(Math.round(timerLuminanceThreshold), 110, 245),
     overlayEnabled: value?.overlayEnabled !== false,
-    overlayCorner: value?.overlayCorner === 'top-left' || value?.overlayCorner === 'bottom-left' || value?.overlayCorner === 'bottom-right'
+    overlayCorner: value?.overlayCorner === 'top-right' || value?.overlayCorner === 'bottom-left' || value?.overlayCorner === 'bottom-right'
       ? value.overlayCorner
-      : 'top-right',
+      : 'top-left',
+    overlayBounds: normalizeRealtimeVisionOverlayBounds(value?.overlayBounds),
     soundEnabled: value?.soundEnabled !== false,
     buffs: buffs.length ? buffs : DEFAULT_REALTIME_VISION_SETTINGS.buffs.map((entry) => ({ ...entry, roi: { ...entry.roi } }))
   };
@@ -477,7 +505,7 @@ function isTimerSeparator(mask: Uint8Array, width: number, height: number): bool
   return runs[1].start - runs[0].end - 1 >= Math.max(2, Math.round(height * 0.18));
 }
 
-export function recognizeChallengeTimer(image: ImageData, luminanceThreshold = 200): TimerRecognition | null {
+function recognizeChallengeTimerAtThreshold(image: ImageData, luminanceThreshold: number): TimerRecognition | null {
   const { width, height, data } = image;
   if (width < 12 || height < 8) return null;
   const mask = new Uint8Array(width * height);
@@ -593,6 +621,31 @@ export function recognizeChallengeTimer(image: ImageData, luminanceThreshold = 2
   };
 }
 
+export function recognizeChallengeTimer(image: ImageData, luminanceThreshold = 200): TimerRecognition | null {
+  const minimumThreshold = clamp(Math.round(luminanceThreshold), 110, 254);
+  const thresholds = [254, 252, 250, 248, 246, 242, 236, 228, 218, minimumThreshold]
+    .filter((threshold, index, values) => threshold >= minimumThreshold && values.indexOf(threshold) === index);
+  const readings: TimerRecognition[] = [];
+  const support = new Map<number, TimerRecognition[]>();
+
+  for (const threshold of thresholds) {
+    const reading = recognizeChallengeTimerAtThreshold(image, threshold);
+    if (!reading) continue;
+    readings.push(reading);
+    const matching = [...(support.get(reading.seconds) ?? []), reading];
+    support.set(reading.seconds, matching);
+    if (matching.length >= 2) {
+      const best = matching.reduce((current, candidate) => candidate.confidence > current.confidence ? candidate : current);
+      return { ...best, confidence: Math.min(1, best.confidence + 0.03) };
+    }
+  }
+
+  return readings.reduce<TimerRecognition | null>((best, reading) => {
+    if (!best || reading.confidence > best.confidence) return reading;
+    return best;
+  }, null);
+}
+
 export class CountdownTimerTracker {
   private accepted: StableTimerSnapshot | null = null;
   private pendingSeconds: number | null = null;
@@ -609,11 +662,27 @@ export class CountdownTimerTracker {
   update(reading: TimerRecognition | null, now = performance.now()): StableTimerSnapshot | null {
     if (!reading) {
       this.misses += 1;
-      if (!this.accepted || this.misses >= 5) return null;
+      if (!this.accepted) return null;
       return { ...this.accepted, stale: true };
     }
     const missesBeforeReading = this.misses;
     this.misses = 0;
+
+    // Keep the original observation anchor while the on-screen integer is
+    // unchanged. Re-anchoring every couple of identical OCR frames makes the
+    // projected countdown pause and then jump when the next integer appears.
+    if (this.accepted && reading.seconds === this.accepted.seconds) {
+      this.pendingSeconds = null;
+      this.pendingCount = 0;
+      if (missesBeforeReading > 0) {
+        // The game timer can be hidden and paused by an ultimate animation.
+        // Re-anchor an unchanged value when OCR returns so the hidden interval
+        // is not incorrectly subtracted from the game clock.
+        this.accepted = { ...reading, observedAt: now, stale: false };
+      }
+      return { ...this.accepted, stale: false };
+    }
+
     if (this.pendingSeconds === reading.seconds) this.pendingCount += 1;
     else {
       this.pendingSeconds = reading.seconds;
@@ -623,10 +692,17 @@ export class CountdownTimerTracker {
     let requiredMatches = this.accepted ? 2 : 2;
     if (this.accepted) {
       const elapsedSeconds = Math.max(0, (now - this.accepted.observedAt) / 1000);
+      const expectedSeconds = Math.max(0, this.accepted.seconds - elapsedSeconds);
       const tooFarBackward = reading.seconds < this.accepted.seconds - Math.ceil(elapsedSeconds + 4);
       const timerReset = reading.seconds > this.accepted.seconds + 1;
       if (tooFarBackward) requiredMatches = 3;
       if (timerReset && missesBeforeReading < 3) requiredMatches = 4;
+      // A normal countdown transition is already strongly constrained by the
+      // previous value and its observation time. Accept it on the first good
+      // frame so the trigger time is not delayed by another OCR sample.
+      const normalCountdownStep = reading.seconds < this.accepted.seconds
+        && Math.abs(reading.seconds - expectedSeconds) <= 1.1;
+      if (normalCountdownStep && !tooFarBackward) requiredMatches = 1;
     }
     if (this.pendingCount >= requiredMatches) {
       this.accepted = { ...reading, observedAt: now, stale: false };

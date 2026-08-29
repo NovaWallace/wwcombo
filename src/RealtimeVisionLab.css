@@ -463,6 +463,27 @@
   gap: 9px;
 }
 
+.realtime-vision-overlay-position-field {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 36px;
+  align-items: end;
+  gap: 7px;
+}
+
+.realtime-vision-overlay-position-field .realtime-vision-overlay-move-button {
+  width: 36px;
+  min-width: 36px;
+  height: 34px;
+  min-height: 34px;
+  padding: 0;
+}
+
+.realtime-vision-overlay-move-button:disabled {
+  opacity: .4;
+  cursor: not-allowed;
+}
+
 .realtime-vision-field-grid.three {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
@@ -516,6 +537,31 @@
   color: var(--text);
   font-size: 12px;
   font-weight: 850;
+}
+
+.realtime-vision-global-input {
+  min-width: 0;
+  min-height: 38px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border-left: 3px solid #2add7d;
+  background: rgba(42, 221, 125, .08);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.realtime-vision-global-input.warning {
+  border-left-color: #ffd344;
+  background: rgba(255, 211, 68, .09);
+}
+
+.realtime-vision-global-input button {
+  min-height: 28px;
+  padding: 0 9px;
 }
 
 .realtime-vision-switch {
@@ -592,6 +638,77 @@
   grid-template-columns: 42px minmax(0, 1fr) 34px 32px;
   align-items: end;
   gap: 8px;
+}
+
+.realtime-vision-trigger-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 34px 32px;
+  align-items: end;
+  gap: 8px;
+}
+
+.realtime-vision-trigger-main .icon-button {
+  width: 32px;
+  min-width: 32px;
+  height: 34px;
+  min-height: 34px;
+}
+
+.realtime-vision-trigger-binding {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.realtime-vision-binding-button {
+  min-width: 140px;
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 7px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.realtime-vision-binding-button.active {
+  border-color: #ffd344;
+  color: #ffd344;
+}
+
+.realtime-vision-trigger-mode {
+  margin-left: auto;
+}
+
+.realtime-vision-trigger-mode button {
+  min-height: 32px;
+  padding: 0 9px;
+  font-size: 10px;
+}
+
+.realtime-vision-trigger-actions {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.realtime-vision-trigger-actions small {
+  min-width: 0;
+  margin-right: auto;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.realtime-vision-trigger-actions button {
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 9px;
 }
 
 .realtime-vision-template-preview {

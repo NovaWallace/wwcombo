@@ -108,7 +108,7 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
               '“演示”按时间自动播放连段，适合先观察顺序与节奏，不要求你正确输入。',
               '“推进”在正确输入后前进，判定较宽松，适合熟悉操作顺序。',
               '“挑战”同时检查顺序和时机，适合已经熟练后检验稳定性。',
-              '选好连段与模式后按 F 开始，按 Esc 结束；需要时可开启“轴首招启动”或结束后自动复位。'
+              '选好连段与模式后按当前输入模式设置的“开始”键开始，按 Esc（或当前绑定的结束键）结束；手柄玩家需要先开启全局捕获。'
             ]
           },
           {
@@ -131,7 +131,7 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
             items: [
               '先在“设置”核对键鼠或手柄绑定，再开启左侧栏的“全局捕获”。',
               'Windows 版启动时会自动请求管理员权限，请确认系统 UAC 弹窗，确保可以捕获以管理员身份运行的游戏输入。',
-              '进入“录制”，按 F 开始、Esc 结束。默认点击“覆盖”把本次输入载入编辑区；在文字轴界面左下开启“基于文字轴”后，该按钮会变为“调试”，只用录制数据校准现有招式的位置和持续时间，不新增招式。'
+              '进入“录制”，按当前输入模式设置的“开始”键开始、按 Esc 结束。默认点击“覆盖”把本次输入载入编辑区；在文字轴界面左下开启“基于文字轴”后，该按钮会变为“调试”，只用录制数据校准现有招式的位置和持续时间，不新增招式。手柄在游戏后台使用时需要先开启全局捕获。'
             ],
             note: '开始正式录制前，建议先做一次短测试，确认切人、长按和鼠标按键都能被正确识别。'
           },
@@ -274,7 +274,7 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
               { name: '演示', effect: '按时间自动播放连段，用于观察顺序和节奏，不检查输入。' },
               { name: '推进', effect: '正确输入后推进到下一步，判定较宽松，适合熟悉操作顺序。' },
               { name: '挑战', effect: '同时检查操作顺序和输入时机，适合熟练后检验稳定性。' },
-              { name: 'F / Esc', effect: '分别开始和结束当前练习；后台游戏输入需要先开启全局捕获。' }
+              { name: '开始 / Esc', effect: '开始键随键鼠、Xbox 或 PlayStation 的当前绑定变化；结束键用于停止当前练习。后台游戏输入需要先开启全局捕获。' }
             ]
           },
           {
@@ -682,7 +682,7 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
               { name: 'Demo', effect: 'Plays by time for studying order and rhythm without checking input.' },
               { name: 'Advance', effect: 'Moves to the next step after correct input with forgiving timing.' },
               { name: 'Challenge', effect: 'Checks both action order and timing for consistency testing.' },
-              { name: 'F / Esc', effect: 'Starts and stops the current session. Enable Global Input Capture for background game input.' }
+              { name: 'Start / Esc', effect: 'The start key follows the current Keyboard & Mouse, Xbox, or PlayStation binding. Enable Global Input Capture for background game input.' }
             ]
           },
           {
@@ -1002,7 +1002,7 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
               { name: 'デモ', effect: '入力を判定せず、時間に沿って順番とリズムを表示します。' },
               { name: '進行', effect: '正しい入力で次へ進みます。判定は比較的緩めです。' },
               { name: 'チャレンジ', effect: '操作順とタイミングを同時に確認します。' },
-              { name: 'F / Esc', effect: '現在の練習を開始／終了します。ゲームの背面入力にはグローバル監視が必要です。' }
+              { name: '開始 / Esc', effect: '開始キーは現在のキーボード／マウス、Xbox、PlayStation の設定に従います。ゲームの背面入力にはグローバル監視が必要です。' }
             ]
           },
           {
@@ -1308,7 +1308,7 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
               { name: '데모', effect: '입력을 검사하지 않고 시간에 맞춰 순서와 리듬을 보여 줍니다.' },
               { name: '진행', effect: '올바른 입력 후 다음 단계로 진행하며 판정이 비교적 여유롭습니다.' },
               { name: '도전', effect: '동작 순서와 입력 타이밍을 함께 검사합니다.' },
-              { name: 'F / Esc', effect: '현재 연습을 시작/종료합니다. 게임 뒤 입력에는 전역 캡처가 필요합니다.' }
+              { name: '시작 / Esc', effect: '시작 키는 현재 키보드/마우스, Xbox 또는 PlayStation 바인딩을 따릅니다. 게임 뒤 입력에는 전역 캡처가 필요합니다.' }
             ]
           },
           {

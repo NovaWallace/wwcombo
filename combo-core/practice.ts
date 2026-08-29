@@ -73,20 +73,42 @@ export class PracticeSession {
   private startedFromElapsed = 0;
   private unlockedAxisStarts = new Set<number>();
   private waitingAxisStart: number | null = null;
+  private readonly sourceChart: ComboChart;
+  private autoLoopPeriod: NonNullable<ComboChart['periods']>[number] | null = null;
+  private autoLoopSteps: ComboStep[] = [];
+  private autoLoopCopies = 0;
 
   constructor(
-    private readonly chart: ComboChart,
+    private chart: ComboChart,
     private readonly moves: MoveDefinition[],
     private readonly bindings: KeyBinding[],
     private readonly settings: PracticeSettings
-  ) {}
+  ) {
+    this.sourceChart = chart;
+    this.autoLoopPeriod = settings.mode === 'free'
+      ? [...(chart.periods ?? [])]
+        .filter((period) => period.kind === 'loop_axis')
+        .sort((left, right) => left.startMs - right.startMs || left.id.localeCompare(right.id))
+        .at(-1) ?? null
+      : null;
+    if (this.autoLoopPeriod) {
+      this.autoLoopSteps = chart.steps.filter((step) =>
+        step.startMin >= this.autoLoopPeriod!.startMs && step.startMin <= this.autoLoopPeriod!.endMs
+      );
+    }
+  }
 
-  start(time: number, elapsedOffset = 0): PracticeSnapshot {
-    if (this.settings.axisGateEnabled && this.settings.mode !== 'lenient' && elapsedOffset <= 0) return this.arm();
+  getChart(): ComboChart {
+    return this.chart;
+  }
+
+  start(time: number, elapsedOffset = 0, bypassAxisGate = false): PracticeSnapshot {
+    if (!bypassAxisGate && this.settings.axisGateEnabled && this.settings.mode !== 'lenient' && elapsedOffset <= 0) return this.arm();
     return this.startPlayback(time, elapsedOffset);
   }
 
   private arm(): PracticeSnapshot {
+    this.resetAutoLoopRuntime();
     this.startedAt = null;
     this.elapsedMs = 0;
     this.startedFromElapsed = 0;
@@ -104,6 +126,7 @@ export class PracticeSession {
   }
 
   private startPlayback(time: number, elapsedOffset = 0): PracticeSnapshot {
+    this.resetAutoLoopRuntime();
     const safeOffset = Math.max(0, Math.round(elapsedOffset));
     this.startedAt = time - safeOffset;
     this.elapsedMs = safeOffset;
@@ -117,6 +140,11 @@ export class PracticeSession {
     this.judgements.clear();
     this.missedStepIds.clear();
     this.unlockedAxisStarts.add(safeOffset);
+    if (this.settings.mode === 'free') {
+      for (const period of this.chart.periods ?? []) {
+        if (period.kind === 'loop_axis') this.unlockedAxisStarts.add(period.startMs);
+      }
+    }
     this.waitingAxisStart = null;
     if (this.settings.mode === 'lenient') this.advanceLenientByElapsed(safeOffset);
     else if (safeOffset > 0) this.currentStepIndex = this.findActiveIndex(safeOffset);
@@ -147,7 +175,9 @@ export class PracticeSession {
       this.missedStepIds.clear();
       this.unlockedAxisStarts.clear();
     }
-    return this.snapshot();
+    const snapshot = this.snapshot();
+    this.resetAutoLoopRuntime();
+    return snapshot;
   }
 
   accept(event: TrainerInputEvent, resetProgressOnStop = false): PracticeSnapshot {
@@ -230,6 +260,7 @@ export class PracticeSession {
   }
 
   private advanceByElapsed(elapsed: number): void {
+    this.ensureAutoLoopCopies(elapsed);
     if (this.settings.mode === 'lenient') {
       this.advanceLenientByElapsed(elapsed);
       return;
@@ -312,8 +343,61 @@ export class PracticeSession {
   }
 
   private advanceLenientByElapsed(elapsed: number): void {
+    this.ensureAutoLoopCopies(elapsed);
     this.currentStepIndex = this.findNextLenientIndex(this.currentStepIndex, elapsed);
     this.completeIfLenientFinished();
+  }
+
+  private resetAutoLoopRuntime(): void {
+    if (!this.autoLoopPeriod || this.autoLoopCopies === 0) return;
+    this.chart = this.sourceChart;
+    this.autoLoopCopies = 0;
+    this.unlockedAxisStarts = new Set(
+      [...this.unlockedAxisStarts].filter((start) => start <= this.autoLoopPeriod!.endMs)
+    );
+  }
+
+  private ensureAutoLoopCopies(elapsed: number): void {
+    const period = this.autoLoopPeriod;
+    const sourceSteps = this.autoLoopSteps;
+    if (!period || !sourceSteps.length) return;
+    const duration = period.endMs - period.startMs;
+    if (duration <= 0 || elapsed < period.startMs + duration / 2) return;
+    const requiredCopies = Math.floor((elapsed - (period.startMs + duration / 2)) / duration) + 1;
+    while (this.autoLoopCopies < requiredCopies) {
+      const copyIndex = this.autoLoopCopies + 1;
+      const offset = duration * copyIndex;
+      const copiedPeriod = {
+        ...period,
+        id: `${period.id}::runtime-loop-${copyIndex}`,
+        startMs: period.startMs + offset,
+        endMs: period.endMs + offset,
+        loopIndex: (period.loopIndex ?? 1) + copyIndex
+      };
+      const copiedSteps = sourceSteps.map((step) => ({
+        ...step,
+        id: `${step.id}::runtime-loop-${copyIndex}`,
+        startMin: step.startMin + offset,
+        startMax: step.startMax + offset,
+        samples: step.samples.map((sample) => ({
+          ...sample,
+          startTime: sample.startTime + offset
+        }))
+      }));
+      const contentLabels = Object.fromEntries(copiedSteps.flatMap((step, index) => {
+        const sourceStep = sourceSteps[index];
+        const label = this.chart.contentLabels?.[sourceStep.id];
+        return label === undefined ? [] : [[step.id, label] as const];
+      }));
+      this.chart = {
+        ...this.chart,
+        steps: [...this.chart.steps, ...copiedSteps].sort((left, right) => left.startMin - right.startMin || left.id.localeCompare(right.id)),
+        periods: [...(this.chart.periods ?? []), copiedPeriod].sort((left, right) => left.startMs - right.startMs || left.id.localeCompare(right.id)),
+        contentLabels: { ...this.chart.contentLabels, ...contentLabels }
+      };
+      this.unlockedAxisStarts.add(copiedPeriod.startMs);
+      this.autoLoopCopies = copyIndex;
+    }
   }
 
   private findNextLenientIndex(startIndex: number, elapsed: number): number {

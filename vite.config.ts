@@ -4,7 +4,8 @@ import { rmSync } from 'node:fs';
 import { resolve } from 'node:path';
 import packageMetadata from './package.json';
 
-const includeExperimentalAnalysisLabs = process.env.WWCOMBO_INCLUDE_EXPERIMENTAL_ANALYSIS_LABS !== '0';
+const buffTimerEnabled = process.env.WWCOMBO_INCLUDE_BUFF_TIMER !== '0';
+const simulatedInputEnabled = process.env.WWCOMBO_INCLUDE_SIMULATED_INPUT !== '0';
 const buildInputs: Record<string, string> = {
   main: 'index.html',
   overlay: 'overlay.html',
@@ -13,7 +14,7 @@ const buildInputs: Record<string, string> = {
   keyMapping: 'key-mapping.html',
   recordingIndicator: 'recording-indicator.html'
 };
-if (includeExperimentalAnalysisLabs) buildInputs.realtimeVision = 'realtime-vision.html';
+if (buffTimerEnabled) buildInputs.realtimeVision = 'realtime-vision.html';
 
 const excludeLocalPublicArtifacts = () => ({
   name: 'exclude-local-public-artifacts',
@@ -25,7 +26,9 @@ const excludeLocalPublicArtifacts = () => ({
 export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(packageMetadata.version),
-    __EXPERIMENTAL_ANALYSIS_LABS__: JSON.stringify(includeExperimentalAnalysisLabs)
+    __EXPERIMENTAL_ANALYSIS_LABS__: JSON.stringify(false),
+    __BUFF_TIMER_ENABLED__: JSON.stringify(buffTimerEnabled),
+    __SIMULATED_INPUT_ENABLED__: JSON.stringify(simulatedInputEnabled)
   },
   plugins: [react(), excludeLocalPublicArtifacts()],
   base: './',

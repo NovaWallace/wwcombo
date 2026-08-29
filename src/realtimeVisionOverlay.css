@@ -14,127 +14,96 @@ body,
 .realtime-vision-overlay {
   width: 100%;
   min-height: 100%;
-  padding: 12px 14px;
-  border: 1px solid rgba(255, 255, 255, .25);
-  border-left: 4px solid #ffd344;
-  background: rgba(5, 7, 8, .88);
+  padding: 4px 10px;
+  border: 0;
+  background: transparent;
   color: #f5f7f4;
   pointer-events: none;
   user-select: none;
+  transform: scale(var(--realtime-vision-scale, 1));
+  transform-origin: top left;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, .95), 0 0 2px rgba(0, 0, 0, .95);
+}
+
+.realtime-vision-overlay.move-mode {
+  pointer-events: auto;
+  outline: 2px dashed rgba(255, 211, 68, .9);
+  outline-offset: -2px;
+  cursor: move;
 }
 
 .realtime-vision-overlay.has-warning {
-  border-color: rgba(255, 83, 70, .9);
-  border-left-color: #ff3024;
-  background: rgba(91, 7, 4, .95);
+  color: #fff;
   animation: realtime-vision-warning-pulse .72s ease-in-out infinite alternate;
 }
 
-.realtime-vision-overlay header {
-  height: 30px;
+.realtime-vision-current-time {
+  height: 32px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid rgba(255, 255, 255, .14);
+  justify-content: flex-start;
 }
 
-.realtime-vision-overlay header span,
-.realtime-vision-overlay-buffs span {
-  min-width: 0;
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-weight: 900;
-}
-
-.realtime-vision-overlay header span {
-  color: #ffd344;
-  font-size: 12px;
-}
-
-.realtime-vision-overlay header strong {
-  font-size: 18px;
+.realtime-vision-current-time strong {
+  color: #fff;
+  font-size: 22px;
   font-variant-numeric: tabular-nums;
+  line-height: 1;
 }
 
-.realtime-vision-overlay header strong.stale {
+.realtime-vision-current-time strong.stale {
   color: #a7aaa7;
 }
 
 .realtime-vision-overlay-buffs {
   display: grid;
-  gap: 5px;
-  padding-top: 8px;
+  gap: 0;
 }
 
 .realtime-vision-overlay-buffs > div {
-  min-height: 43px;
+  min-height: 36px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 12px;
-  padding: 0 8px;
-  border-left: 2px solid #29d87c;
-  background: rgba(255, 255, 255, .055);
+  gap: 10px;
+  padding: 0;
+  border: 0;
+  background: transparent;
 }
 
 .realtime-vision-overlay-buffs > div.warning {
-  border-left-color: #f1362b;
-  background: rgba(255, 63, 45, .28);
-  outline: 1px solid rgba(255, 111, 91, .72);
+  color: #ff5f55;
+  background: transparent;
 }
 
-.realtime-vision-overlay-buffs span {
-  font-size: 13px;
+.realtime-vision-overlay-buffs > div.pending {
+  color: #ffd344;
+  background: transparent;
 }
 
-.realtime-vision-overlay-buffs span i {
-  width: 8px;
-  height: 8px;
-  border: 1px solid rgba(0, 0, 0, .72);
-  transform: rotate(45deg);
-  background: #39e68b;
-  flex: 0 0 auto;
+.realtime-vision-buff-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 15px;
+  font-weight: 900;
 }
 
-.realtime-vision-overlay-buffs strong {
+.realtime-vision-overlay-buffs time {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: currentColor;
   font-size: 16px;
   font-variant-numeric: tabular-nums;
-}
-
-.realtime-vision-overlay-buffs .realtime-vision-overlay-deadline {
-  display: grid;
-  justify-items: end;
-  gap: 1px;
-  overflow: visible;
-  text-overflow: clip;
-}
-
-.realtime-vision-overlay-deadline strong {
-  color: #fff;
-  font-size: 15px;
+  font-weight: 900;
   white-space: nowrap;
 }
 
-.realtime-vision-overlay-deadline small {
-  color: rgba(255, 255, 255, .68);
-  font-size: 10px;
-  font-variant-numeric: tabular-nums;
-  font-weight: 850;
-  white-space: nowrap;
-}
-
-.realtime-vision-overlay-buffs p {
-  margin: 8px 0 0;
-  color: rgba(255, 255, 255, .52);
-  text-align: center;
-  font-size: 12px;
-  font-weight: 800;
+.realtime-vision-overlay-buffs time b {
+  color: rgba(255, 255, 255, .72);
+  font-size: 14px;
 }
 
 @keyframes realtime-vision-warning-pulse {

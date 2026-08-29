@@ -92,6 +92,7 @@ export function createDesktopBridge(): DesktopBridge | null {
     getOverlayBounds: () => invoke<OverlayBounds>('get_overlay_bounds'),
     getDisplaySize: () => invoke<DisplaySize>('get_display_size'),
     updateOverlay: (payload: unknown) => invoke('update_overlay', { payload }),
+    updateOverlayVisibleNotes: (stepIds: string[]) => invoke('update_overlay_visible_notes', { stepIds }),
     updateOverlayPractice: (practice: unknown) => invoke('update_overlay_practice', { practice }),
     setRhythmFeedbackVisible: (visible: boolean) => invoke('set_rhythm_feedback_visible', { visible }),
     updateRhythmFeedback: (payload: unknown) => invoke('update_rhythm_feedback', { payload }),
@@ -103,6 +104,12 @@ export function createDesktopBridge(): DesktopBridge | null {
     getKeyMappingBounds: () => invoke<OverlayBounds>('get_key_mapping_bounds'),
     updateRecordingIndicator: (payload: unknown) => invoke('update_recording_indicator', { payload }),
     updateRealtimeVision: (payload: unknown) => invoke('update_realtime_vision', { payload }),
+    setRealtimeVisionBounds: (bounds: OverlayBounds) => invoke('set_realtime_vision_bounds', { bounds }),
+    setRealtimeVisionPosition: (position: OverlayPosition) => invoke('set_realtime_vision_position', { position }),
+    getRealtimeVisionBounds: () => invoke<OverlayBounds>('get_realtime_vision_bounds'),
+    setRealtimeVisionClickThrough: (enabled: boolean) => invoke('set_realtime_vision_click_through', { enabled }),
+    startSimulatedInput: (events) => invoke('start_simulated_input', { events }),
+    stopSimulatedInput: () => invoke('stop_simulated_input'),
     onOverlayBoundsChanged: (callback: (bounds: OverlayBounds) => void) => listenUntilDisposed<OverlayBounds>('overlay:bounds-changed', callback),
     onOverlayNotesBoundsChanged: (callback: (bounds: OverlayBounds) => void) => listenUntilDisposed<OverlayBounds>('overlay:note-bounds-changed', callback),
     onOverlayMoveModeRequested: (callback: (enabled: boolean) => void) => listenUntilDisposed<{ enabled: boolean }>('overlay:move-mode', (payload) => callback(payload.enabled)),
@@ -191,6 +198,7 @@ export function createOverlayBridge() {
       if (!direction) return Promise.reject(new Error(`invalid resize edge: ${edge}`));
       return getCurrentWindow().startResizeDragging(direction);
     },
+    updateOverlayVisibleNotes: (stepIds: string[]) => invoke('update_overlay_visible_notes', { stepIds }),
     onBoundsChanged: (callback: (bounds: OverlayBounds) => void) => listenUntilDisposed<OverlayBounds>('overlay:bounds-changed', callback),
     onWindowBlur: (callback: () => void) => listenUntilDisposed('tauri://blur', callback),
     onUpdate: (callback: (payload: unknown) => void) => listenUntilDisposed<unknown>('overlay:update', callback),
@@ -277,6 +285,9 @@ export function createRealtimeVisionOverlayBridge() {
 
   return {
     getState: () => invoke<unknown>('get_realtime_vision_state'),
+    getBounds: () => invoke<OverlayBounds>('get_realtime_vision_bounds'),
+    setBounds: (bounds: OverlayBounds) => invoke('set_realtime_vision_bounds', { bounds }),
+    setPosition: (position: OverlayPosition) => invoke('set_realtime_vision_position', { position }),
     onUpdate: (callback: (payload: unknown) => void) => listenUntilDisposed<unknown>('realtime-vision:update', callback)
   };
 }

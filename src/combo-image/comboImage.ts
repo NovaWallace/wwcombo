@@ -1,5 +1,5 @@
 import type { CharacterSlot, ComboChart, ComboImageStyle, ComboStep, RectPercent, StretchPercent } from '../../combo-core';
-import { keyboardMouseIconSource } from '../gamepadIcons';
+import { keyboardMouseIconSource, tideIconSourceForMappingId } from '../gamepadIcons';
 
 export type ComboImageItem = {
   step: ComboStep;
@@ -199,6 +199,7 @@ export function createDefaultComboImageStyle(): ComboImageStyle {
       2: { name: '角色2', color: DEFAULT_ROLE_COLORS[2], avatarCrop: defaultRectPercent(), avatarSize: 70, avatarOffsetX: -20, avatarOffsetY: 0 },
       3: { name: '角色3', color: DEFAULT_ROLE_COLORS[3], avatarCrop: defaultRectPercent(), avatarSize: 70, avatarOffsetX: -20, avatarOffsetY: 0 }
     },
+    iconSet: 'classic',
     blockMode: 'image',
     capsuleShape: 'capsule',
     backgroundCrop: fullRectPercent(),
@@ -277,6 +278,7 @@ export function normalizeComboImageStyle(value: Partial<ComboImageStyle> | null 
   return {
     ...fallback,
     ...value,
+    iconSet: value?.iconSet === 'tide' ? 'tide' : 'classic',
     backgroundImage,
     capsuleImage,
     roleStyles: {
@@ -905,8 +907,15 @@ export function normalizeComboIconMappings(value: unknown): ComboImageStyle['ico
 export function effectiveIconMappings(style: ComboImageStyle, role: CharacterSlot | RoleStyle | undefined): ComboImageStyle['iconMappings'] {
   const globalMappings = normalizeIconMappings(style.iconMappings);
   const roleStyle = typeof role === 'number' ? style.roleStyles[role] : role;
+  const applyIconSet = (mappings: ComboImageStyle['iconMappings']) => style.iconSet === 'tide'
+    ? mappings.map((mapping) => {
+      const src = tideIconSourceForMappingId(mapping.id);
+      const classicSource = DEFAULT_ICON_MAPPINGS.find((item) => item.id === mapping.id)?.src;
+      return src && mapping.src === classicSource ? { ...mapping, src } : mapping;
+    })
+    : mappings;
   const roleMappings = roleStyle?.iconMappings;
-  if (!roleMappings?.length) return globalMappings;
+  if (!roleMappings?.length) return applyIconSet(globalMappings);
 
   // Role snapshots are still needed for per-character custom icons, but they
   // must not erase newer global triggers (especially Intro/Outro aliases).
@@ -927,7 +936,7 @@ export function effectiveIconMappings(style: ComboImageStyle, role: CharacterSlo
     };
   });
   const globalIds = new Set(globalMappings.map((mapping) => mapping.id));
-  return [...merged, ...normalizedRoleMappings.filter((mapping) => !globalIds.has(mapping.id))];
+  return applyIconSet([...merged, ...normalizedRoleMappings.filter((mapping) => !globalIds.has(mapping.id))]);
 }
 
 export function switchSlotForMove(moveId: string): CharacterSlot | null {

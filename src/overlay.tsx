@@ -76,10 +76,12 @@ type OverlayPayload = {
   visible: boolean;
   moveMode?: boolean;
   noteMoveMode?: boolean;
+  showNotesSeparately?: boolean;
   noteBounds?: { x: number; y: number; width: number; height: number };
   settings?: OverlayBounds & { layout?: 'horizontal' | 'vertical' | 'stair' | 'waterfall' };
   comboImageStyle?: Partial<ComboImageStyle>;
   rhythmUiSettings?: Partial<RhythmUiSettings>;
+  visibleNoteStepIds?: string[];
 };
 
 function isPayload(value: unknown): value is OverlayPayload {
@@ -193,6 +195,7 @@ function OverlayApp() {
   const latestBoundsRef = useRef<OverlayBounds>(DEFAULT_BOUNDS);
   const isDraggingRef = useRef(false);
   const progressRef = useRef({ runKey: '', activeStepIndex: 0, indicatorStepIndex: 0 });
+  const visibleNoteIdsRef = useRef('');
 
   const applyPayload = React.useCallback((next: unknown) => {
     if (!isPayload(next)) return;
@@ -303,6 +306,25 @@ function OverlayApp() {
   const activeDisplayIndex = comboImageDisplayIndexForStep(allItems, activeDisplayStepId);
   const indicatorDisplayIndex = comboImageDisplayIndexForStep(allItems, indicatorStepId);
   const visibleItems = visibleComboImageItems(allItems, activeDisplayIndex, linearLayout, comboLayoutBounds, comboStyle);
+  const visibleNoteStepIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const item of visibleItems) {
+      ids.add(item.step.id);
+      for (const stepId of item.mergedStepIds ?? []) ids.add(stepId);
+    }
+    return [...ids];
+  }, [visibleItems]);
+  useEffect(() => {
+    if (!payload?.showNotesSeparately || (!payload.visible && !payload.moveMode)) {
+      visibleNoteIdsRef.current = '';
+      return;
+    }
+    if (!overlay?.updateOverlayVisibleNotes) return;
+    const key = visibleNoteStepIds.join('\u0001');
+    if (visibleNoteIdsRef.current === key) return;
+    visibleNoteIdsRef.current = key;
+    void overlay.updateOverlayVisibleNotes(visibleNoteStepIds);
+  }, [overlay, payload?.showNotesSeparately, visibleNoteStepIds]);
   const trackOffset = comboTrackOffset(allItems, activeDisplayIndex, linearLayout, comboLayoutBounds, comboStyle);
   const activeMetric = metrics[Math.max(0, Math.min(activeDisplayIndex, Math.max(0, metrics.length - 1)))];
   const backgroundSource = comboImageBackgroundSource(comboStyle);

@@ -109,6 +109,30 @@ export function iconMappingCustomizationKey(mappingId: string): string | undefin
   return normalized ? `mapping:${normalized}` : undefined;
 }
 
+const TIDE_ICON_SOURCES: Record<string, string> = {
+  'mouse-left': '/combo-assets/button-icons/tide/basic_attack.png',
+  'mouse-left-hold': '/combo-assets/button-icons/tide/heavy_attack.png',
+  skill: '/combo-assets/button-icons/tide/skill.png',
+  'skill-hold': '/combo-assets/button-icons/tide/skill_hold.png',
+  echo: '/combo-assets/button-icons/tide/echo.png',
+  'echo-hold': '/combo-assets/button-icons/tide/echo_hold.png',
+  liberation: '/combo-assets/button-icons/tide/liberation.png',
+  'liberation-hold': '/combo-assets/button-icons/tide/liberation_hold.png',
+  'mouse-right': '/combo-assets/button-icons/tide/dodge.png',
+  'mouse-right-hold': '/combo-assets/button-icons/tide/dodge_hold.png',
+  jump: '/combo-assets/button-icons/tide/jump.png',
+  'jump-hold': '/combo-assets/button-icons/tide/jump_hold.png',
+  tool: '/combo-assets/button-icons/tide/tool.png',
+  intro: '/combo-assets/button-icons/tide/intro.png',
+  outro: '/combo-assets/button-icons/tide/outro.png',
+  finisher: '/combo-assets/button-icons/tide/finisher.png',
+  forward: '/combo-assets/button-icons/tide/forward.png'
+};
+
+export function tideIconSourceForMappingId(mappingId: string): string | undefined {
+  return TIDE_ICON_SOURCES[mappingId.trim()];
+}
+
 export function usesOriginalKeyboardMouseIcon(moveId: string, code: string): boolean {
   const mappingId = iconMappingIdForMove(moveId);
   if (!mappingId) return false;
@@ -433,7 +457,7 @@ export function gamepadCodeLabel(code: string, iconSet: GamepadIconSet): string 
   }).join(' + ');
 }
 
-function adaptMappings(mappings: ComboImageStyle['iconMappings'], bindings: KeyBinding[], iconSet: GamepadIconSet, customSources: Record<string, string>): ComboImageStyle['iconMappings'] {
+function adaptMappings(mappings: ComboImageStyle['iconMappings'], bindings: KeyBinding[], iconSet: GamepadIconSet, customSources: Record<string, string>, universalIconSet: ComboImageStyle['iconSet']): ComboImageStyle['iconMappings'] {
   return mappings.map((mapping) => {
     const mappingCustomKey = iconMappingCustomizationKey(mapping.id);
     const mappingCustomSource = mappingCustomKey ? customSources[mappingCustomKey] : undefined;
@@ -445,12 +469,14 @@ function adaptMappings(mappings: ComboImageStyle['iconMappings'], bindings: KeyB
     const customSourceKey = code ? inputIconCustomizationKey('gamepad', code) : undefined;
     const customSource = customSourceKey ? customSources[customSourceKey] : undefined;
     if (customSource) return { ...mapping, src: customSource };
+    const tideSource = universalIconSet === 'tide' ? tideIconSourceForMappingId(mapping.id) : undefined;
+    if (tideSource) return { ...mapping, src: tideSource };
     const src = code ? gamepadIconSource(code, iconSet) : undefined;
     return src ? { ...mapping, src } : mapping;
   });
 }
 
-function adaptKeyboardMouseMappings(mappings: ComboImageStyle['iconMappings'], bindings: KeyBinding[], customSources: Record<string, string>): ComboImageStyle['iconMappings'] {
+function adaptKeyboardMouseMappings(mappings: ComboImageStyle['iconMappings'], bindings: KeyBinding[], customSources: Record<string, string>, universalIconSet: ComboImageStyle['iconSet']): ComboImageStyle['iconMappings'] {
   return mappings.map((mapping) => {
     const mappingCustomKey = iconMappingCustomizationKey(mapping.id);
     const mappingCustomSource = mappingCustomKey ? customSources[mappingCustomKey] : undefined;
@@ -462,6 +488,8 @@ function adaptKeyboardMouseMappings(mappings: ComboImageStyle['iconMappings'], b
     const customSourceKey = code ? inputIconCustomizationKey('keyboard', code) : undefined;
     const customSource = customSourceKey ? customSources[customSourceKey] : undefined;
     if (customSource && code) return { ...mapping, src: customSource, iconWidthScale: keyboardMouseIconWidthScale(code) };
+    const tideSource = universalIconSet === 'tide' ? tideIconSourceForMappingId(mapping.id) : undefined;
+    if (tideSource) return { ...mapping, src: tideSource };
     const defaultSource = moveId && code ? defaultKeyboardMouseIconSource(moveId, code) : undefined;
     if (defaultSource) return { ...mapping, src: defaultSource, iconWidthScale: 1 };
     const src = code ? keyboardMouseIconSource(code, keyboardMouseIconToneForMove(moveId ?? '')) : undefined;
@@ -473,16 +501,16 @@ export function withGamepadIconMappings(style: ComboImageStyle, bindings: KeyBin
   const roleStyles = { ...style.roleStyles };
   ([1, 2, 3, 4] as const).forEach((slot) => {
     const role = style.roleStyles[slot];
-    roleStyles[slot] = role.iconMappings?.length ? { ...role, iconMappings: adaptMappings(role.iconMappings, bindings, iconSet, customSources) } : role;
+    roleStyles[slot] = role.iconMappings?.length ? { ...role, iconMappings: adaptMappings(role.iconMappings, bindings, iconSet, customSources, style.iconSet) } : role;
   });
-  return { ...style, iconMappings: adaptMappings(style.iconMappings, bindings, iconSet, customSources), roleStyles };
+  return { ...style, iconMappings: adaptMappings(style.iconMappings, bindings, iconSet, customSources, style.iconSet), roleStyles };
 }
 
 export function withKeyboardMouseIconMappings(style: ComboImageStyle, bindings: KeyBinding[], customSources: Record<string, string> = {}): ComboImageStyle {
   const roleStyles = { ...style.roleStyles };
   ([1, 2, 3, 4] as const).forEach((slot) => {
     const role = style.roleStyles[slot];
-    roleStyles[slot] = role.iconMappings?.length ? { ...role, iconMappings: adaptKeyboardMouseMappings(role.iconMappings, bindings, customSources) } : role;
+    roleStyles[slot] = role.iconMappings?.length ? { ...role, iconMappings: adaptKeyboardMouseMappings(role.iconMappings, bindings, customSources, style.iconSet) } : role;
   });
-  return { ...style, iconMappings: adaptKeyboardMouseMappings(style.iconMappings, bindings, customSources), roleStyles };
+  return { ...style, iconMappings: adaptKeyboardMouseMappings(style.iconMappings, bindings, customSources, style.iconSet), roleStyles };
 }

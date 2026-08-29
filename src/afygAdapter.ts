@@ -1,4 +1,5 @@
 import type { CharacterSlot, ComboChart, ComboImageStyle, ComboStep } from '../combo-core';
+import { afygTimingReferences, normalizeAfygTimingSettings } from './afygTiming';
 
 export const AFYG_TOOL_URL = 'https://wuwa-afyg-tool.200503.xyz/';
 export const AFYG_EMBED_URL = String(import.meta.env.VITE_AFYG_EMBED_URL || AFYG_TOOL_URL).trim() || AFYG_TOOL_URL;
@@ -115,24 +116,6 @@ function chartDurationMs(chart: ComboChart, exportedSteps: ComboStep[]): number 
   return Math.max(1, chart.timelineDurationMs ?? 0, stepEnd, periodEnd);
 }
 
-function referenceTimes(chart: ComboChart, durationMs: number): Array<{ id: string; label: string; timeMs: number }> {
-  const candidates = (chart.periods ?? [])
-    .filter((period) => period.kind === 'startup_axis' || period.kind === 'loop_axis')
-    .map((period) => ({
-      id: `wwcombo-period-${safeId(period.id)}`,
-      label: period.label.trim() || (period.kind === 'startup_axis' ? 'Opener' : 'Loop'),
-      timeMs: Math.min(durationMs, Math.max(0, period.endMs))
-    }))
-    .filter((entry) => entry.timeMs > 0);
-  candidates.push({ id: 'wwcombo-chart-end', label: 'Chart End', timeMs: durationMs });
-  const byTime = new Map<number, { id: string; label: string; timeMs: number }>();
-  candidates.sort((left, right) => left.timeMs - right.timeMs).forEach((entry) => {
-    const key = Math.round(entry.timeMs);
-    if (!byTime.has(key) || entry.id === 'wwcombo-chart-end') byTime.set(key, entry);
-  });
-  return [...byTime.values()].sort((left, right) => left.timeMs - right.timeMs);
-}
-
 export function defaultAfygOperationKey(moveId: string, fallbackLabel = ''): string {
   return DEFAULT_OPERATION_KEYS[moveId] || fallbackLabel.trim() || moveId;
 }
@@ -182,8 +165,8 @@ export function buildAfygProject(options: AfygExportOptions): AfygExportResult {
   });
   if (unknownMoves.size) warnings.push({ code: 'unknown-moves', detail: [...unknownMoves].join(', ') });
 
-  const refs = referenceTimes(chart, durationMs);
-  const refLines = refs.map<AfygRefLine>((entry) => ({ id: entry.id, time: `${entry.label} ${(entry.timeMs / 1000).toFixed(2)}s`, pos: positionForMs(entry.timeMs) }));
+  const refs = afygTimingReferences(chart, durationMs);
+  const refLines = refs.map<AfygRefLine>((entry) => ({ id: entry.id, time: `${entry.label} ${(entry.gameTimeMs / 1000).toFixed(2)}s`, pos: positionForMs(entry.timelineMs) }));
   const timeline: AfygTimelineData = { refLines, opBlocks, damageBlocks: [] };
   const roleNames = ([1, 2, 3] as CharacterSlot[]).map((slot) => roleNameForSlot(options, slot));
   roleNames.forEach((name, index) => {
@@ -194,7 +177,7 @@ export function buildAfygProject(options: AfygExportOptions): AfygExportResult {
   const baseProject = options.baseProject && isRecord(options.baseProject) ? options.baseProject : null;
   const generatedTeam = roleNames.map((character) => ({ character: character || null, weapon: null, triggerSets: [], echoes: emptyEchoes() }));
   const team = Array.isArray(baseProject?.team) && baseProject.team.length ? baseProject.team : generatedTeam;
-  const timings = refs.map((entry) => ({ refLineId: entry.id, seconds: Number((entry.timeMs / 1000).toFixed(3)) }));
+  const timings = refs.map((entry) => ({ refLineId: entry.id, seconds: Number((entry.gameTimeMs / 1000).toFixed(3)) }));
   const baseResultAnalysis = isRecord(baseProject?.resultAnalysis) ? baseProject.resultAnalysis : {};
   const sourceProjectId = typeof baseProject?.id === 'string' ? baseProject.id : '';
   const sourceProjectName = typeof baseProject?.name === 'string' ? baseProject.name.trim() : '';
@@ -213,11 +196,16 @@ export function buildAfygProject(options: AfygExportOptions): AfygExportResult {
       config: phaseFromBase(baseProject, 'config') ?? { locked: false, data: null }
     },
     wwcomboAdapter: {
-      version: 1,
+      version: 2,
       sourceChartId: chart.id,
       sourceChartUpdatedAt: chart.updatedAt,
       baseProjectId: sourceProjectId || null,
-      timings
+      timings,
+      timeMap: {
+        version: 1,
+        keyframes: normalizeAfygTimingSettings(chart.afygTiming)?.keyframes ?? [],
+        samples: refs.map((entry) => ({ timelineMs: entry.timelineMs, gameTimeMs: entry.gameTimeMs, kind: entry.kind }))
+      }
     }
   };
   return {

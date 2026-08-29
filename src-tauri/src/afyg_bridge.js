@@ -3,8 +3,49 @@
     'https://wuwa-hpyg-tool.200503.xyz',
     'https://wuwa-afyg-tool.200503.xyz'
   ]);
-  const LOCAL_AFYG_ORIGIN = /^http:\/\/(?:127\.0\.0\.1|localhost):\d+$/u.test(window.location.origin);
-  if ((!AFYG_ORIGINS.has(window.location.origin) && !LOCAL_AFYG_ORIGIN) || window === window.parent) return;
+  const EXTERNAL_LINK_ORIGINS = new Set([...AFYG_ORIGINS, 'https://nova.fb520.site']);
+  const localAfygOrigin = /^http:\/\/(?:127\.0\.0\.1|localhost):\d+$/u.test(window.location.origin);
+  const embeddedFrame = window !== window.parent;
+
+  function externalHttpUrl(value) {
+    try {
+      const url = new URL(String(value), window.location.href);
+      return url.protocol === 'https:' || url.protocol === 'http:' ? url.href : '';
+    } catch {
+      return '';
+    }
+  }
+
+  if (embeddedFrame && (EXTERNAL_LINK_ORIGINS.has(window.location.origin) || localAfygOrigin)) {
+    document.addEventListener('click', (event) => {
+      if (!(event.target instanceof Element)) return;
+      const anchor = event.target.closest('a[href]');
+      if (!(anchor instanceof HTMLAnchorElement)) return;
+      const url = externalHttpUrl(anchor.href);
+      if (!url) return;
+      const external = anchor.target === '_blank' || new URL(url).origin !== window.location.origin;
+      if (!external) return;
+      event.preventDefault();
+      event.stopPropagation();
+      window.parent.postMessage({ type: 'wwcombo:open-external', version: 1, url }, '*');
+    }, true);
+
+    const nativeOpen = window.open.bind(window);
+    Object.defineProperty(window, 'open', {
+      configurable: true,
+      writable: true,
+      value(url, target, features) {
+        const externalUrl = externalHttpUrl(url);
+        if (externalUrl && (!target || target === '_blank' || new URL(externalUrl).origin !== window.location.origin)) {
+          window.parent.postMessage({ type: 'wwcombo:open-external', version: 1, url: externalUrl }, '*');
+          return null;
+        }
+        return nativeOpen(url, target, features);
+      }
+    });
+  }
+
+  if (!embeddedFrame || (!AFYG_ORIGINS.has(window.location.origin) && !localAfygOrigin)) return;
 
   const REQUEST_TYPE = 'wwcombo:afyg-bridge-request';
   const RESPONSE_TYPE = 'wwcombo:afyg-bridge-response';
@@ -16,27 +57,57 @@
   const SIDEBAR_OVERLAY_TYPE = 'wwcombo:afyg-sidebar-overlay';
   const BRIDGE_STATUS_TYPE = 'wwcombo:afyg-bridge-status';
   const DB_NAME = 'wuwa-v1';
-  const DB_VERSION = 1;
   const STORE_NAME = 'cache';
   const PROJECTS_KEY = 'projects';
   const ACTIVE_KEY = 'project-active';
   const THEME_KEY = 'theme-active';
   const REOPEN_KEY = 'wwcombo:afyg-reopen-project';
   const CALC_VIEW_KEY = 'wuwa-afyg:calc-view';
-  const CALC_VIEW_DEFAULT_MIGRATION_KEY = 'wwcombo:calc-view-default-v1';
-  let hostLanguage = 'zh-CN';
+  const CALC_VIEW_MIGRATION_KEY = 'wwcombo:calc-view-default-v1';
+  const virtualSockets = new Set();
+  let lastToolbarAnchorSignature = '';
+  let lastSidebarOverlaySignature = '';
+  let observedProjectSidebar = null;
+  let projectSidebarResizeHandle = null;
+  let projectSidebarPlaceholder = null;
+  let observedTimelineHost = null;
+  let observedDamageScroller = null;
+  let legacyDamageHeightOverride = null;
+  let hostedTimelineOverlayTop = null;
+  let lastHostLayoutSignature = '';
+  let requestedDamageScrollRatio = null;
+  let timelineScrollTarget = null;
+  let timelineScrollSuppressUntil = 0;
+  let damageScrollUserIntentUntil = 0;
+  let damageScrollSequence = 0;
+  let lastTimelineScrollSequence = 0;
+  let damageScrollInputAt = 0;
+  let damageScrollFrame = 0;
+  let damageScrollSettleTimer = 0;
+  let timelineGeometry = {
+    pixelsPerMs: 0.06,
+    renderTotalMs: 0,
+    scrollLeft: 0,
+    viewportOffsetX: 0,
+    contentOffset: 112,
+    anchorsMs: []
+  };
+  const timelineHostResizeObserver = new ResizeObserver(() => reportHostedTimelineLayout());
+  const damageResizeObserver = new ResizeObserver(() => {
+    applyDamageTimelineScale();
+    applyTimelineScrollRatio();
+    reportDamagePlayheadLayout();
+  });
 
   try {
-    const workshopHosted = new URLSearchParams(window.location.hash.replace(/^#/u, '')).get('timeline_host') === 'wwcombo';
-    if (workshopHosted && localStorage.getItem(CALC_VIEW_DEFAULT_MIGRATION_KEY) !== '1') {
+    const hosted = new URLSearchParams(window.location.hash.replace(/^#/u, '')).get('timeline_host') === 'wwcombo';
+    if (hosted && localStorage.getItem(CALC_VIEW_MIGRATION_KEY) !== '1') {
       localStorage.setItem(CALC_VIEW_KEY, 'dropdown');
-      localStorage.setItem(CALC_VIEW_DEFAULT_MIGRATION_KEY, '1');
+      localStorage.setItem(CALC_VIEW_MIGRATION_KEY, '1');
     }
   } catch {
-    // Storage may be unavailable in hardened WebView contexts; AFYG's own default is still dropdown.
+    // AFYG keeps its own default when storage is unavailable.
   }
-
-  const virtualSockets = new Set();
 
   function isLoopbackWebSocket(value) {
     try {
@@ -50,13 +121,10 @@
 
   function installHostWebSocketBridge() {
     const NativeWebSocket = window.WebSocket;
-
     class HostBridgeWebSocket extends EventTarget {
       constructor(url, protocols) {
         super();
-        if (!isLoopbackWebSocket(url)) {
-          return protocols === undefined ? new NativeWebSocket(url) : new NativeWebSocket(url, protocols);
-        }
+        if (!isLoopbackWebSocket(url)) return protocols === undefined ? new NativeWebSocket(url) : new NativeWebSocket(url, protocols);
         this.url = String(url);
         this.readyState = HostBridgeWebSocket.CONNECTING;
         this.bufferedAmount = 0;
@@ -71,8 +139,8 @@
         queueMicrotask(() => {
           if (this.readyState !== HostBridgeWebSocket.CONNECTING) return;
           this.readyState = HostBridgeWebSocket.OPEN;
-          this.emit(new Event('open'));
           window.parent.postMessage({ type: WS_UPSTREAM_TYPE, version: 1, event: 'open', url: this.url }, '*');
+          this.emit(new Event('open'));
         });
       }
 
@@ -105,7 +173,6 @@
         this.emit(new MessageEvent('message', { data }));
       }
     }
-
     HostBridgeWebSocket.CONNECTING = NativeWebSocket.CONNECTING;
     HostBridgeWebSocket.OPEN = NativeWebSocket.OPEN;
     HostBridgeWebSocket.CLOSING = NativeWebSocket.CLOSING;
@@ -131,81 +198,8 @@
       websocketError: websocketBridgeError
     }, '*');
   }
-
   reportBridgeStatus();
   window.addEventListener('DOMContentLoaded', reportBridgeStatus, { once: true });
-
-  let observedTimelineHost = null;
-  let observedDamageScroller = null;
-  let requestedDamageScrollRatio = null;
-  let timelineGeometry = {
-    pixelsPerMs: 0.06,
-    renderTotalMs: 0,
-    scrollLeft: 0,
-    viewportOffsetX: 0,
-    contentOffset: 112,
-    anchorsMs: []
-  };
-  let timelineScrollTarget = null;
-  let timelineScrollSuppressUntil = 0;
-  let damageScrollUserIntentUntil = 0;
-  let damageScrollPointerActive = false;
-  let damageScrollReportFrame = 0;
-  let damageScrollSettleTimer = 0;
-  let damageScrollSequence = 0;
-  let lastTimelineScrollSequence = 0;
-  let damageScrollInputAt = 0;
-  let observedDamageTimeline = null;
-  let damageSeekLine = null;
-  let damageSeekState = { enabled: false, playbackMs: 0, viewportX: null };
-  let damageSeekDragging = false;
-  let damageSeekClientX = 0;
-  let damageSeekEdgeFrame = 0;
-  let layoutFrame = 0;
-  let legacyDamageHeightOverride = null;
-  let observedProjectSidebar = null;
-  let projectSidebarResizeHandle = null;
-  let projectSidebarPlaceholder = null;
-  const hostResizeObserver = new ResizeObserver(() => scheduleHostLayout());
-  const damageResizeObserver = new ResizeObserver(() => applyTimelineScrollRatio());
-
-  function ensureWorkshopHostStyle() {
-    if (document.querySelector('style[data-wwcombo-workshop-host-style]')) return;
-    const style = document.createElement('style');
-    style.dataset.wwcomboWorkshopHostStyle = 'true';
-    style.textContent = `
-      [data-wwcombo-legacy-timeline="true"] { overflow: hidden !important; }
-      [data-wwcombo-legacy-timeline="true"]:not([data-wwcombo-original-editor="true"]) > [data-wwcombo-legacy-damage-scroller="true"] {
-        flex: 0 0 var(--wwcombo-legacy-damage-height, 190px) !important;
-        width: 100% !important;
-        height: var(--wwcombo-legacy-damage-height, 190px) !important;
-        min-height: var(--wwcombo-legacy-damage-height, 190px) !important;
-        overflow: auto !important;
-      }
-      [data-wwcombo-legacy-timeline="true"]:not([data-wwcombo-original-editor="true"]) [data-wwcombo-legacy-content="true"] { height: 100% !important; min-height: 100% !important; }
-      [data-wwcombo-legacy-timeline="true"]:not([data-wwcombo-original-editor="true"]) [data-wwcombo-legacy-content="true"] > :not([data-wwcombo-legacy-track-stack="true"]) { display: none !important; }
-      [data-wwcombo-legacy-timeline="true"]:not([data-wwcombo-original-editor="true"]) [data-wwcombo-legacy-track-stack="true"] > :not([data-wwcombo-legacy-damage-track="true"]) { display: none !important; }
-      [data-wwcombo-legacy-timeline="true"]:not([data-wwcombo-original-editor="true"]) [data-wwcombo-legacy-track-stack="true"] > [data-wwcombo-legacy-damage-track="true"] {
-        display: block !important;
-        flex: 1 1 100% !important;
-        width: 100% !important;
-        height: 100% !important;
-        min-height: 100% !important;
-      }
-      [data-wwcombo-legacy-timeline="true"][data-wwcombo-original-editor="true"] [data-wwcombo-legacy-track-stack="true"] > [data-wwcombo-legacy-damage-track="true"] {
-        order: 1 !important;
-      }
-      [data-wwcombo-legacy-timeline="true"][data-wwcombo-original-editor="true"] [data-wwcombo-legacy-track-stack="true"] {
-        box-sizing: border-box !important;
-        padding-bottom: 52px !important;
-      }
-      [data-wwcombo-legacy-timeline="true"][data-wwcombo-original-editor="true"] [data-wwcombo-legacy-track-stack="true"] > [data-track-index]:not([data-wwcombo-legacy-damage-track="true"]) {
-        order: 2 !important;
-      }
-      button[data-wwcombo-combo-import="true"] { flex: 0 0 auto; }
-    `;
-    (document.head || document.documentElement).append(style);
-  }
 
   function ensureProjectSidebarStyle() {
     if (document.querySelector('style[data-wwcombo-auto-sidebar-style]')) return;
@@ -236,28 +230,20 @@
         box-shadow: 8px 0 22px rgba(0, 0, 0, .24) !important;
       }
       aside[data-wwcombo-auto-sidebar="true"]:not(:hover):not(:focus-within) span,
-      aside[data-wwcombo-auto-sidebar="true"]:not(:hover):not(:focus-within) [class*="truncate"] {
+      aside[data-wwcombo-auto-sidebar="true"]:not(:hover):not(:focus-within) [class*="truncate"],
+      aside[data-wwcombo-auto-sidebar="true"]:not(:hover):not(:focus-within) [class*="pl-6"] {
         display: none !important;
       }
-      aside[data-wwcombo-auto-sidebar="true"]:not(:hover):not(:focus-within) [class*="gap-2"] {
-        gap: 0 !important;
-      }
+      aside[data-wwcombo-auto-sidebar="true"]:not(:hover):not(:focus-within) [class*="gap-2"] { gap: 0 !important; }
       aside[data-wwcombo-auto-sidebar="true"]:not(:hover):not(:focus-within) [class*="px-4"],
       aside[data-wwcombo-auto-sidebar="true"]:not(:hover):not(:focus-within) [class*="px-3"],
       aside[data-wwcombo-auto-sidebar="true"]:not(:hover):not(:focus-within) [class*="px-2"] {
         padding-left: 0 !important;
         padding-right: 0 !important;
       }
-      aside[data-wwcombo-auto-sidebar="true"]:not(:hover):not(:focus-within) [class*="items-center"] {
-        justify-content: center !important;
-      }
+      aside[data-wwcombo-auto-sidebar="true"]:not(:hover):not(:focus-within) [class*="items-center"] { justify-content: center !important; }
       aside[data-wwcombo-auto-sidebar="true"]:not(:hover):not(:focus-within) > div:first-child > div,
-      aside[data-wwcombo-auto-sidebar="true"]:not(:hover):not(:focus-within) > div:first-child > button {
-        display: none !important;
-      }
-      aside[data-wwcombo-auto-sidebar="true"]:not(:hover):not(:focus-within) [class*="pl-6"] {
-        display: none !important;
-      }
+      aside[data-wwcombo-auto-sidebar="true"]:not(:hover):not(:focus-within) > div:first-child > button,
       aside[data-wwcombo-auto-sidebar="true"]:not(:hover):not(:focus-within) > div:nth-child(2) > div > div:not(:first-child) {
         display: none !important;
       }
@@ -273,36 +259,43 @@
   }
 
   function findProjectSidebar() {
-    const labelledHandle = document.querySelector('button[aria-label="调整侧栏宽度"], button[aria-label*="sidebar" i]');
-    const labelledSidebar = labelledHandle?.previousElementSibling;
-    if (labelledHandle instanceof HTMLButtonElement && labelledSidebar instanceof HTMLElement) {
-      return labelledSidebar;
-    }
-    return Array.from(document.querySelectorAll('aside')).find((candidate) => {
-      if (!(candidate instanceof HTMLElement)) return false;
-      const handle = candidate.nextElementSibling;
-      if (!(handle instanceof HTMLButtonElement)) return false;
-      const label = handle.getAttribute('aria-label') || '';
-      return label.includes('侧栏') || label.includes('sidebar') || handle.classList.contains('cursor-col-resize');
+    const handle = document.querySelector('button[aria-label="调整侧栏宽度"], button[aria-label*="sidebar" i]');
+    const sidebar = handle?.previousElementSibling;
+    if (handle instanceof HTMLButtonElement && sidebar instanceof HTMLElement) return sidebar;
+    return [...document.querySelectorAll('aside')].find((candidate) => {
+      const candidateHandle = candidate.nextElementSibling;
+      if (!(candidateHandle instanceof HTMLButtonElement)) return false;
+      const label = candidateHandle.getAttribute('aria-label') || '';
+      return label.includes('侧栏')
+        || label.toLowerCase().includes('sidebar')
+        || candidateHandle.classList.contains('cursor-col-resize');
     }) || null;
   }
 
-  function reportProjectSidebarOverlay(expanded) {
-    const sidebar = observedProjectSidebar;
-    if (!(sidebar instanceof HTMLElement)) return;
-    const configuredWidth = Number.parseFloat(sidebar.style.getPropertyValue('--wwcombo-sidebar-expanded-width'));
-    window.parent.postMessage({
+  function reportProjectSidebarOverlay(expanded = null) {
+    if (!(observedProjectSidebar instanceof HTMLElement)) return;
+    const isExpanded = typeof expanded === 'boolean'
+      ? expanded
+      : observedProjectSidebar.matches(':hover, :focus-within');
+    const configuredWidth = Number.parseFloat(observedProjectSidebar.style.getPropertyValue('--wwcombo-sidebar-expanded-width'));
+    const rect = observedProjectSidebar.getBoundingClientRect();
+    const payload = {
       type: SIDEBAR_OVERLAY_TYPE,
       version: 1,
-      expanded,
-      right: expanded && Number.isFinite(configuredWidth)
-        ? sidebar.getBoundingClientRect().left + configuredWidth
-        : sidebar.getBoundingClientRect().left + 52
-    }, '*');
+      expanded: isExpanded,
+      right: isExpanded
+        ? Math.max(rect.right, rect.left + (Number.isFinite(configuredWidth) ? configuredWidth : rect.width))
+        : rect.left + 52
+    };
+    const signature = JSON.stringify(payload);
+    if (signature === lastSidebarOverlaySignature) return;
+    lastSidebarOverlaySignature = signature;
+    window.parent.postMessage(payload, '*');
   }
 
   function onProjectSidebarPointerEnter() {
     reportProjectSidebarOverlay(true);
+    requestAnimationFrame(() => reportProjectSidebarOverlay());
   }
 
   function onProjectSidebarPointerLeave() {
@@ -311,21 +304,23 @@
 
   function bindProjectSidebar() {
     const sidebar = findProjectSidebar();
-    if (sidebar === observedProjectSidebar) return;
+    if (sidebar === observedProjectSidebar
+      && sidebar instanceof HTMLElement
+      && sidebar.dataset.wwcomboAutoSidebar === 'true'
+      && projectSidebarPlaceholder?.isConnected) return;
     observedProjectSidebar?.removeEventListener('pointerenter', onProjectSidebarPointerEnter);
     observedProjectSidebar?.removeEventListener('pointerleave', onProjectSidebarPointerLeave);
     observedProjectSidebar?.removeAttribute('data-wwcombo-auto-sidebar');
     projectSidebarResizeHandle?.removeAttribute('data-wwcombo-sidebar-resizer');
     projectSidebarPlaceholder?.remove();
-    observedProjectSidebar = sidebar;
+    observedProjectSidebar = null;
     projectSidebarResizeHandle = null;
     projectSidebarPlaceholder = null;
     if (!(sidebar instanceof HTMLElement)) return;
     const handle = sidebar.nextElementSibling;
-    if (!(handle instanceof HTMLButtonElement)) return;
-    ensureProjectSidebarStyle();
     const root = sidebar.parentElement;
-    if (!(root instanceof HTMLElement)) return;
+    if (!(handle instanceof HTMLButtonElement) || !(root instanceof HTMLElement)) return;
+    ensureProjectSidebarStyle();
     const expandedWidth = Math.min(400, Math.max(200, sidebar.getBoundingClientRect().width || 240));
     sidebar.style.setProperty('--wwcombo-sidebar-expanded-width', `${expandedWidth}px`);
     const placeholder = document.createElement('div');
@@ -335,6 +330,7 @@
     root.insertBefore(placeholder, sidebar);
     sidebar.dataset.wwcomboAutoSidebar = 'true';
     handle.dataset.wwcomboSidebarResizer = 'true';
+    observedProjectSidebar = sidebar;
     projectSidebarResizeHandle = handle;
     projectSidebarPlaceholder = placeholder;
     sidebar.addEventListener('pointerenter', onProjectSidebarPointerEnter);
@@ -342,99 +338,15 @@
     reportProjectSidebarOverlay(false);
   }
 
-  function timelineHostModeEnabled() {
-    return new URLSearchParams(window.location.hash.replace(/^#/u, '')).get('timeline_host') === 'wwcombo';
-  }
-
-  function findLegacyDamageTrack(root) {
-    if (!(root instanceof HTMLElement)) return null;
-    return Array.from(root.querySelectorAll('[data-track-index]')).find((track) => {
-      if (!(track instanceof HTMLElement)) return false;
-      const copy = track.textContent?.replace(/\s+/gu, ' ').trim() || '';
-      if (copy.includes('伤害绑定') || copy.includes('Damage Binding')) return true;
-      return Array.from(track.children).some((child) => child instanceof HTMLElement
-        && child.classList.contains('pointer-events-auto')
-        && child.classList.contains('theme-scrollbar')
-        && child.classList.contains('overflow-y-auto'));
-    }) || null;
-  }
-
-  function prepareLegacyTimelineHost(host, damageHeight) {
-    if (!(host instanceof HTMLElement)) return;
-    ensureWorkshopHostStyle();
-    const scroller = Array.from(host.children).find((element) => element instanceof HTMLElement && element.classList.contains('theme-scrollbar'));
-    const content = scroller instanceof HTMLElement
-      ? Array.from(scroller.children).find((element) => element instanceof HTMLElement && element.classList.contains('relative'))
-      : null;
-    const effectTrack = findLegacyDamageTrack(content);
-    const trackStack = effectTrack?.parentElement;
-    if (!(scroller instanceof HTMLElement) || !(content instanceof HTMLElement) || !(effectTrack instanceof HTMLElement) || !(trackStack instanceof HTMLElement)) return;
-    if (host.dataset.wwcomboLegacyTimeline !== 'true') host.dataset.wwcomboLegacyTimeline = 'true';
-    const heightValue = `${Math.round(damageHeight)}px`;
-    if (host.style.getPropertyValue('--wwcombo-legacy-damage-height') !== heightValue) host.style.setProperty('--wwcombo-legacy-damage-height', heightValue);
-    if (scroller.dataset.wwcomboLegacyDamageScroller !== 'true') scroller.dataset.wwcomboLegacyDamageScroller = 'true';
-    if (content.dataset.wwcomboLegacyContent !== 'true') content.dataset.wwcomboLegacyContent = 'true';
-    if (trackStack.dataset.wwcomboLegacyTrackStack !== 'true') trackStack.dataset.wwcomboLegacyTrackStack = 'true';
-    if (effectTrack.dataset.wwcomboLegacyDamageTrack !== 'true') effectTrack.dataset.wwcomboLegacyDamageTrack = 'true';
-  }
-
-  function comboImportLabel() {
-    return {
-      'zh-CN': '从连段谱导入',
-      'en-US': 'Import from Combo Charts',
-      'ja-JP': '連段譜からインポート',
-      'ko-KR': '콤보 차트에서 가져오기'
-    }[hostLanguage] || 'Import from Combo Charts';
-  }
-
-  function ensureComboImportButton() {
-    if (!timelineHostModeEnabled()) return;
-    const toolbar = document.querySelector('[role="toolbar"]');
-    if (!(toolbar instanceof HTMLElement)) return;
-    const damageButton = Array.from(toolbar.querySelectorAll('button')).find((button) => {
-      const copy = `${button.getAttribute('title') || ''} ${button.textContent || ''}`;
-      return copy.includes('查看所有伤害') || copy.includes('View all damage');
-    });
-    const current = toolbar.querySelector('button[data-wwcombo-combo-import="true"]');
-    if (!(damageButton instanceof HTMLButtonElement)) {
-      current?.remove();
-      return;
-    }
-    const button = current instanceof HTMLButtonElement ? current : damageButton.cloneNode(true);
-    if (!(button instanceof HTMLButtonElement)) return;
-    if (!(current instanceof HTMLButtonElement)) {
-      button.dataset.wwcomboComboImport = 'true';
-      button.disabled = false;
-      button.addEventListener('click', (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        window.parent.postMessage({ type: 'wwcombo:afyg-open-combo-import', version: 1 }, '*');
-      });
-    }
-    const importLabel = comboImportLabel();
-    button.title = importLabel;
-    button.setAttribute('aria-label', importLabel);
-    const label = button.querySelector('span');
-    if (label instanceof HTMLElement) label.textContent = importLabel;
-    const lockButton = Array.from(toolbar.querySelectorAll('button')).find((candidate) => {
-      const copy = `${candidate.getAttribute('title') || ''} ${candidate.textContent || ''}`.trim();
-      return copy === '锁定' || copy === '解锁' || copy === 'Lock' || copy === 'Unlock';
-    });
-    if (lockButton instanceof HTMLButtonElement) {
-      if (lockButton.previousElementSibling !== button) lockButton.before(button);
-    } else if (toolbar.lastElementChild !== button) {
-      toolbar.append(button);
-    }
-  }
-
   function resolveAiAssistant() {
     const known = document.querySelector('[data-wwcombo-ai-assistant="true"]');
     if (known instanceof HTMLElement) return known;
-    const trigger = Array.from(document.querySelectorAll('[title]')).find((element) => {
+    const trigger = [...document.querySelectorAll('[title]')].find((element) => {
       const title = element.getAttribute('title') || '';
       return title.includes('AI 助手') || title.includes('AI Assistant');
     });
-    const root = trigger?.closest('.fixed');
+    const expandedTrigger = document.querySelector('[title="清空对话"], [title="Clear conversation"], textarea[placeholder*="输入指令"], textarea[placeholder*="Enter a command"]');
+    const root = trigger?.closest('.fixed') || expandedTrigger?.closest('.fixed');
     if (!(root instanceof HTMLElement)) return null;
     root.dataset.wwcomboAiAssistant = 'true';
     return root;
@@ -448,8 +360,12 @@
     }
     const usesDefaultCorner = assistant.classList.contains('right-4') && assistant.classList.contains('bottom-4')
       && !assistant.style.left && !assistant.style.top;
-    if (usesDefaultCorner && assistant.style.bottom !== '92px') {
-      assistant.style.setProperty('bottom', '92px');
+    if (usesDefaultCorner) {
+      const requiredBottom = Number.isFinite(hostedTimelineOverlayTop)
+        ? Math.max(16, window.innerHeight - hostedTimelineOverlayTop + 12)
+        : 16;
+      const nextBottom = `${Math.round(requiredBottom)}px`;
+      if (assistant.style.bottom !== nextBottom) assistant.style.setProperty('bottom', nextBottom);
     }
     const rect = assistant.getBoundingClientRect();
     const style = getComputedStyle(assistant);
@@ -461,173 +377,214 @@
     }, '*');
   }
 
+  function ensureTimelineHostStyle() {
+    if (document.querySelector('style[data-wwcombo-timeline-host-style]')) return;
+    const style = document.createElement('style');
+    style.dataset.wwcomboTimelineHostStyle = 'true';
+    style.textContent = `
+      [data-wwcombo-damage-split="true"] {
+        height: var(--wwcombo-damage-height) !important;
+        flex: 0 0 var(--wwcombo-damage-height) !important;
+      }
+      [data-wwcombo-legacy-timeline="true"] { overflow: hidden !important; }
+      [data-wwcombo-legacy-timeline="true"]:not([data-wwcombo-original-editor="true"]) > [data-wwcombo-legacy-damage-scroller="true"] {
+        flex: 0 0 var(--wwcombo-legacy-damage-height, 190px) !important;
+        width: 100% !important;
+        height: var(--wwcombo-legacy-damage-height, 190px) !important;
+        min-height: var(--wwcombo-legacy-damage-height, 190px) !important;
+        overflow: auto !important;
+      }
+      [data-wwcombo-legacy-timeline="true"]:not([data-wwcombo-original-editor="true"]) [data-wwcombo-legacy-content="true"] { height: 100% !important; min-height: 100% !important; }
+      [data-wwcombo-legacy-timeline="true"]:not([data-wwcombo-original-editor="true"]) [data-wwcombo-legacy-content="true"] > :not([data-wwcombo-legacy-track-stack="true"]) { display: none !important; }
+      [data-wwcombo-legacy-timeline="true"]:not([data-wwcombo-original-editor="true"]) [data-wwcombo-legacy-track-stack="true"] > :not([data-wwcombo-legacy-damage-track="true"]) { display: none !important; }
+      [data-wwcombo-legacy-timeline="true"]:not([data-wwcombo-original-editor="true"]) [data-wwcombo-legacy-damage-track="true"] {
+        display: block !important;
+        flex: 1 1 100% !important;
+        width: 100% !important;
+        height: 100% !important;
+        min-height: 100% !important;
+      }
+    `;
+    (document.head || document.documentElement).append(style);
+  }
+
+  function explicitTimelineHost() {
+    const host = document.querySelector('[data-wwcombo-timeline-host]');
+    return host instanceof HTMLElement ? host : null;
+  }
+
+  function timelineHostModeEnabled() {
+    return new URLSearchParams(window.location.hash.replace(/^#/u, '')).get('timeline_host') === 'wwcombo';
+  }
+
+  function findLegacyDamageTrack(root) {
+    if (!(root instanceof HTMLElement)) return null;
+    return [...root.querySelectorAll('[data-track-index]')].find((track) => {
+      if (!(track instanceof HTMLElement)) return false;
+      const copy = track.textContent?.replace(/\s+/gu, ' ').trim() || '';
+      return copy.includes('伤害绑定') || copy.includes('Damage Binding');
+    }) || null;
+  }
+
   function findLegacyTimelineRoot() {
     if (!timelineHostModeEnabled()) return null;
-    return Array.from(document.querySelectorAll('div')).find((element) => {
+    return [...document.querySelectorAll('div')].find((element) => {
       if (!(element instanceof HTMLElement)) return false;
-      const classes = element.className;
-      if (typeof classes !== 'string'
-        || !classes.includes('theme-glass-surface')
-        || !classes.includes('h-full')
-        || !classes.includes('flex-col')
-        || !classes.includes('--theme-timeline-bg')) return false;
+      const classes = typeof element.className === 'string' ? element.className : '';
+      if (!classes.includes('theme-glass-surface') || !classes.includes('h-full') || !classes.includes('flex-col')) return false;
       const rect = element.getBoundingClientRect();
       return rect.width >= 320 && rect.height >= 320 && Boolean(findLegacyDamageTrack(element));
     }) || null;
   }
 
-  function resolveTimelineHost() {
-    const explicitHost = document.querySelector('[data-wwcombo-timeline-host]');
-    if (explicitHost instanceof HTMLElement) return { element: explicitHost, legacy: false };
-    const legacyHost = findLegacyTimelineRoot();
-    return legacyHost instanceof HTMLElement ? { element: legacyHost, legacy: true } : null;
+  function resolvedTimelineHost() {
+    return explicitTimelineHost() || findLegacyTimelineRoot();
   }
 
-  function resolveDamageHost() {
-    const explicitHost = document.querySelector('[data-wwcombo-damage-host]');
-    if (explicitHost instanceof HTMLElement) return explicitHost;
-    return findLegacyTimelineRoot();
+  function prepareLegacyTimelineHost(host, damageHeight) {
+    const scroller = [...host.children].find((element) => element instanceof HTMLElement && element.classList.contains('theme-scrollbar'));
+    const content = scroller instanceof HTMLElement
+      ? [...scroller.children].find((element) => element instanceof HTMLElement && element.classList.contains('relative'))
+      : null;
+    const damageTrack = findLegacyDamageTrack(content);
+    const trackStack = damageTrack?.parentElement;
+    if (!(scroller instanceof HTMLElement) || !(content instanceof HTMLElement) || !(damageTrack instanceof HTMLElement) || !(trackStack instanceof HTMLElement)) return;
+    ensureTimelineHostStyle();
+    host.dataset.wwcomboLegacyTimeline = 'true';
+    host.style.setProperty('--wwcombo-legacy-damage-height', `${Math.round(damageHeight)}px`);
+    scroller.dataset.wwcomboLegacyDamageScroller = 'true';
+    content.dataset.wwcomboLegacyContent = 'true';
+    trackStack.dataset.wwcomboLegacyTrackStack = 'true';
+    damageTrack.dataset.wwcomboLegacyDamageTrack = 'true';
   }
 
-  function resolveDamageScroller() {
-    const host = resolveDamageHost();
-    const scroller = host?.querySelector('.theme-scrollbar');
-    return scroller instanceof HTMLElement ? scroller : null;
+  function explicitDamageHost() {
+    const host = document.querySelector('[data-wwcombo-damage-host]');
+    return host instanceof HTMLElement ? host : findLegacyTimelineRoot();
+  }
+
+  function restoreDamageSplit(host = observedTimelineHost) {
+    if (host?.dataset.wwcomboLegacyTimeline === 'true') {
+      host.dataset.wwcomboOriginalEditor = 'true';
+      legacyDamageHeightOverride = null;
+      return;
+    }
+    const damage = host?.previousElementSibling;
+    if (!(damage instanceof HTMLElement)) return;
+    damage.removeAttribute('data-wwcombo-damage-split');
+    damage.style.removeProperty('--wwcombo-damage-height');
+  }
+
+  function bindHostedTimeline() {
+    const host = resolvedTimelineHost();
+    if (host === observedTimelineHost) return;
+    timelineHostResizeObserver.disconnect();
+    restoreDamageSplit();
+    observedTimelineHost = host;
+    if (!(host instanceof HTMLElement)) return;
+    legacyDamageHeightOverride = null;
+    timelineHostResizeObserver.observe(host);
+    if (host.parentElement) timelineHostResizeObserver.observe(host.parentElement);
+  }
+
+  function reportHostedTimelineLayout() {
+    bindHostedTimeline();
+    const host = observedTimelineHost;
+    if (!(host instanceof HTMLElement)) {
+      const payload = { type: HOST_LAYOUT_TYPE, version: 1, visible: false };
+      const signature = JSON.stringify(payload);
+      if (signature !== lastHostLayoutSignature) {
+        lastHostLayoutSignature = signature;
+        window.parent.postMessage(payload, '*');
+      }
+      return;
+    }
+    const legacy = host.dataset.wwcomboLegacyTimeline === 'true' || host === findLegacyTimelineRoot();
+    const rootRect = host.getBoundingClientRect();
+    const defaultLegacyDamageHeight = legacy ? Math.min(300, Math.max(190, rootRect.height * 0.3)) : 0;
+    const legacyDamageHeight = legacy && Number.isFinite(legacyDamageHeightOverride)
+      ? Math.min(Math.max(0, rootRect.height - 64), Math.max(0, legacyDamageHeightOverride))
+      : defaultLegacyDamageHeight;
+    if (legacy) prepareLegacyTimelineHost(host, legacyDamageHeight);
+    const rect = legacy
+      ? { left: rootRect.left, top: rootRect.top + legacyDamageHeight, width: rootRect.width, height: rootRect.height - legacyDamageHeight }
+      : host.getBoundingClientRect();
+    const fullRect = legacy ? rootRect : host.parentElement?.getBoundingClientRect() || rect;
+    const style = getComputedStyle(host);
+    const payload = {
+      type: HOST_LAYOUT_TYPE,
+      version: 1,
+      visible: rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden',
+      rect: {
+        left: rect.left,
+        top: rect.top,
+        width: rect.width,
+        height: rect.height,
+        fullTop: fullRect.top,
+        fullHeight: fullRect.height,
+        defaultHeight: legacy ? rootRect.height - defaultLegacyDamageHeight : rect.height
+      }
+    };
+    const signature = JSON.stringify(payload);
+    if (signature === lastHostLayoutSignature) return;
+    lastHostLayoutSignature = signature;
+    window.parent.postMessage(payload, '*');
+  }
+
+  function applyHostedTimelineSplit(message) {
+    hostedTimelineOverlayTop = message.collapsed === true
+      ? null
+      : typeof message.timelineTop === 'number' && Number.isFinite(message.timelineTop) ? message.timelineTop : hostedTimelineOverlayTop;
+    reportAiAssistantLayout();
+    bindHostedTimeline();
+    const host = observedTimelineHost;
+    const root = host?.parentElement;
+    const damage = host?.previousElementSibling;
+    if (!(host instanceof HTMLElement)) return;
+    ensureTimelineHostStyle();
+    const legacy = host.dataset.wwcomboLegacyTimeline === 'true' || host === findLegacyTimelineRoot();
+    if (legacy) {
+      const rootRect = host.getBoundingClientRect();
+      if (message.collapsed === true) {
+        host.dataset.wwcomboOriginalEditor = 'true';
+        legacyDamageHeightOverride = null;
+      } else if (typeof message.timelineTop === 'number' && Number.isFinite(message.timelineTop)) {
+        delete host.dataset.wwcomboOriginalEditor;
+        legacyDamageHeightOverride = Math.min(Math.max(0, rootRect.height - 64), Math.max(190, message.timelineTop - rootRect.top));
+        prepareLegacyTimelineHost(host, legacyDamageHeightOverride);
+      }
+      requestAnimationFrame(reportHostedTimelineLayout);
+      return;
+    }
+    if (!(root instanceof HTMLElement) || !(damage instanceof HTMLElement)) return;
+    if (message.collapsed === true) {
+      restoreDamageSplit(host);
+      requestAnimationFrame(reportHostedTimelineLayout);
+      return;
+    }
+    if (typeof message.timelineTop !== 'number' || !Number.isFinite(message.timelineTop)) return;
+    const rootRect = root.getBoundingClientRect();
+    const minimumDamageHeight = Math.min(190, Math.max(0, rootRect.height - 64));
+    const maximumDamageHeight = Math.max(minimumDamageHeight, rootRect.height - 64);
+    const damageHeight = Math.min(maximumDamageHeight, Math.max(minimumDamageHeight, message.timelineTop - rootRect.top));
+    damage.dataset.wwcomboDamageSplit = 'true';
+    damage.style.setProperty('--wwcombo-damage-height', `${Math.round(damageHeight)}px`);
+    requestAnimationFrame(reportHostedTimelineLayout);
   }
 
   function damageTimelineContent(scroller) {
-    const timeline = scroller?.querySelector('.relative');
+    const timeline = scroller?.querySelector(':scope > .relative') || scroller?.querySelector('.relative');
     return timeline instanceof HTMLElement ? timeline : null;
   }
 
-  function damageTimeFromClientX(clientX, timeline) {
-    const rect = timeline.getBoundingClientRect();
-    const position = clientX - rect.left - 80 - 48;
-    return Math.max(0, Math.round(position / Math.max(0.0001, timelineGeometry.pixelsPerMs)));
-  }
-
-  function sendDamageSeek(clientX) {
-    if (!damageSeekState.enabled || !(observedDamageTimeline instanceof HTMLElement)) return;
-    const timeMs = damageTimeFromClientX(clientX, observedDamageTimeline);
-    window.parent.postMessage({ type: 'wwcombo:afyg-damage-seek', version: 1, timeMs }, '*');
-    damageSeekState.playbackMs = timeMs;
-    damageSeekState.viewportX = null;
-    updateDamageSeekLine();
-  }
-
-  function clearDamageSeekDrag() {
-    if (!damageSeekDragging) return;
-    damageSeekDragging = false;
-    if (damageSeekEdgeFrame) cancelAnimationFrame(damageSeekEdgeFrame);
-    damageSeekEdgeFrame = 0;
-    window.removeEventListener('pointermove', onDamageSeekPointerMove);
-    window.removeEventListener('pointerup', clearDamageSeekDrag);
-    window.removeEventListener('pointercancel', clearDamageSeekDrag);
-  }
-
-  function onDamageSeekPointerMove(event) {
-    if (!damageSeekDragging) return;
-    event.preventDefault();
-    damageSeekClientX = event.clientX;
-    sendDamageSeek(event.clientX);
-  }
-
-  function runDamageSeekEdgeScroll() {
-    damageSeekEdgeFrame = 0;
-    if (!damageSeekDragging || !(observedDamageScroller instanceof HTMLElement)) return;
-    const rect = observedDamageScroller.getBoundingClientRect();
-    const edgeSize = Math.min(96, Math.max(48, rect.width * 0.12));
-    let delta = 0;
-    if (damageSeekClientX < rect.left + edgeSize) {
-      const strength = Math.min(1, Math.max(0, (rect.left + edgeSize - damageSeekClientX) / edgeSize));
-      delta = -Math.max(2, strength * 18);
-    } else if (damageSeekClientX > rect.right - edgeSize) {
-      const strength = Math.min(1, Math.max(0, (damageSeekClientX - (rect.right - edgeSize)) / edgeSize));
-      delta = Math.max(2, strength * 18);
-    }
-    if (delta !== 0) {
-      markDamageScrollIntent();
-      const maxScrollLeft = Math.max(0, observedDamageScroller.scrollWidth - observedDamageScroller.clientWidth);
-      const previousScrollLeft = observedDamageScroller.scrollLeft;
-      observedDamageScroller.scrollLeft = Math.min(maxScrollLeft, Math.max(0, previousScrollLeft + delta));
-      if (Math.abs(observedDamageScroller.scrollLeft - previousScrollLeft) > 0.1) sendDamageSeek(damageSeekClientX);
-    }
-    damageSeekEdgeFrame = requestAnimationFrame(runDamageSeekEdgeScroll);
-  }
-
-  function isDamageBlockTarget(target) {
-    let current = target instanceof HTMLElement ? target : null;
-    while (current && current !== observedDamageTimeline) {
-      if (current.parentElement?.classList.contains('z-[2]')) return true;
-      current = current.parentElement;
-    }
-    return false;
-  }
-
-  function onDamageSeekPointerDown(event) {
-    if (!damageSeekState.enabled || event.button !== 0 || !(observedDamageTimeline instanceof HTMLElement)) return;
-    const target = event.target instanceof HTMLElement ? event.target : null;
-    if (isDamageBlockTarget(target) || target?.closest('.sticky, input, textarea, select, button, a, [contenteditable="true"]')) return;
-    event.preventDefault();
-    event.stopPropagation();
-    damageSeekDragging = true;
-    damageSeekClientX = event.clientX;
-    sendDamageSeek(event.clientX);
-    damageSeekEdgeFrame = requestAnimationFrame(runDamageSeekEdgeScroll);
-    window.addEventListener('pointermove', onDamageSeekPointerMove, { passive: false });
-    window.addEventListener('pointerup', clearDamageSeekDrag, { once: true });
-    window.addEventListener('pointercancel', clearDamageSeekDrag, { once: true });
-  }
-
-  function updateDamageSeekLine() {
-    if (!damageSeekLine) return;
-    const timelineRect = observedDamageTimeline?.getBoundingClientRect();
-    // The parent draws one shared line across both surfaces. Keeping a second
-    // iframe line creates a visible split while either scroller is moving.
-    if (damageSeekLine.style.display !== 'none') damageSeekLine.style.display = 'none';
-    window.parent.postMessage({
-      type: 'wwcombo:afyg-damage-playhead-layout',
-      version: 1,
-      rect: timelineRect ? { top: timelineRect.top, bottom: timelineRect.bottom } : null
-    }, '*');
-  }
-
-  function bindDamageSeekLine(timeline) {
-    if (timeline === observedDamageTimeline) {
-      updateDamageSeekLine();
-      return;
-    }
-    observedDamageTimeline?.removeEventListener('pointerdown', onDamageSeekPointerDown, true);
-    clearDamageSeekDrag();
-    damageSeekLine?.remove();
-    observedDamageTimeline = timeline;
-    damageSeekLine = null;
-    if (!(timeline instanceof HTMLElement)) return;
-    damageSeekLine = document.createElement('div');
-    damageSeekLine.dataset.wwcomboDamageSeekLine = 'true';
-    damageSeekLine.style.cssText = 'position:absolute;top:0;bottom:0;width:2px;z-index:8;transform:translateX(-1px);background:#fff;box-shadow:0 0 7px rgba(255,255,255,.88),0 0 0 1px rgba(0,0,0,.78);pointer-events:none;';
-    timeline.append(damageSeekLine);
-    timeline.addEventListener('pointerdown', onDamageSeekPointerDown, true);
-    updateDamageSeekLine();
-  }
-
-  function damageScrollRatio(scroller) {
-    const maxScrollLeft = Math.max(0, scroller.scrollWidth - scroller.clientWidth);
-    return maxScrollLeft > 0 ? Math.min(1, Math.max(0, scroller.scrollLeft / maxScrollLeft)) : 0;
-  }
-
   function damageTimelineLayers(timeline) {
-    const legacyEffectTrack = timeline?.querySelector('[data-wwcombo-legacy-damage-track="true"]') || findLegacyDamageTrack(timeline);
-    if (legacyEffectTrack instanceof HTMLElement) {
-      const damageViewport = Array.from(legacyEffectTrack.children).find((element) => element instanceof HTMLElement && element.querySelector(':scope > .relative'));
-      const damageLayer = damageViewport instanceof HTMLElement ? damageViewport.querySelector(':scope > .relative') : null;
-      return {
-        referenceLayer: null,
-        damageLayer: damageLayer instanceof HTMLElement ? damageLayer : null,
-        legacy: true
-      };
+    const legacyDamageTrack = timeline?.querySelector('[data-wwcombo-legacy-damage-track="true"]') || findLegacyDamageTrack(timeline);
+    if (legacyDamageTrack instanceof HTMLElement) {
+      const viewport = [...legacyDamageTrack.children].find((element) => element instanceof HTMLElement && element.querySelector(':scope > .relative'));
+      const damageLayer = viewport instanceof HTMLElement ? viewport.querySelector(':scope > .relative') : null;
+      return { referenceLayer: null, damageLayer: damageLayer instanceof HTMLElement ? damageLayer : null, legacy: true };
     }
-    const layers = Array.from(timeline?.children || []).filter((element) => element instanceof HTMLElement);
+    const layers = [...(timeline?.children || [])].filter((element) => element instanceof HTMLElement);
     return {
       referenceLayer: layers.find((element) => typeof element.className === 'string' && element.className.includes('z-[1]')) || null,
       damageLayer: layers.find((element) => typeof element.className === 'string' && element.className.includes('z-[2]')) || null,
@@ -640,17 +597,113 @@
     if (!match) return null;
     const x = Number(match[1]);
     const y = Number(match[2]);
-    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-    return { x, y, suffix: match[3].trim() };
+    return Number.isFinite(x) && Number.isFinite(y) ? { x, y, suffix: match[3].trim() } : null;
+  }
+
+  function scaleDamageChild(child, snapToAnchor, translated = null) {
+    const positionMode = translated ? 'translate' : 'left';
+    const currentLeft = translated?.x ?? Number.parseFloat(child.style.left);
+    const appliedLeft = Number(child.dataset.wwcomboAppliedLeft);
+    const appliedTop = Number(child.dataset.wwcomboAppliedTop);
+    if (child.dataset.wwcomboPositionMode !== positionMode
+      || !child.dataset.wwcomboBaseLeft
+      || (Number.isFinite(currentLeft) && Number.isFinite(appliedLeft) && Math.abs(currentLeft - appliedLeft) > 0.5)
+      || (translated && Number.isFinite(appliedTop) && Math.abs(translated.y - appliedTop) > 0.5)) {
+      if (!Number.isFinite(currentLeft)) return;
+      child.dataset.wwcomboPositionMode = positionMode;
+      child.dataset.wwcomboBaseLeft = String(currentLeft);
+      if (translated) {
+        child.dataset.wwcomboBaseTop = String(translated.y);
+        child.dataset.wwcomboTransformSuffix = translated.suffix;
+      }
+    }
+    if (translated
+      && Number.isFinite(appliedLeft)
+      && Math.abs(translated.x - appliedLeft) <= 0.5
+      && (!Number.isFinite(appliedTop) || Math.abs(translated.y - appliedTop) <= 0.5)
+      && translated.suffix !== (child.dataset.wwcomboTransformSuffix || '')) {
+      child.dataset.wwcomboTransformSuffix = translated.suffix;
+    }
+    const baseLeft = Number(child.dataset.wwcomboBaseLeft);
+    if (!Number.isFinite(baseLeft)) return;
+    const baseTimeMs = Math.max(0, (baseLeft - 48) / 0.06);
+    const anchor = snapToAnchor
+      ? timelineGeometry.anchorsMs.reduce((nearest, timeMs) => nearest === null || Math.abs(timeMs - baseTimeMs) < Math.abs(nearest - baseTimeMs) ? timeMs : nearest, null)
+      : null;
+    const nextLeftValue = 48 + (anchor ?? baseTimeMs) * timelineGeometry.pixelsPerMs;
+    child.dataset.wwcomboAppliedLeft = String(nextLeftValue);
+    if (translated) {
+      if (!child.dataset.wwcomboBaseTop) child.dataset.wwcomboBaseTop = String(translated.y);
+      if (!child.dataset.wwcomboTransformSuffix) child.dataset.wwcomboTransformSuffix = translated.suffix;
+      const baseTop = Number(child.dataset.wwcomboBaseTop);
+      const suffix = child.dataset.wwcomboTransformSuffix || '';
+      const nextTransform = `translate(${nextLeftValue}px, ${Number.isFinite(baseTop) ? baseTop : 0}px)${suffix ? ` ${suffix}` : ''}`;
+      child.dataset.wwcomboAppliedTop = String(Number.isFinite(baseTop) ? baseTop : 0);
+      if (child.style.left !== '0px') child.style.left = '0px';
+      if (child.style.top !== '0px') child.style.top = '0px';
+      if (child.style.transform !== nextTransform) child.style.transform = nextTransform;
+    } else {
+      const nextLeft = `${nextLeftValue}px`;
+      if (child.style.left !== nextLeft) child.style.left = nextLeft;
+    }
+  }
+
+  function restackDamageChildren(timeline, damageLayer, legacy) {
+    const items = [...damageLayer.children].flatMap((child) => {
+      if (!(child instanceof HTMLElement)) return [];
+      const left = Number(child.dataset.wwcomboAppliedLeft);
+      if (!Number.isFinite(left)) return [];
+      const rect = child.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return [];
+      return [{ child, left, width: Math.max(24, rect.width), height: Math.max(18, rect.height) }];
+    }).sort((left, right) => left.left - right.left);
+    const placed = [];
+    const gap = 4;
+    let maximumBottom = 0;
+    for (const item of items) {
+      const candidates = new Set([0]);
+      for (const previous of placed) {
+        const overlapsX = item.left < previous.left + previous.width + gap
+          && previous.left < item.left + item.width + gap;
+        if (overlapsX) candidates.add(previous.top + previous.height + gap);
+      }
+      let top = 0;
+      for (const candidate of [...candidates].sort((left, right) => left - right)) {
+        const collides = placed.some((previous) => {
+          const overlapsX = item.left < previous.left + previous.width + gap
+            && previous.left < item.left + item.width + gap;
+          const overlapsY = candidate < previous.top + previous.height + gap
+            && previous.top < candidate + item.height + gap;
+          return overlapsX && overlapsY;
+        });
+        if (!collides) {
+          top = candidate;
+          break;
+        }
+      }
+      placed.push({ ...item, top });
+      maximumBottom = Math.max(maximumBottom, top + item.height);
+      if (legacy) {
+        const suffix = item.child.dataset.wwcomboTransformSuffix || '';
+        const nextTransform = `translate(${item.left}px, ${top}px)${suffix ? ` ${suffix}` : ''}`;
+        item.child.dataset.wwcomboAppliedTop = String(top);
+        if (item.child.style.transform !== nextTransform) item.child.style.transform = nextTransform;
+      } else {
+        const nextTop = `${top}px`;
+        if (item.child.style.top !== nextTop) item.child.style.top = nextTop;
+      }
+    }
+    if (!legacy) {
+      const nextHeight = `${Math.max(150, Math.ceil(maximumBottom + 18))}px`;
+      if (timeline.style.height !== nextHeight) timeline.style.height = nextHeight;
+    }
   }
 
   function applyDamageTimelineScale() {
     const timeline = damageTimelineContent(observedDamageScroller);
-    if (!(timeline instanceof HTMLElement)) return;
+    if (!(timeline instanceof HTMLElement) || timelineGeometry.renderTotalMs <= 0) return;
     const desiredWidth = Math.ceil(80 + 48 + timelineGeometry.renderTotalMs * timelineGeometry.pixelsPerMs + 160);
-    if (timelineGeometry.renderTotalMs > 0 && timeline.style.width !== `${desiredWidth}px`) {
-      timeline.style.width = `${desiredWidth}px`;
-    }
+    if (timeline.style.width !== `${desiredWidth}px`) timeline.style.width = `${desiredWidth}px`;
     const { referenceLayer, damageLayer, legacy } = damageTimelineLayers(timeline);
     for (const layer of [referenceLayer, damageLayer]) {
       if (!(layer instanceof HTMLElement)) continue;
@@ -660,82 +713,28 @@
       if (layer.style.transformOrigin) layer.style.removeProperty('transform-origin');
     }
     if (referenceLayer instanceof HTMLElement) {
-      for (const child of referenceLayer.children) {
-        if (!(child instanceof HTMLElement)) continue;
-        const currentLeft = Number.parseFloat(child.style.left);
-        const appliedLeft = Number(child.dataset.wwcomboAppliedLeft);
-        if (!child.dataset.wwcomboBaseLeft || (Number.isFinite(currentLeft) && Number.isFinite(appliedLeft) && Math.abs(currentLeft - appliedLeft) > 0.5)) {
-          if (!Number.isFinite(currentLeft)) continue;
-          child.dataset.wwcomboBaseLeft = String(currentLeft);
-        }
-        const baseLeft = Number(child.dataset.wwcomboBaseLeft);
-        if (!Number.isFinite(baseLeft)) continue;
-        const nextLeftValue = 48 + Math.max(0, (baseLeft - 48) / 0.06) * timelineGeometry.pixelsPerMs;
-        child.dataset.wwcomboAppliedLeft = String(nextLeftValue);
-        const nextLeft = `${nextLeftValue}px`;
-        if (child.style.left !== nextLeft) child.style.left = nextLeft;
-      }
+      for (const child of referenceLayer.children) if (child instanceof HTMLElement) scaleDamageChild(child, false);
     }
     if (damageLayer instanceof HTMLElement) {
-      const baseAnchors = timelineGeometry.anchorsMs.map((timeMs) => ({ timeMs, baseLeft: 48 + timeMs * 0.06 }));
       for (const child of damageLayer.children) {
-        if (!(child instanceof HTMLElement)) continue;
-        const translated = legacy ? damageTranslatePosition(child.style.transform) : null;
-        const positionMode = translated ? 'translate' : 'left';
-        const currentLeft = translated?.x ?? Number.parseFloat(child.style.left);
-        const appliedLeft = Number(child.dataset.wwcomboAppliedLeft);
-        const appliedTop = Number(child.dataset.wwcomboAppliedTop);
-        if (child.dataset.wwcomboPositionMode !== positionMode
-          || !child.dataset.wwcomboBaseLeft
-          || (Number.isFinite(currentLeft) && Number.isFinite(appliedLeft) && Math.abs(currentLeft - appliedLeft) > 0.5)
-          || (translated && Number.isFinite(appliedTop) && Math.abs(translated.y - appliedTop) > 0.5)) {
-          if (!Number.isFinite(currentLeft)) continue;
-          child.dataset.wwcomboPositionMode = positionMode;
-          child.dataset.wwcomboBaseLeft = String(currentLeft);
-          if (translated) {
-            child.dataset.wwcomboBaseTop = String(translated.y);
-            child.dataset.wwcomboTransformSuffix = translated.suffix;
-          }
-        }
-        if (translated
-          && Number.isFinite(appliedLeft)
-          && Math.abs(translated.x - appliedLeft) <= 0.5
-          && (!Number.isFinite(appliedTop) || Math.abs(translated.y - appliedTop) <= 0.5)
-          && translated.suffix !== (child.dataset.wwcomboTransformSuffix || '')) {
-          child.dataset.wwcomboTransformSuffix = translated.suffix;
-        }
-        const baseLeft = Number(child.dataset.wwcomboBaseLeft);
-        if (!Number.isFinite(baseLeft)) continue;
-        const anchor = baseAnchors.reduce((nearest, candidate) => !nearest || Math.abs(candidate.baseLeft - baseLeft) < Math.abs(nearest.baseLeft - baseLeft) ? candidate : nearest, null);
-        const fallbackTimeMs = Math.max(0, (baseLeft - 48) / 0.06);
-        const nextLeftValue = 48 + (anchor?.timeMs ?? fallbackTimeMs) * timelineGeometry.pixelsPerMs;
-        child.dataset.wwcomboAppliedLeft = String(nextLeftValue);
-        if (positionMode === 'translate') {
-          const baseTop = Number(child.dataset.wwcomboBaseTop);
-          const suffix = child.dataset.wwcomboTransformSuffix || '';
-          const nextTransform = `translate(${nextLeftValue}px, ${Number.isFinite(baseTop) ? baseTop : 0}px)${suffix ? ` ${suffix}` : ''}`;
-          child.dataset.wwcomboAppliedTop = String(Number.isFinite(baseTop) ? baseTop : 0);
-          if (child.style.left !== '0px') child.style.left = '0px';
-          if (child.style.top !== '0px') child.style.top = '0px';
-          if (child.style.transform !== nextTransform) child.style.transform = nextTransform;
-        } else {
-          const nextLeft = `${nextLeftValue}px`;
-          if (child.style.left !== nextLeft) child.style.left = nextLeft;
-        }
+        if (child instanceof HTMLElement) scaleDamageChild(child, true, legacy ? damageTranslatePosition(child.style.transform) : null);
       }
+      restackDamageChildren(timeline, damageLayer, legacy);
     }
-    updateDamageSeekLine();
+  }
+
+  function damageScrollRatio(scroller) {
+    const maximum = Math.max(0, scroller.scrollWidth - scroller.clientWidth);
+    return maximum > 0 ? Math.min(1, Math.max(0, scroller.scrollLeft / maximum)) : 0;
   }
 
   function emitDamageScroll() {
-    damageScrollReportFrame = 0;
+    damageScrollFrame = 0;
     if (!(observedDamageScroller instanceof HTMLElement)) return;
     requestedDamageScrollRatio = damageScrollRatio(observedDamageScroller);
     const scrollerRect = observedDamageScroller.getBoundingClientRect();
     const viewportX = scrollerRect.left + 80 + 48 - observedDamageScroller.scrollLeft;
-    timelineGeometry.scrollLeft = Math.max(0,
-      timelineGeometry.viewportOffsetX + timelineGeometry.contentOffset - viewportX
-    );
+    timelineGeometry.scrollLeft = Math.max(0, timelineGeometry.viewportOffsetX + timelineGeometry.contentOffset - viewportX);
     damageScrollSequence += 1;
     window.parent.postMessage({
       type: 'wwcombo:afyg-damage-scroll',
@@ -751,32 +750,21 @@
   function reportDamageScroll() {
     if (!(observedDamageScroller instanceof HTMLElement)) return;
     const now = performance.now();
-    const hasUserIntent = damageScrollPointerActive || now <= damageScrollUserIntentUntil;
-    if (timelineScrollTarget !== null && !hasUserIntent && now <= timelineScrollSuppressUntil) {
-      if (Math.abs(observedDamageScroller.scrollLeft - timelineScrollTarget) > 0.25) {
-        observedDamageScroller.scrollLeft = timelineScrollTarget;
-      }
+    if (timelineScrollTarget !== null && now > damageScrollUserIntentUntil && now <= timelineScrollSuppressUntil) {
+      if (Math.abs(observedDamageScroller.scrollLeft - timelineScrollTarget) > 0.25) observedDamageScroller.scrollLeft = timelineScrollTarget;
       return;
     }
-    if (hasUserIntent) {
-      damageScrollUserIntentUntil = now + 180;
+    if (now <= damageScrollUserIntentUntil) {
       timelineScrollTarget = null;
       timelineScrollSuppressUntil = 0;
     } else if (timelineScrollTarget !== null && now > timelineScrollSuppressUntil) {
       timelineScrollTarget = null;
     }
-
-    requestedDamageScrollRatio = damageScrollRatio(observedDamageScroller);
-    const scrollerRect = observedDamageScroller.getBoundingClientRect();
-    const viewportX = scrollerRect.left + 80 + 48 - observedDamageScroller.scrollLeft;
-    timelineGeometry.scrollLeft = Math.max(0,
-      timelineGeometry.viewportOffsetX + timelineGeometry.contentOffset - viewportX
-    );
-    if (!damageScrollReportFrame) damageScrollReportFrame = requestAnimationFrame(emitDamageScroll);
+    if (!damageScrollFrame) damageScrollFrame = requestAnimationFrame(emitDamageScroll);
     if (damageScrollSettleTimer) clearTimeout(damageScrollSettleTimer);
     damageScrollSettleTimer = setTimeout(() => {
       damageScrollSettleTimer = 0;
-      if (damageScrollReportFrame) cancelAnimationFrame(damageScrollReportFrame);
+      if (damageScrollFrame) cancelAnimationFrame(damageScrollFrame);
       emitDamageScroll();
     }, 100);
   }
@@ -788,226 +776,114 @@
     timelineScrollSuppressUntil = 0;
   }
 
-  function beginDamageScrollPointer() {
-    damageScrollPointerActive = true;
-    markDamageScrollIntent();
-  }
-
-  function endDamageScrollPointer() {
-    damageScrollPointerActive = false;
-    damageScrollUserIntentUntil = performance.now() + 180;
-  }
-
   function applyTimelineScrollRatio() {
     if (!(observedDamageScroller instanceof HTMLElement) || requestedDamageScrollRatio === null) return;
-    const maxScrollLeft = Math.max(0, observedDamageScroller.scrollWidth - observedDamageScroller.clientWidth);
+    const maximum = Math.max(0, observedDamageScroller.scrollWidth - observedDamageScroller.clientWidth);
     const scrollerRect = observedDamageScroller.getBoundingClientRect();
     const nextScrollLeft = Number.isFinite(timelineGeometry.scrollLeft)
-      ? Math.min(maxScrollLeft, Math.max(0,
-          timelineGeometry.scrollLeft
-          + scrollerRect.left + 80 + 48
-          - timelineGeometry.viewportOffsetX
-          - timelineGeometry.contentOffset
-        ))
-      : requestedDamageScrollRatio * maxScrollLeft;
+      ? Math.min(maximum, Math.max(0, timelineGeometry.scrollLeft + scrollerRect.left + 80 + 48 - timelineGeometry.viewportOffsetX - timelineGeometry.contentOffset))
+      : requestedDamageScrollRatio * maximum;
     timelineScrollTarget = nextScrollLeft;
     timelineScrollSuppressUntil = performance.now() + 160;
-    if (Math.abs(observedDamageScroller.scrollLeft - nextScrollLeft) > 0.25) {
-      observedDamageScroller.scrollLeft = nextScrollLeft;
-    }
+    if (Math.abs(observedDamageScroller.scrollLeft - nextScrollLeft) > 0.25) observedDamageScroller.scrollLeft = nextScrollLeft;
+  }
+
+  function reportDamagePlayheadLayout() {
+    const rect = damageTimelineContent(observedDamageScroller)?.getBoundingClientRect();
+    window.parent.postMessage({
+      type: 'wwcombo:afyg-damage-playhead-layout',
+      version: 1,
+      rect: rect ? { top: rect.top, bottom: rect.bottom } : null
+    }, '*');
   }
 
   function bindDamageScroller() {
-    const scroller = resolveDamageScroller();
-    if (scroller === observedDamageScroller) {
-      bindDamageSeekLine(damageTimelineContent(scroller));
+    const host = explicitDamageHost();
+    const scroller = host?.querySelector('.theme-scrollbar');
+    const next = scroller instanceof HTMLElement ? scroller : null;
+    if (next === observedDamageScroller) {
       applyDamageTimelineScale();
       applyTimelineScrollRatio();
+      reportDamagePlayheadLayout();
       return;
     }
     damageResizeObserver.disconnect();
     observedDamageScroller?.removeEventListener('scroll', reportDamageScroll);
     observedDamageScroller?.removeEventListener('wheel', markDamageScrollIntent);
-    observedDamageScroller?.removeEventListener('pointerdown', beginDamageScrollPointer);
+    observedDamageScroller?.removeEventListener('pointerdown', markDamageScrollIntent);
     observedDamageScroller?.removeEventListener('touchstart', markDamageScrollIntent);
-    observedDamageScroller?.removeEventListener('keydown', markDamageScrollIntent);
-    observedDamageScroller = scroller;
-    if (!(scroller instanceof HTMLElement)) {
-      bindDamageSeekLine(null);
+    observedDamageScroller = next;
+    if (!(next instanceof HTMLElement)) {
+      reportDamagePlayheadLayout();
       return;
     }
-    scroller.addEventListener('wheel', markDamageScrollIntent, { passive: true });
-    scroller.addEventListener('pointerdown', beginDamageScrollPointer, { passive: true });
-    scroller.addEventListener('touchstart', markDamageScrollIntent, { passive: true });
-    scroller.addEventListener('keydown', markDamageScrollIntent);
-    scroller.addEventListener('scroll', reportDamageScroll, { passive: true });
-    damageResizeObserver.observe(scroller);
-    const content = scroller.querySelector('.relative');
-    if (content instanceof HTMLElement) damageResizeObserver.observe(content);
-    bindDamageSeekLine(damageTimelineContent(scroller));
+    next.addEventListener('scroll', reportDamageScroll, { passive: true });
+    next.addEventListener('wheel', markDamageScrollIntent, { passive: true });
+    next.addEventListener('pointerdown', markDamageScrollIntent, { passive: true });
+    next.addEventListener('touchstart', markDamageScrollIntent, { passive: true });
+    damageResizeObserver.observe(next);
+    const content = damageTimelineContent(next);
+    if (content) damageResizeObserver.observe(content);
     applyDamageTimelineScale();
     applyTimelineScrollRatio();
+    reportDamagePlayheadLayout();
   }
 
-  function reportHostLayout() {
-    layoutFrame = 0;
-    bindProjectSidebar();
-    ensureComboImportButton();
-    reportAiAssistantLayout();
-    const resolvedHost = resolveTimelineHost();
-    const host = resolvedHost?.element ?? null;
-    if (host !== observedTimelineHost) {
-      hostResizeObserver.disconnect();
-      legacyDamageHeightOverride = null;
-      observedTimelineHost = host;
-      if (host instanceof HTMLElement) hostResizeObserver.observe(host);
+  function applyTimelineGeometry(message) {
+    const sequence = typeof message.sequence === 'number' && Number.isFinite(message.sequence) ? Math.max(0, Math.floor(message.sequence)) : 0;
+    if (sequence > 0 && sequence <= lastTimelineScrollSequence) return;
+    if (sequence > 0) lastTimelineScrollSequence = sequence;
+    const inputAt = typeof message.inputAt === 'number' && Number.isFinite(message.inputAt) ? Math.max(0, message.inputAt) : 0;
+    const timelineOwnsScroll = inputAt >= damageScrollInputAt;
+    if (timelineOwnsScroll && damageScrollFrame) {
+      cancelAnimationFrame(damageScrollFrame);
+      damageScrollFrame = 0;
     }
-    if (!(host instanceof HTMLElement)) {
-      bindDamageScroller();
-      window.parent.postMessage({ type: HOST_LAYOUT_TYPE, version: 1, visible: false }, '*');
-      return;
+    if (timelineOwnsScroll && damageScrollSettleTimer) {
+      clearTimeout(damageScrollSettleTimer);
+      damageScrollSettleTimer = 0;
     }
-    const rect = host.getBoundingClientRect();
-    const style = getComputedStyle(host);
-    const defaultLegacyDamageHeight = resolvedHost?.legacy
-      ? Math.min(300, Math.max(190, rect.height * 0.3))
-      : 0;
-    const legacyDamageHeight = resolvedHost?.legacy && Number.isFinite(legacyDamageHeightOverride)
-      ? Math.min(Math.max(0, rect.height - 52), Math.max(0, legacyDamageHeightOverride))
-      : defaultLegacyDamageHeight;
-    if (resolvedHost?.legacy) prepareLegacyTimelineHost(host, legacyDamageHeight);
+    requestedDamageScrollRatio = Math.min(1, Math.max(0, message.ratio));
+    timelineGeometry = {
+      pixelsPerMs: typeof message.pixelsPerMs === 'number' && Number.isFinite(message.pixelsPerMs) ? Math.min(1.6, Math.max(0.01, message.pixelsPerMs)) : timelineGeometry.pixelsPerMs,
+      renderTotalMs: typeof message.renderTotalMs === 'number' && Number.isFinite(message.renderTotalMs) ? Math.max(0, message.renderTotalMs) : timelineGeometry.renderTotalMs,
+      scrollLeft: timelineOwnsScroll && typeof message.scrollLeft === 'number' && Number.isFinite(message.scrollLeft) ? Math.max(0, message.scrollLeft) : timelineGeometry.scrollLeft,
+      viewportOffsetX: typeof message.viewportOffsetX === 'number' && Number.isFinite(message.viewportOffsetX) ? message.viewportOffsetX : timelineGeometry.viewportOffsetX,
+      contentOffset: typeof message.contentOffset === 'number' && Number.isFinite(message.contentOffset) ? message.contentOffset : timelineGeometry.contentOffset,
+      anchorsMs: Array.isArray(message.anchorsMs) ? message.anchorsMs.filter((value) => typeof value === 'number' && Number.isFinite(value) && value >= 0).slice(0, 10000) : timelineGeometry.anchorsMs
+    };
     bindDamageScroller();
-    window.parent.postMessage({
-      type: HOST_LAYOUT_TYPE,
-      version: 1,
-      visible: rect.width > 0 && rect.height > legacyDamageHeight && style.display !== 'none' && style.visibility !== 'hidden',
-      rect: {
-        left: rect.left,
-        top: rect.top + legacyDamageHeight,
-        width: rect.width,
-        height: rect.height - legacyDamageHeight,
-        fullTop: rect.top,
-        fullHeight: rect.height,
-        defaultHeight: rect.height - defaultLegacyDamageHeight
-      }
-    }, '*');
   }
 
-  function scheduleHostLayout() {
-    if (layoutFrame) return;
-    layoutFrame = requestAnimationFrame(reportHostLayout);
+  function reportToolbarAnchor() {
+    bindProjectSidebar();
+    reportProjectSidebarOverlay();
+    reportHostedTimelineLayout();
+    reportAiAssistantLayout();
+    bindDamageScroller();
+    const toolbars = [...document.querySelectorAll('[role="toolbar"]')];
+    const anchorButton = toolbars.flatMap((toolbar) => [...toolbar.querySelectorAll('button')]).find((button) => {
+      const label = `${button.getAttribute('title') || ''} ${button.textContent || ''}`;
+      const rect = button.getBoundingClientRect();
+      return label.includes('快速排轴') && rect.width > 0 && rect.height > 0;
+    });
+    const rect = anchorButton?.getBoundingClientRect();
+    const payload = rect
+      ? { type: 'wwcombo:afyg-toolbar-anchor', version: 1, visible: true, rect: { left: rect.right, top: rect.top, height: rect.height } }
+      : { type: 'wwcombo:afyg-toolbar-anchor', version: 1, visible: false };
+    const signature = JSON.stringify(payload);
+    if (signature === lastToolbarAnchorSignature) return;
+    lastToolbarAnchorSignature = signature;
+    window.parent.postMessage(payload, '*');
   }
-
-  const hostMutationObserver = new MutationObserver(scheduleHostLayout);
-  hostMutationObserver.observe(document, { childList: true, subtree: true, attributes: true });
-  window.addEventListener('resize', scheduleHostLayout);
-  window.addEventListener('scroll', scheduleHostLayout, true);
-  window.addEventListener('pointerup', endDamageScrollPointer, true);
-  window.addEventListener('pointercancel', endDamageScrollPointer, true);
-  scheduleHostLayout();
-
-  window.addEventListener('message', (event) => {
-    if (event.source !== window.parent) return;
-    const message = event.data;
-    if (message?.type === 'wwcombo:afyg-language' && message.version === 1) {
-      if (['zh-CN', 'en-US', 'ja-JP', 'ko-KR'].includes(message.language)) hostLanguage = message.language;
-      ensureComboImportButton();
-      return;
-    }
-    if (message?.type === 'wwcombo:afyg-theme' && message.version === 1) {
-      void syncThemeFromHost(message.theme, message.appearanceMode).catch(() => undefined);
-      return;
-    }
-    if (message?.type === HOST_SPLIT_TYPE && message.version === 1 && typeof message.timelineTop === 'number' && Number.isFinite(message.timelineTop)) {
-      const resolvedHost = resolveTimelineHost();
-      const host = resolvedHost?.element;
-      if (resolvedHost?.legacy && host instanceof HTMLElement) {
-        const restoreOriginalEditor = message.collapsed === true;
-        if (restoreOriginalEditor && host.dataset.wwcomboOriginalEditor !== 'true') host.dataset.wwcomboOriginalEditor = 'true';
-        if (!restoreOriginalEditor && host.dataset.wwcomboOriginalEditor === 'true') delete host.dataset.wwcomboOriginalEditor;
-        const rect = host.getBoundingClientRect();
-        const nextHeight = Math.min(Math.max(0, rect.height - 52), Math.max(0, message.timelineTop - rect.top));
-        if (!Number.isFinite(legacyDamageHeightOverride) || Math.abs(legacyDamageHeightOverride - nextHeight) >= 0.5) {
-          legacyDamageHeightOverride = nextHeight;
-          scheduleHostLayout();
-        }
-      }
-      return;
-    }
-    if (message?.type === 'wwcombo:afyg-playhead' && message.version === 1) {
-      damageSeekState = {
-        enabled: message.enabled === true,
-        playbackMs: typeof message.playbackMs === 'number' && Number.isFinite(message.playbackMs)
-          ? Math.max(0, Math.round(message.playbackMs))
-          : 0,
-        viewportX: null
-      };
-      bindDamageScroller();
-      updateDamageSeekLine();
-      return;
-    }
-    if (message?.type === 'wwcombo:afyg-playhead-geometry' && message.version === 1) {
-      damageSeekState.viewportX = typeof message.viewportX === 'number' && Number.isFinite(message.viewportX)
-        ? message.viewportX
-        : null;
-      updateDamageSeekLine();
-      return;
-    }
-    if (message?.type === 'wwcombo:afyg-timeline-scroll' && message.version === 1 && typeof message.ratio === 'number' && Number.isFinite(message.ratio)) {
-      const sequence = typeof message.sequence === 'number' && Number.isFinite(message.sequence)
-        ? Math.max(0, Math.floor(message.sequence))
-        : 0;
-      if (sequence > 0 && sequence <= lastTimelineScrollSequence) return;
-      if (sequence > 0) lastTimelineScrollSequence = sequence;
-      const inputAt = typeof message.inputAt === 'number' && Number.isFinite(message.inputAt)
-        ? Math.max(0, message.inputAt)
-        : 0;
-      const timelineOwnsScroll = inputAt >= damageScrollInputAt;
-      if (timelineOwnsScroll && damageScrollReportFrame) {
-        cancelAnimationFrame(damageScrollReportFrame);
-        damageScrollReportFrame = 0;
-      }
-      if (timelineOwnsScroll && damageScrollSettleTimer) {
-        clearTimeout(damageScrollSettleTimer);
-        damageScrollSettleTimer = 0;
-      }
-      requestedDamageScrollRatio = Math.min(1, Math.max(0, message.ratio));
-      timelineGeometry = {
-        pixelsPerMs: typeof message.pixelsPerMs === 'number' && Number.isFinite(message.pixelsPerMs)
-          ? Math.min(1.6, Math.max(0.01, message.pixelsPerMs))
-          : timelineGeometry.pixelsPerMs,
-        renderTotalMs: typeof message.renderTotalMs === 'number' && Number.isFinite(message.renderTotalMs)
-          ? Math.max(0, message.renderTotalMs)
-          : timelineGeometry.renderTotalMs,
-        scrollLeft: timelineOwnsScroll && typeof message.scrollLeft === 'number' && Number.isFinite(message.scrollLeft)
-          ? Math.max(0, message.scrollLeft)
-          : timelineGeometry.scrollLeft,
-        viewportOffsetX: typeof message.viewportOffsetX === 'number' && Number.isFinite(message.viewportOffsetX)
-          ? message.viewportOffsetX
-          : timelineGeometry.viewportOffsetX,
-        contentOffset: typeof message.contentOffset === 'number' && Number.isFinite(message.contentOffset)
-          ? message.contentOffset
-          : timelineGeometry.contentOffset,
-        anchorsMs: Array.isArray(message.anchorsMs)
-          ? message.anchorsMs.filter((value) => typeof value === 'number' && Number.isFinite(value) && value >= 0).slice(0, 10000)
-          : timelineGeometry.anchorsMs
-      };
-      bindDamageScroller();
-      return;
-    }
-    if (!message || message.type !== WS_DOWNSTREAM_TYPE || message.version !== 1) return;
-    if (message.event === 'close') {
-      for (const socket of [...virtualSockets]) socket.close(1000, 'host-closed');
-      return;
-    }
-    if (message.event === 'message') {
-      for (const socket of virtualSockets) socket.receive(message.data);
-    }
-  });
+  reportToolbarAnchor();
+  window.addEventListener('DOMContentLoaded', reportToolbarAnchor, { once: true });
+  window.addEventListener('resize', reportToolbarAnchor);
+  window.setInterval(reportToolbarAnchor, 240);
 
   function openDatabase() {
     return new Promise((resolve, reject) => {
-      const request = indexedDB.open(DB_NAME, DB_VERSION);
+      const request = indexedDB.open(DB_NAME);
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error || new Error('database-open-failed'));
     });
@@ -1021,27 +897,8 @@
     });
   }
 
-  function applyHostAccent(appearanceMode) {
-    const palette = {
-      night: { accent: '#b90000', accentFocused: '#d72b24', accentLabel: '#ff7568', accentText: '#ffffff', border: 'rgba(255,92,82,.42)' },
-      night2: { accent: '#0b9158', accentFocused: '#16b96f', accentLabel: '#4de0a1', accentText: '#ffffff', border: 'rgba(77,224,161,.42)' },
-      day: { accent: '#0a9b5f', accentFocused: '#087747', accentLabel: '#087747', accentText: '#ffffff', border: 'rgba(10,155,95,.38)' },
-      coast: { accent: '#72c8ed', accentFocused: '#55b5df', accentLabel: '#217da9', accentText: '#102b3a', border: 'rgba(49,148,194,.42)' }
-    }[appearanceMode] || null;
-    if (!palette) return;
-    let style = document.getElementById('wwcombo-afyg-theme');
-    if (!(style instanceof HTMLStyleElement)) {
-      style = document.createElement('style');
-      style.id = 'wwcombo-afyg-theme';
-      (document.head || document.documentElement).appendChild(style);
-    }
-    style.textContent = `:root{--theme-accent-bg:${palette.accent}!important;--theme-accent-bg-focused:${palette.accentFocused}!important;--theme-accent-text:${palette.accentLabel}!important;--theme-accent-text-focused:${palette.accentLabel}!important;--theme-accent-text-on-bg:${palette.accentText}!important;--theme-accent-border:${palette.border}!important}`;
-  }
-
-  async function syncThemeFromHost(theme, appearanceMode) {
+  async function syncTheme(theme) {
     if (theme !== 'dark' && theme !== 'light') return;
-    applyHostAccent(appearanceMode);
-    document.documentElement.style.colorScheme = theme;
     const database = await openDatabase();
     try {
       const current = await readRecord(database, THEME_KEY);
@@ -1049,7 +906,7 @@
       await new Promise((resolve, reject) => {
         const transaction = database.transaction(STORE_NAME, 'readwrite');
         transaction.objectStore(STORE_NAME).put({ key: THEME_KEY, data: theme, ts: Date.now() });
-        transaction.oncomplete = () => resolve();
+        transaction.oncomplete = resolve;
         transaction.onerror = () => reject(transaction.error || new Error('theme-write-failed'));
         transaction.onabort = () => reject(transaction.error || new Error('theme-write-aborted'));
       });
@@ -1086,7 +943,15 @@
       && value.damageBlocks.length <= 10000;
   }
 
-  async function replaceTimeline(projectId, timeline) {
+  function normalizedTimings(value) {
+    return Array.isArray(value) ? value.filter((entry) => entry
+      && typeof entry.refLineId === 'string'
+      && typeof entry.seconds === 'number'
+      && Number.isFinite(entry.seconds)
+      && entry.seconds >= 0).slice(0, 2000) : [];
+  }
+
+  async function replaceTimeline(projectId, timeline, resultAnalysis, adapterMetadata) {
     if (typeof projectId !== 'string' || !projectId || !validTimeline(timeline)) throw new Error('invalid-request');
     const state = await readProjectState();
     if (!state.project || state.activeId !== projectId) throw new Error('active-project-changed');
@@ -1104,7 +969,7 @@
         ...nextTimeline.opBlocks.map((block) => block?.id).filter(Boolean),
         ...nextTimeline.refLines.map((line) => line?.id).filter(Boolean)
       ]);
-      const incomingSources = new Set(nextTimeline.damageBlocks.map((block) => `${block?.sourceType}:${block?.sourceId}`));
+      const incoming = new Set(nextTimeline.damageBlocks.map((block) => `${block?.sourceType}:${block?.sourceId}`));
       nextTimeline.damageBlocks.push(...previousData.damageBlocks.flatMap((block) => {
         if (!block) return [];
         let sourceId = block.sourceId;
@@ -1114,12 +979,22 @@
           if (migrated && sourceIds.has(migrated)) sourceId = migrated;
         }
         const key = `${block.sourceType}:${sourceId}`;
-        if (!sourceIds.has(sourceId) || incomingSources.has(key)) return [];
-        incomingSources.add(key);
+        if (!sourceIds.has(sourceId) || incoming.has(key)) return [];
+        incoming.add(key);
         return [{ ...block, sourceId }];
       }));
     }
     project.phases.timeline = { ...previousTimeline, data: nextTimeline };
+    if (resultAnalysis && typeof resultAnalysis === 'object' && !Array.isArray(resultAnalysis)) {
+      project.resultAnalysis = {
+        ...(project.resultAnalysis && typeof project.resultAnalysis === 'object' ? project.resultAnalysis : {}),
+        ...JSON.parse(JSON.stringify(resultAnalysis)),
+        timings: normalizedTimings(resultAnalysis.timings)
+      };
+    }
+    if (adapterMetadata && typeof adapterMetadata === 'object' && !Array.isArray(adapterMetadata)) {
+      project.wwcomboAdapter = JSON.parse(JSON.stringify(adapterMetadata));
+    }
 
     const database = await openDatabase();
     try {
@@ -1129,7 +1004,7 @@
         const now = Date.now();
         store.put({ key: PROJECTS_KEY, data: projects, ts: now });
         store.put({ key: ACTIVE_KEY, data: projectId, ts: now });
-        transaction.oncomplete = () => resolve();
+        transaction.oncomplete = resolve;
         transaction.onerror = () => reject(transaction.error || new Error('database-write-failed'));
         transaction.onabort = () => reject(transaction.error || new Error('database-write-aborted'));
       });
@@ -1144,17 +1019,39 @@
     event.source?.postMessage({ type: RESPONSE_TYPE, version: 1, requestId, action, ...payload }, targetOrigin);
   }
 
+  window.addEventListener('message', (event) => {
+    if (event.source !== window.parent) return;
+    const message = event.data;
+    if (message?.type === 'wwcombo:afyg-theme' && message.version === 1) {
+      void syncTheme(message.theme).catch(() => undefined);
+      return;
+    }
+    if (message?.type === HOST_SPLIT_TYPE && message.version === 1) {
+      applyHostedTimelineSplit(message);
+      return;
+    }
+    if (message?.type === 'wwcombo:afyg-timeline-scroll'
+      && message.version === 1
+      && typeof message.ratio === 'number'
+      && Number.isFinite(message.ratio)) {
+      applyTimelineGeometry(message);
+      return;
+    }
+    if (!message || message.type !== WS_DOWNSTREAM_TYPE || message.version !== 1) return;
+    if (message.event === 'close') {
+      for (const socket of [...virtualSockets]) socket.close(1000, 'host-closed');
+    } else if (message.event === 'message') {
+      for (const socket of virtualSockets) socket.receive(message.data);
+    }
+  });
+
   window.addEventListener('message', async (event) => {
     if (event.source !== window.parent) return;
     const message = event.data;
     if (!message || message.type !== REQUEST_TYPE || message.version !== 1 || typeof message.requestId !== 'string') return;
     try {
       if (message.action === 'ping') {
-        reply(event, message.requestId, message.action, {
-          ok: true,
-          websocketReady: websocketBridgeReady,
-          websocketError: websocketBridgeError
-        });
+        reply(event, message.requestId, message.action, { ok: true, websocketReady: websocketBridgeReady, websocketError: websocketBridgeError });
         return;
       }
       if (message.action === 'get-current-project') {
@@ -1180,8 +1077,9 @@
           reply(event, message.requestId, message.action, { ok: false, error: 'active-project-changed' });
           return;
         }
-        const timeline = state.project?.phases?.timeline?.data;
-        const damageBlocks = Array.isArray(timeline?.damageBlocks) ? timeline.damageBlocks : [];
+        const damageBlocks = Array.isArray(state.project?.phases?.timeline?.data?.damageBlocks)
+          ? state.project.phases.timeline.data.damageBlocks
+          : [];
         const matches = damageBlocks.filter((block) => block?.sourceType === 'op' && block?.sourceId === message.blockId);
         reply(event, message.requestId, message.action, {
           ok: true,
@@ -1193,18 +1091,20 @@
         return;
       }
       if (message.action === 'replace-current-timeline') {
-        const project = await replaceTimeline(message.projectId, message.timeline);
-        sessionStorage.setItem(REOPEN_KEY, JSON.stringify({ id: project.id, name: project.name || '' }));
+        const project = await replaceTimeline(message.projectId, message.timeline, message.resultAnalysis, message.adapterMetadata);
+        sessionStorage.setItem(REOPEN_KEY, JSON.stringify({
+          id: project.id,
+          name: project.name || '',
+          view: 'timeline',
+          expiresAt: Date.now() + 20000
+        }));
         reply(event, message.requestId, message.action, { ok: true, projectId: project.id });
         window.setTimeout(() => window.location.reload(), 120);
         return;
       }
       reply(event, message.requestId, message.action, { ok: false, error: 'unsupported-action' });
     } catch (error) {
-      reply(event, message.requestId, message.action, {
-        ok: false,
-        error: error instanceof Error ? error.message : String(error)
-      });
+      reply(event, message.requestId, message.action, { ok: false, error: error instanceof Error ? error.message : String(error) });
     }
   });
 
@@ -1217,33 +1117,62 @@
       return;
     }
     if (!marker || typeof marker.id !== 'string' || typeof marker.name !== 'string') return;
+    if (typeof marker.expiresAt === 'number' && Date.now() > marker.expiresAt) {
+      sessionStorage.removeItem(REOPEN_KEY);
+      return;
+    }
     const startedAt = Date.now();
-    const expanded = new WeakSet();
+    let projectOpened = false;
+    const expandedGroups = new WeakSet();
     const attempt = () => {
-      const sidebar = document.querySelector('aside');
-      if (!sidebar) return false;
-      const exactLabel = Array.from(sidebar.querySelectorAll('span')).find((element) => element.textContent?.trim() === marker.name);
-      const projectButton = exactLabel?.closest('[class*="cursor-pointer"]');
-      if (projectButton instanceof HTMLElement) {
-        sessionStorage.removeItem(REOPEN_KEY);
-        projectButton.click();
-        return true;
+      if (!projectOpened) {
+        const sidebar = document.querySelector('aside');
+        const exactLabel = sidebar
+          ? [...sidebar.querySelectorAll('span')].find((element) => element.textContent?.trim() === marker.name)
+          : null;
+        const projectButton = exactLabel?.closest('[class*="cursor-pointer"]');
+        if (projectButton instanceof HTMLElement) {
+          projectButton.click();
+          projectOpened = true;
+        } else if (sidebar) {
+          for (const icon of sidebar.querySelectorAll('svg[viewBox="0 0 42 16"]')) {
+            const header = icon.closest('[class*="cursor-pointer"]');
+            if (header instanceof HTMLElement && !expandedGroups.has(header)) {
+              expandedGroups.add(header);
+              header.click();
+            }
+          }
+        }
       }
-      for (const icon of sidebar.querySelectorAll('svg[viewBox="0 0 42 16"]')) {
-        const header = icon.closest('[class*="cursor-pointer"]');
-        if (header instanceof HTMLElement && !expanded.has(header)) {
-          expanded.add(header);
-          header.click();
+      if (projectOpened && marker.view === 'timeline') {
+        const timelineButton = [...document.querySelectorAll('button')].find((button) => {
+          const title = (button.getAttribute('title') || '').trim();
+          const label = (button.textContent || '').trim();
+          return !button.disabled && (label === '排轴' || label === 'Timeline' || title === '排轴' || title === 'Timeline');
+        });
+        if (timelineButton instanceof HTMLButtonElement) {
+          timelineButton.click();
+          window.setTimeout(() => {
+            let current;
+            try {
+              current = JSON.parse(sessionStorage.getItem(REOPEN_KEY) || 'null');
+            } catch {
+              current = null;
+            }
+            if (current?.id === marker.id) sessionStorage.removeItem(REOPEN_KEY);
+          }, 4000);
+          return true;
         }
       }
       return false;
     };
     if (attempt()) return;
-    const observer = new MutationObserver(() => {
-      if (attempt() || Date.now() - startedAt > 15000) observer.disconnect();
-    });
-    observer.observe(document.documentElement, { childList: true, subtree: true });
-    window.setTimeout(() => observer.disconnect(), 15000);
+    const timer = window.setInterval(() => {
+      if (attempt() || Date.now() - startedAt > 12000) {
+        window.clearInterval(timer);
+        if (Date.now() - startedAt > 12000) sessionStorage.removeItem(REOPEN_KEY);
+      }
+    }, 120);
   }
 
   if (document.readyState === 'loading') {

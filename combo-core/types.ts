@@ -114,6 +114,21 @@ export type ComboCommunityMetadata = {
   exportedAt: number;
 };
 
+export type AfygTimingKeyframeKind = 'manual' | 'pause-start' | 'pause-end';
+
+export type AfygTimingKeyframe = {
+  id: string;
+  timelineMs: number;
+  gameTimeMs: number;
+  kind: AfygTimingKeyframeKind;
+  pairId?: string;
+};
+
+export type AfygTimingSettings = {
+  version: 1;
+  keyframes: AfygTimingKeyframe[];
+};
+
 
 export type ComboChart = {
   id: string;
@@ -132,6 +147,7 @@ export type ComboChart = {
   stopTriggerMoveId?: MoveId;
   steps: ComboStep[];
   periods?: ComboPeriod[];
+  afygTiming?: AfygTimingSettings;
 };
 
 export type ComboImageRoleStyle = {
@@ -194,6 +210,7 @@ export type ComboAvatarPreset = {
 
 export type ComboImageStyle = {
   roleStyles: Record<CharacterSlot, ComboImageRoleStyle>;
+  iconSet: 'classic' | 'tide';
   blockMode: 'capsule' | 'image';
   capsuleShape: 'capsule' | 'rect';
   backgroundImage?: string;

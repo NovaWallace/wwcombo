@@ -18,6 +18,7 @@ type NotesPayload = {
   noteMoveMode?: boolean;
   showNotesSeparately?: boolean;
   comboImageStyle?: Partial<ComboImageStyle>;
+  visibleNoteStepIds?: string[];
 };
 type DragState = {
   kind: 'move' | 'resize';
@@ -179,11 +180,14 @@ function NotesApp() {
 
   const noteStyle = useMemo(() => normalizeComboImageStyle(payload.comboImageStyle), [payload.comboImageStyle]);
   const visibleNotes = useMemo(() => {
+    const visibleIds = payload.visibleNoteStepIds;
     const notes = (payload.chart?.steps ?? [])
-      .filter((step) => Boolean(step.note?.trim()) && !noteStepCompleted(step, payload.practice, payload.chart))
+      .filter((step) => Boolean(step.note?.trim())
+        && (payload.noteMoveMode === true || !Array.isArray(visibleIds) || visibleIds.includes(step.id))
+        && !noteStepCompleted(step, payload.practice, payload.chart))
       .sort((left, right) => left.startMin - right.startMin || left.id.localeCompare(right.id));
     return noteStyle.noteOrder === 'oldest-top' ? notes : notes.reverse();
-  }, [payload.chart, payload.practice, noteStyle.noteOrder]);
+  }, [payload.chart, payload.practice, payload.noteMoveMode, payload.visibleNoteStepIds, noteStyle.noteOrder]);
 
   const separateNotesEnabled = payload.showNotesSeparately !== false;
   const moveMode = separateNotesEnabled && payload.noteMoveMode === true;
