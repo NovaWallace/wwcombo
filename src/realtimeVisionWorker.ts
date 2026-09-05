@@ -3,6 +3,7 @@ import {
   recognizeChallengeTimer
 } from './realtimeVision';
 import type {
+  RealtimeVisionTimerColorMode,
   TimerRecognition,
   VisualTemplate,
   VisualTemplateMatch
@@ -21,6 +22,7 @@ export type RealtimeVisionWorkerRequest = {
   timer: {
     image: RealtimeVisionWorkerImage;
     luminanceThreshold: number;
+    colorMode: RealtimeVisionTimerColorMode;
   } | null;
   buffs: Array<{
     id: string;
@@ -56,7 +58,7 @@ workerScope.addEventListener('message', (event) => {
   const startedAt = performance.now();
   try {
     const timerReading = request.timer
-      ? recognizeChallengeTimer(restoreImageData(request.timer.image), request.timer.luminanceThreshold)
+      ? recognizeChallengeTimer(restoreImageData(request.timer.image), request.timer.luminanceThreshold, request.timer.colorMode)
       : null;
     const matches = request.buffs.map(({ id, image, template }) => [
       id,

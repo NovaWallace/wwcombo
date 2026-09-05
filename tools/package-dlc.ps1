@@ -1,9 +1,10 @@
 param(
-    [string]$Version = "0.63",
+    [string]$Version = "0.65",
     [string]$OutputDirectory = "release-packages\dlc",
     [string[]]$Live2dId = @(),
     [switch]$SkipFfmpeg,
-    [switch]$SkipLive2d
+    [switch]$SkipLive2d,
+    [switch]$SkipSimulatedInput
 )
 
 $ErrorActionPreference = "Stop"
@@ -14,6 +15,19 @@ $sourceManifestPath = Join-Path $repositoryRoot "live2d-optional\manifest.json"
 $sourceRoot = Split-Path -Parent $sourceManifestPath
 $characterNamesPath = Join-Path $PSScriptRoot "live2d-names.json"
 $characterNames = Get-Content -LiteralPath $characterNamesPath -Raw -Encoding utf8 | ConvertFrom-Json
+$simulationDemoName = -join ([char]27169, [char]25311, [char]28436, [char]31034)
+
+if (-not $SkipSimulatedInput) {
+    Push-Location $repositoryRoot
+    try {
+        cargo build --manifest-path (Join-Path $repositoryRoot "src-tauri\Cargo.toml") --release --bin simulated-input-dlc
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to build simulated input DLC (cargo exit code $LASTEXITCODE)."
+        }
+    } finally {
+        Pop-Location
+    }
+}
 
 function Reset-Stage {
     if (Test-Path -LiteralPath $stageRoot) {
@@ -32,6 +46,17 @@ function Write-Utf8File([string]$Path, [string]$Content) {
     Set-Content -LiteralPath $Path -Value $Content -Encoding utf8
 }
 
+function Get-Sha256Hex([string]$Path) {
+    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+    $stream = [IO.File]::OpenRead($Path)
+    try {
+        return ([BitConverter]::ToString($sha256.ComputeHash($stream))).Replace('-', '').ToLowerInvariant()
+    } finally {
+        $stream.Dispose()
+        $sha256.Dispose()
+    }
+}
+
 function Compress-DlcStage([string]$ArchiveName) {
     $archivePath = Join-Path $outputRoot $ArchiveName
     if (Test-Path -LiteralPath $archivePath) { Remove-Item -LiteralPath $archivePath -Force }
@@ -41,6 +66,27 @@ function Compress-DlcStage([string]$ArchiveName) {
 
 New-Item -ItemType Directory -Force -Path $outputRoot | Out-Null
 $archives = @()
+
+if (-not $SkipSimulatedInput) {
+    $simulatedInputSource = Join-Path $repositoryRoot "src-tauri\target\release\simulated-input-dlc.exe"
+    if (-not (Test-Path -LiteralPath $simulatedInputSource -PathType Leaf)) { throw "Simulated input DLC source is missing: $simulatedInputSource" }
+    Reset-Stage
+    $simulatedInputRoot = Join-Path $stageRoot "wwcombo dlc\simulated-input"
+    New-Item -ItemType Directory -Force -Path $simulatedInputRoot | Out-Null
+    Copy-Item -LiteralPath $simulatedInputSource -Destination (Join-Path $simulatedInputRoot "simulated-input-dlc.exe")
+    Write-Utf8File (Join-Path $simulatedInputRoot "manifest.json") (([ordered]@{
+        schemaVersion = 1; type = "wwcombo-simulated-input"; displayName = $simulationDemoName; platform = "windows-x64"; executable = "simulated-input-dlc.exe"
+    } | ConvertTo-Json -Depth 4))
+    Write-Utf8File (Join-Path $simulatedInputRoot "README.txt") @"
+WWCOMBO $simulationDemoName DLC / Simulation Demo DLC
+
+Purpose: automatically demonstrates a combo by sending keyboard and mouse input to the game. The core app keeps the editor and settings interface, while this optional extension performs the native Windows input injection.
+Install: extract this ZIP directly beside wwcombo.exe. The final path must be:
+wwcombo dlc\simulated-input\simulated-input-dlc.exe
+Then choose Refresh under Settings > wwcombo DLC. The $simulationDemoName / Simulation Demo entry becomes available after the extension is detected.
+"@
+    $archives += Compress-DlcStage "wwcombo-v$Version-$simulationDemoName-Simulation-Demo-DLC-Windows-x64.zip"
+}
 
 if (-not $SkipFfmpeg) {
     $ffmpegSource = Join-Path $repositoryRoot "src-tauri\resources\ffmpeg.exe"
@@ -121,7 +167,7 @@ These copyrighted game assets are provided for a non-commercial fan project.
 
 if (Test-Path -LiteralPath $stageRoot) { Remove-Item -LiteralPath $stageRoot -Recurse -Force }
 $checksumLines = foreach ($archive in $archives) {
-    $hash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+    $hash = Get-Sha256Hex $archive
     "$hash  $(Split-Path -Leaf $archive)"
 }
 Write-Utf8File (Join-Path $outputRoot "SHA256SUMS.txt") ($checksumLines -join "`r`n")

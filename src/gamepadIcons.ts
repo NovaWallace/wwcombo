@@ -129,6 +129,71 @@ const TIDE_ICON_SOURCES: Record<string, string> = {
   forward: '/combo-assets/button-icons/tide/forward.png'
 };
 
+// Character skill artwork is wrapped with the same Tidecall plates as the
+// generic action icons. Only the actions represented by the downloaded skill
+// set are listed here; movement and utility actions continue to use the
+// shared icons above.
+const TIDE_CHARACTER_ACTION_FILES: Record<string, string> = {
+  'mouse-left': 'basic_attack',
+  'mouse-left-hold': 'heavy_attack',
+  skill: 'skill',
+  'skill-hold': 'skill_hold',
+  echo: 'echo',
+  'echo-hold': 'echo_hold',
+  liberation: 'liberation',
+  'liberation-hold': 'liberation_hold',
+  intro: 'intro',
+  outro: 'outro'
+};
+
+// The asset service and some older combo files use slightly different
+// spellings for a handful of names. Keep the aliases here so a role snapshot
+// still resolves to an existing local folder.
+const TIDE_CHARACTER_NAME_ALIASES: Record<string, string> = {
+  '青霄': '清宵',
+  '清霄': '清宵',
+  '嘉贝丽娜': '嘉贝莉娜',
+  '洛瑟拉': '洛瑟菈',
+  '陆赫斯': '陆·赫斯',
+  '陆赫兹': '陆·赫斯',
+  '玄翎': '秧秧·玄翎',
+  '秧秧・玄翎': '秧秧·玄翎',
+  '茜格莉卡': '西格莉卡'
+};
+
+const TIDE_CHARACTER_SOURCE_NAMES = new Set([
+  '爱弥斯', '安可', '奥古斯塔', '白芷', '卜灵', '布兰特', '炽霞', '仇远', '椿', '达妮娅',
+  '丹瑾', '灯灯', '绯雪', '菲比', '弗洛洛', '忌炎', '嘉贝莉娜', '鉴心', '今汐', '景燃',
+  '卡卡罗', '卡提希娅', '坎特蕾拉', '珂莱塔', '丽贝卡', '琳奈', '凌阳', '陆·赫斯', '露帕', '露西',
+  '洛可可', '洛瑟菈', '莫宁', '莫特斐', '千咲', '清宵', '秋水', '散华', '守岸人', '穗穗',
+  '桃祈', '维里奈', '西格莉卡', '夏空', '相里要', '秧秧', '秧秧·玄翎', '吟霖', '尤诺', '釉瑚',
+  '渊武', '赞妮', '长离', '折枝',
+  '漂泊者·导电（男）', '漂泊者·导电（女）', '漂泊者·气动（男）', '漂泊者·气动（女）',
+  '漂泊者·湮灭（男）', '漂泊者·湮灭（女）', '漂泊者·衍射（男）', '漂泊者·衍射（女）'
+]);
+
+function tideCharacterSourceName(value: string | undefined): string | undefined {
+  const normalized = String(value ?? '').replace(/\.(?:webp|png|jpe?g)$/iu, '').trim().normalize('NFC');
+  if (!normalized) return undefined;
+  const aliased = TIDE_CHARACTER_NAME_ALIASES[normalized] ?? normalized;
+  if (TIDE_CHARACTER_SOURCE_NAMES.has(aliased)) return aliased;
+  // Role presets omit Rover's gender, while the downloaded skill folders keep
+  // the two source names separate. Prefer the male folder deterministically;
+  // both variants use the same action-art layout.
+  if (aliased.includes('漂泊者') && !/[（(](?:男|女)[）)]/u.test(aliased)) {
+    const male = `${aliased}（男）`;
+    if (TIDE_CHARACTER_SOURCE_NAMES.has(male)) return male;
+  }
+  return undefined;
+}
+
+export function characterTideIconSourceForMappingId(mappingId: string, characterName?: string): string | undefined {
+  const actionFile = TIDE_CHARACTER_ACTION_FILES[mappingId.trim()];
+  const sourceName = tideCharacterSourceName(characterName);
+  if (!actionFile || !sourceName) return undefined;
+  return `/combo-assets/button-icons/tide/characters/${encodeURIComponent(sourceName)}/${actionFile}.webp`;
+}
+
 export function tideIconSourceForMappingId(mappingId: string): string | undefined {
   return TIDE_ICON_SOURCES[mappingId.trim()];
 }
@@ -457,7 +522,7 @@ export function gamepadCodeLabel(code: string, iconSet: GamepadIconSet): string 
   }).join(' + ');
 }
 
-function adaptMappings(mappings: ComboImageStyle['iconMappings'], bindings: KeyBinding[], iconSet: GamepadIconSet, customSources: Record<string, string>, universalIconSet: ComboImageStyle['iconSet']): ComboImageStyle['iconMappings'] {
+function adaptMappings(mappings: ComboImageStyle['iconMappings'], bindings: KeyBinding[], iconSet: GamepadIconSet, customSources: Record<string, string>, universalIconSet: ComboImageStyle['iconSet'], characterName?: string): ComboImageStyle['iconMappings'] {
   return mappings.map((mapping) => {
     const mappingCustomKey = iconMappingCustomizationKey(mapping.id);
     const mappingCustomSource = mappingCustomKey ? customSources[mappingCustomKey] : undefined;
@@ -469,14 +534,16 @@ function adaptMappings(mappings: ComboImageStyle['iconMappings'], bindings: KeyB
     const customSourceKey = code ? inputIconCustomizationKey('gamepad', code) : undefined;
     const customSource = customSourceKey ? customSources[customSourceKey] : undefined;
     if (customSource) return { ...mapping, src: customSource };
-    const tideSource = universalIconSet === 'tide' ? tideIconSourceForMappingId(mapping.id) : undefined;
+    const tideSource = universalIconSet === 'tide'
+      ? characterTideIconSourceForMappingId(mapping.id, characterName) ?? tideIconSourceForMappingId(mapping.id)
+      : undefined;
     if (tideSource) return { ...mapping, src: tideSource };
     const src = code ? gamepadIconSource(code, iconSet) : undefined;
     return src ? { ...mapping, src } : mapping;
   });
 }
 
-function adaptKeyboardMouseMappings(mappings: ComboImageStyle['iconMappings'], bindings: KeyBinding[], customSources: Record<string, string>, universalIconSet: ComboImageStyle['iconSet']): ComboImageStyle['iconMappings'] {
+function adaptKeyboardMouseMappings(mappings: ComboImageStyle['iconMappings'], bindings: KeyBinding[], customSources: Record<string, string>, universalIconSet: ComboImageStyle['iconSet'], characterName?: string): ComboImageStyle['iconMappings'] {
   return mappings.map((mapping) => {
     const mappingCustomKey = iconMappingCustomizationKey(mapping.id);
     const mappingCustomSource = mappingCustomKey ? customSources[mappingCustomKey] : undefined;
@@ -488,7 +555,9 @@ function adaptKeyboardMouseMappings(mappings: ComboImageStyle['iconMappings'], b
     const customSourceKey = code ? inputIconCustomizationKey('keyboard', code) : undefined;
     const customSource = customSourceKey ? customSources[customSourceKey] : undefined;
     if (customSource && code) return { ...mapping, src: customSource, iconWidthScale: keyboardMouseIconWidthScale(code) };
-    const tideSource = universalIconSet === 'tide' ? tideIconSourceForMappingId(mapping.id) : undefined;
+    const tideSource = universalIconSet === 'tide'
+      ? characterTideIconSourceForMappingId(mapping.id, characterName) ?? tideIconSourceForMappingId(mapping.id)
+      : undefined;
     if (tideSource) return { ...mapping, src: tideSource };
     const defaultSource = moveId && code ? defaultKeyboardMouseIconSource(moveId, code) : undefined;
     if (defaultSource) return { ...mapping, src: defaultSource, iconWidthScale: 1 };
@@ -501,7 +570,7 @@ export function withGamepadIconMappings(style: ComboImageStyle, bindings: KeyBin
   const roleStyles = { ...style.roleStyles };
   ([1, 2, 3, 4] as const).forEach((slot) => {
     const role = style.roleStyles[slot];
-    roleStyles[slot] = role.iconMappings?.length ? { ...role, iconMappings: adaptMappings(role.iconMappings, bindings, iconSet, customSources, style.iconSet) } : role;
+    roleStyles[slot] = role.iconMappings?.length ? { ...role, iconMappings: adaptMappings(role.iconMappings, bindings, iconSet, customSources, style.iconSet, role.name) } : role;
   });
   return { ...style, iconMappings: adaptMappings(style.iconMappings, bindings, iconSet, customSources, style.iconSet), roleStyles };
 }
@@ -510,7 +579,7 @@ export function withKeyboardMouseIconMappings(style: ComboImageStyle, bindings: 
   const roleStyles = { ...style.roleStyles };
   ([1, 2, 3, 4] as const).forEach((slot) => {
     const role = style.roleStyles[slot];
-    roleStyles[slot] = role.iconMappings?.length ? { ...role, iconMappings: adaptKeyboardMouseMappings(role.iconMappings, bindings, customSources, style.iconSet) } : role;
+    roleStyles[slot] = role.iconMappings?.length ? { ...role, iconMappings: adaptKeyboardMouseMappings(role.iconMappings, bindings, customSources, style.iconSet, role.name) } : role;
   });
   return { ...style, iconMappings: adaptKeyboardMouseMappings(style.iconMappings, bindings, customSources, style.iconSet), roleStyles };
 }

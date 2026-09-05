@@ -28,6 +28,7 @@ export type RealtimeBuffTriggerMode = 'press' | 'hold-release';
 export type RealtimeBuffInputMode = 'keyboard' | 'gamepad';
 
 export type RealtimeVisionOverlayCorner = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+export type RealtimeVisionTimerColorMode = 'white' | 'blue' | 'auto';
 
 export type RealtimeVisionOverlayBounds = {
   x: number;
@@ -41,6 +42,7 @@ export type RealtimeVisionSettings = {
   timerEnabled: boolean;
   timerRoi: VisionRect;
   timerLuminanceThreshold: number;
+  timerColorMode: RealtimeVisionTimerColorMode;
   overlayEnabled: boolean;
   overlayCorner: RealtimeVisionOverlayCorner;
   overlayBounds?: RealtimeVisionOverlayBounds;
@@ -139,6 +141,7 @@ export const DEFAULT_REALTIME_VISION_SETTINGS: RealtimeVisionSettings = {
   timerEnabled: true,
   timerRoi: UPSTREAM_TIMER_ROI,
   timerLuminanceThreshold: 200,
+  timerColorMode: 'white',
   overlayEnabled: true,
   overlayCorner: 'top-left',
   soundEnabled: true,
@@ -329,6 +332,9 @@ export function normalizeRealtimeVisionSettings(value: Partial<RealtimeVisionSet
     timerEnabled: value?.timerEnabled !== false,
     timerRoi: normalizeVisionRect(timerRoi, UPSTREAM_TIMER_ROI),
     timerLuminanceThreshold: clamp(Math.round(timerLuminanceThreshold), 110, 245),
+    timerColorMode: value?.timerColorMode === 'blue' || value?.timerColorMode === 'auto'
+      ? value.timerColorMode
+      : 'white',
     overlayEnabled: value?.overlayEnabled !== false,
     overlayCorner: value?.overlayCorner === 'top-right' || value?.overlayCorner === 'bottom-left' || value?.overlayCorner === 'bottom-right'
       ? value.overlayCorner
@@ -505,7 +511,39 @@ function isTimerSeparator(mask: Uint8Array, width: number, height: number): bool
   return runs[1].start - runs[0].end - 1 >= Math.max(2, Math.round(height * 0.18));
 }
 
-function recognizeChallengeTimerAtThreshold(image: ImageData, luminanceThreshold: number): TimerRecognition | null {
+function isTimerForegroundPixel(
+  red: number,
+  green: number,
+  blue: number,
+  luminance: number,
+  luminanceThreshold: number,
+  colorMode: RealtimeVisionTimerColorMode
+): boolean {
+  const maximum = Math.max(red, green, blue);
+  const minimum = Math.min(red, green, blue);
+  const spread = maximum - minimum;
+  // The usual challenge timer is neutral white. Keep this branch strict so
+  // bright combat effects in the timer ROI do not become digit strokes.
+  const neutralWhite = luminance >= luminanceThreshold && spread <= 110;
+  if (colorMode === 'white') return neutralWhite;
+
+  // Some challenge layouts tint the timer cyan/blue. Its anti-aliased edge
+  // can be much darker than the white centre while still being part of the
+  // same glyph, so accept a cool high-luminance foreground separately.
+  const coolTint = red >= 145
+    && green >= 185
+    && blue >= 215
+    && blue >= red + 34
+    && green >= red + 14
+    && luminance >= Math.max(170, luminanceThreshold - 25);
+  return neutralWhite || coolTint;
+}
+
+function recognizeChallengeTimerAtThreshold(
+  image: ImageData,
+  luminanceThreshold: number,
+  colorMode: RealtimeVisionTimerColorMode
+): TimerRecognition | null {
   const { width, height, data } = image;
   if (width < 12 || height < 8) return null;
   const mask = new Uint8Array(width * height);
@@ -518,11 +556,8 @@ function recognizeChallengeTimerAtThreshold(image: ImageData, luminanceThreshold
       const red = data[offset];
       const green = data[offset + 1];
       const blue = data[offset + 2];
-      const maximum = Math.max(red, green, blue);
-      const minimum = Math.min(red, green, blue);
       const luminance = red * 0.2126 + green * 0.7152 + blue * 0.0722;
-      const white = luminance >= luminanceThreshold && maximum - minimum <= 92;
-      if (!white) continue;
+      if (!isTimerForegroundPixel(red, green, blue, luminance, luminanceThreshold, colorMode)) continue;
       mask[index] = 1;
       columns[x] += 1;
       whitePixels += 1;
@@ -621,7 +656,11 @@ function recognizeChallengeTimerAtThreshold(image: ImageData, luminanceThreshold
   };
 }
 
-export function recognizeChallengeTimer(image: ImageData, luminanceThreshold = 200): TimerRecognition | null {
+export function recognizeChallengeTimer(
+  image: ImageData,
+  luminanceThreshold = 200,
+  colorMode: RealtimeVisionTimerColorMode = 'white'
+): TimerRecognition | null {
   const minimumThreshold = clamp(Math.round(luminanceThreshold), 110, 254);
   const thresholds = [254, 252, 250, 248, 246, 242, 236, 228, 218, minimumThreshold]
     .filter((threshold, index, values) => threshold >= minimumThreshold && values.indexOf(threshold) === index);
@@ -629,7 +668,7 @@ export function recognizeChallengeTimer(image: ImageData, luminanceThreshold = 2
   const support = new Map<number, TimerRecognition[]>();
 
   for (const threshold of thresholds) {
-    const reading = recognizeChallengeTimerAtThreshold(image, threshold);
+    const reading = recognizeChallengeTimerAtThreshold(image, threshold, colorMode);
     if (!reading) continue;
     readings.push(reading);
     const matching = [...(support.get(reading.seconds) ?? []), reading];
@@ -877,7 +916,10 @@ export function compareVisualSignatures(left: VisualSignature, right: VisualSign
     chromaDifference += redDifference + greenDifference;
   }
   const color = clamp(1 - chromaDifference / (left.chromaR.length * 1.05), 0, 1);
-  return clamp(structure * 0.52 + edges * 0.28 + color * 0.2, 0, 1);
+  // Buff icons can keep their shape while the surrounding mode recolors
+  // them. Give structure and edges priority so a palette shift does not
+  // invalidate an otherwise good template match.
+  return clamp(structure * 0.6 + edges * 0.32 + color * 0.08, 0, 1);
 }
 
 function signatureForImageWindow(image: ImageData, x: number, y: number, width: number, height: number): VisualSignature {

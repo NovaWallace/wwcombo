@@ -270,6 +270,10 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
             category: '练习',
             title: '子模式与开始',
             items: [],
+            shortcuts: [
+              { keys: ['滚轮上'], action: '演示 / 推进模式手动后退', note: '仅在游戏窗口中生效；演示和推进模式可用；需要开启全局捕获。可在快捷键设置中修改。' },
+              { keys: ['滚轮下'], action: '演示 / 推进模式手动前进', note: '仅在游戏窗口中生效；演示和推进模式可用；需要开启全局捕获。可在快捷键设置中修改。' }
+            ],
             controls: [
               { name: '演示', effect: '按时间自动播放连段，用于观察顺序和节奏，不检查输入。' },
               { name: '推进', effect: '正确输入后推进到下一步，判定较宽松，适合熟悉操作顺序。' },
@@ -348,6 +352,13 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
         title: '更新日志',
         summary: '记录公开版本和当前开发版的重要变化。',
         groups: [
+          {
+            title: 'v0.65.0 · 2026-09-01',
+            items: [
+              'The Windows core build now includes the Video Workbench and realtime Buff recognition interface for testing.',
+              'Automatic input execution is now distributed as the optional Simulation Demo DLC. FFmpeg and Live2D remain separate optional DLC packages, and the core build does not include the Wiki module.'
+            ]
+          },
           {
             title: 'v0.64.0 · 2026-08-15',
             items: [
@@ -678,6 +689,10 @@ export const HELP_CONTENT: Record<AppLanguage, HelpContent> = {
             category: 'Practice',
             title: 'Modes and starting',
             items: [],
+            shortcuts: [
+              { keys: ['Wheel Up'], action: 'Manually step back in Demo / Advance mode', note: 'Works only while the game window is active; available in Demo and Advance modes; Global Input Capture must be enabled. Customizable.' },
+              { keys: ['Wheel Down'], action: 'Manually advance in Demo / Advance mode', note: 'Works only while the game window is active; available in Demo and Advance modes; Global Input Capture must be enabled. Customizable.' }
+            ],
             controls: [
               { name: 'Demo', effect: 'Plays by time for studying order and rhythm without checking input.' },
               { name: 'Advance', effect: 'Moves to the next step after correct input with forgiving timing.' },

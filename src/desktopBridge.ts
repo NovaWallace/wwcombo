@@ -124,6 +124,7 @@ export function createDesktopBridge(): DesktopBridge | null {
       const status = await invoke<{
         rootPath: string;
         ffmpegInstalled: boolean;
+        simulatedInputInstalled: boolean;
         live2dAssets: Array<{
           id: string;
           skeletonPath: string;
@@ -134,6 +135,7 @@ export function createDesktopBridge(): DesktopBridge | null {
       return {
         rootPath: status.rootPath,
         ffmpegInstalled: status.ffmpegInstalled,
+        simulatedInputInstalled: status.simulatedInputInstalled,
         live2dAssets: status.live2dAssets.map((asset) => ({
           id: asset.id,
           skeletonUrl: convertDlcFileSrc(asset.skeletonPath),

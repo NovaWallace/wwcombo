@@ -11,6 +11,7 @@ declare global {
   const __EXPERIMENTAL_ANALYSIS_LABS__: boolean;
   const __BUFF_TIMER_ENABLED__: boolean;
   const __SIMULATED_INPUT_ENABLED__: boolean;
+  const __SIMULATED_INPUT_DLC_REQUIRED__: boolean;
   interface Window {
     __TAURI_INTERNALS__?: unknown;
     trainerDesktop?: {
@@ -57,6 +58,7 @@ declare global {
       getDlcStatus?(): Promise<{
         rootPath: string;
         ffmpegInstalled: boolean;
+        simulatedInputInstalled: boolean;
         live2dAssets: Array<{
           id: string;
           skeletonUrl: string;
@@ -141,7 +143,7 @@ declare global {
 
 export type DesktopInputEvent = {
   source: 'desktop';
-  type: 'keydown' | 'keyup' | 'mousedown' | 'mouseup' | 'gamepadbuttondown' | 'gamepadbuttonup';
+  type: 'keydown' | 'keyup' | 'mousedown' | 'mouseup' | 'wheel' | 'gamepadbuttondown' | 'gamepadbuttonup';
   captureMode?: 'keyboard' | 'xbox' | 'playstation';
   code: string;
   time: number;

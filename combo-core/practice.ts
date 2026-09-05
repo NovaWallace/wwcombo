@@ -245,6 +245,75 @@ export class PracticeSession {
     return this.snapshot();
   }
 
+  manualStep(direction: -1 | 1, eventTime?: number): PracticeSnapshot {
+    if ((this.settings.mode !== 'lenient' && this.settings.mode !== 'free') || (this.status !== 'running' && this.status !== 'passed')) return this.snapshot();
+
+    if (this.settings.mode === 'free') {
+      const currentIndex = Math.max(0, Math.min(this.currentStepIndex, this.chart.steps.length - 1));
+      const targetIndex = direction > 0
+        ? Math.min(currentIndex + 1, this.chart.steps.length - 1)
+        : Math.max(currentIndex - 1, 0);
+      if (targetIndex === currentIndex && this.chart.steps.length > 0) return this.snapshot();
+      const target = this.chart.steps[targetIndex];
+      if (!target) return this.snapshot();
+      this.elapsedMs = Math.max(0, target.startMin);
+      this.currentStepIndex = targetIndex;
+      this.startedAt = typeof eventTime === 'number' && Number.isFinite(eventTime)
+        ? eventTime - this.elapsedMs
+        : this.startedAt;
+      this.status = 'running';
+      const feedback: PracticeFeedback = { level: 'info', message: direction > 0 ? '手动前进' : '手动后退' };
+      this.feedback = [feedback, ...this.feedback].slice(0, 8);
+      return this.snapshot();
+    }
+
+    if (direction > 0) {
+      let nextIndex = this.currentStepIndex;
+      while (nextIndex < this.chart.steps.length) {
+        const step = this.chart.steps[nextIndex];
+        if (this.isBlockingPracticeStep(step) && !this.matchedStepIds.has(step.id)) {
+          this.markStepMatched(step, false);
+          nextIndex += 1;
+          break;
+        }
+        if (this.isTimedPracticeStep(step)) this.markStepMatched(step, false);
+        nextIndex += 1;
+      }
+      this.currentStepIndex = this.findNextLenientIndex(nextIndex, this.elapsedMs);
+      this.status = this.currentStepIndex >= this.chart.steps.length ? 'passed' : 'running';
+      const feedback: PracticeFeedback = { level: 'info', message: '手动前进' };
+      this.feedback = [feedback, ...this.feedback].slice(0, 8);
+      return this.snapshot();
+    }
+
+    let targetIndex = Math.min(this.currentStepIndex - 1, this.chart.steps.length - 1);
+    while (targetIndex >= 0 && !this.isBlockingPracticeStep(this.chart.steps[targetIndex])) targetIndex -= 1;
+    if (targetIndex < 0) {
+      // The current index can already point at the first blocking action
+      // after skipped/timed actions. Fall back to the latest completed
+      // blocking action so manual back still has a meaningful target.
+      targetIndex = this.chart.steps.reduce((latest, step, index) => (
+        index < this.currentStepIndex && this.matchedStepIds.has(step.id) && this.isBlockingPracticeStep(step)
+          ? index
+          : latest
+      ), -1);
+    }
+    if (targetIndex < 0) return this.snapshot();
+    for (let index = targetIndex; index < this.chart.steps.length; index += 1) {
+      const step = this.chart.steps[index];
+      this.matchedStepIds.delete(step.id);
+      this.completedStepIds = this.completedStepIds.filter((id) => id !== step.id);
+      this.errorStepIds = this.errorStepIds.filter((id) => id !== step.id);
+      this.missedStepIds.delete(step.id);
+      this.judgements.delete(step.id);
+    }
+    this.currentStepIndex = targetIndex;
+    this.status = 'running';
+    const feedback: PracticeFeedback = { level: 'info', message: '手动后退' };
+    this.feedback = [feedback, ...this.feedback].slice(0, 8);
+    return this.snapshot();
+  }
+
   snapshot(): PracticeSnapshot {
     return {
       status: this.status,

@@ -1,0 +1,1071 @@
+{
+  "version": 1,
+  "actions": {
+    "basic_attack": "常态攻击",
+    "heavy_attack": "常态攻击",
+    "skill": "共鸣技能",
+    "skill_hold": "共鸣技能",
+    "echo": "共鸣回路",
+    "echo_hold": "共鸣回路",
+    "liberation": "共鸣解放",
+    "liberation_hold": "共鸣解放",
+    "intro": "变奏技能",
+    "outro": "延奏技能"
+  },
+  "characters": [
+    {
+      "name": "丹瑾",
+      "element": "湮灭",
+      "path": "/combo-assets/button-icons/tide/characters/%E4%B8%B9%E7%91%BE",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E4%B8%B9%E7%91%BE/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E4%B8%B9%E7%91%BE/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E4%B8%B9%E7%91%BE/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E4%B8%B9%E7%91%BE/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E4%B8%B9%E7%91%BE/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E4%B8%B9%E7%91%BE/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E4%B8%B9%E7%91%BE/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E4%B8%B9%E7%91%BE/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E4%B8%B9%E7%91%BE/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E4%B8%B9%E7%91%BE/outro.webp"
+      }
+    },
+    {
+      "name": "丽贝卡",
+      "element": "导电",
+      "path": "/combo-assets/button-icons/tide/characters/%E4%B8%BD%E8%B4%9D%E5%8D%A1",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E4%B8%BD%E8%B4%9D%E5%8D%A1/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E4%B8%BD%E8%B4%9D%E5%8D%A1/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E4%B8%BD%E8%B4%9D%E5%8D%A1/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E4%B8%BD%E8%B4%9D%E5%8D%A1/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E4%B8%BD%E8%B4%9D%E5%8D%A1/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E4%B8%BD%E8%B4%9D%E5%8D%A1/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E4%B8%BD%E8%B4%9D%E5%8D%A1/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E4%B8%BD%E8%B4%9D%E5%8D%A1/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E4%B8%BD%E8%B4%9D%E5%8D%A1/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E4%B8%BD%E8%B4%9D%E5%8D%A1/outro.webp"
+      }
+    },
+    {
+      "name": "仇远",
+      "element": "气动",
+      "path": "/combo-assets/button-icons/tide/characters/%E4%BB%87%E8%BF%9C",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E4%BB%87%E8%BF%9C/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E4%BB%87%E8%BF%9C/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E4%BB%87%E8%BF%9C/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E4%BB%87%E8%BF%9C/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E4%BB%87%E8%BF%9C/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E4%BB%87%E8%BF%9C/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E4%BB%87%E8%BF%9C/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E4%BB%87%E8%BF%9C/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E4%BB%87%E8%BF%9C/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E4%BB%87%E8%BF%9C/outro.webp"
+      }
+    },
+    {
+      "name": "今汐",
+      "element": "衍射",
+      "path": "/combo-assets/button-icons/tide/characters/%E4%BB%8A%E6%B1%90",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E4%BB%8A%E6%B1%90/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E4%BB%8A%E6%B1%90/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E4%BB%8A%E6%B1%90/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E4%BB%8A%E6%B1%90/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E4%BB%8A%E6%B1%90/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E4%BB%8A%E6%B1%90/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E4%BB%8A%E6%B1%90/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E4%BB%8A%E6%B1%90/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E4%BB%8A%E6%B1%90/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E4%BB%8A%E6%B1%90/outro.webp"
+      }
+    },
+    {
+      "name": "凌阳",
+      "element": "冷凝",
+      "path": "/combo-assets/button-icons/tide/characters/%E5%87%8C%E9%98%B3",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E5%87%8C%E9%98%B3/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E5%87%8C%E9%98%B3/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E5%87%8C%E9%98%B3/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E5%87%8C%E9%98%B3/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E5%87%8C%E9%98%B3/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E5%87%8C%E9%98%B3/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E5%87%8C%E9%98%B3/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E5%87%8C%E9%98%B3/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E5%87%8C%E9%98%B3/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E5%87%8C%E9%98%B3/outro.webp"
+      }
+    },
+    {
+      "name": "千咲",
+      "element": "湮灭",
+      "path": "/combo-assets/button-icons/tide/characters/%E5%8D%83%E5%92%B2",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E5%8D%83%E5%92%B2/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E5%8D%83%E5%92%B2/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E5%8D%83%E5%92%B2/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E5%8D%83%E5%92%B2/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E5%8D%83%E5%92%B2/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E5%8D%83%E5%92%B2/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E5%8D%83%E5%92%B2/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E5%8D%83%E5%92%B2/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E5%8D%83%E5%92%B2/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E5%8D%83%E5%92%B2/outro.webp"
+      }
+    },
+    {
+      "name": "卜灵",
+      "element": "导电",
+      "path": "/combo-assets/button-icons/tide/characters/%E5%8D%9C%E7%81%B5",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E5%8D%9C%E7%81%B5/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E5%8D%9C%E7%81%B5/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E5%8D%9C%E7%81%B5/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E5%8D%9C%E7%81%B5/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E5%8D%9C%E7%81%B5/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E5%8D%9C%E7%81%B5/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E5%8D%9C%E7%81%B5/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E5%8D%9C%E7%81%B5/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E5%8D%9C%E7%81%B5/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E5%8D%9C%E7%81%B5/outro.webp"
+      }
+    },
+    {
+      "name": "卡卡罗",
+      "element": "导电",
+      "path": "/combo-assets/button-icons/tide/characters/%E5%8D%A1%E5%8D%A1%E7%BD%97",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E5%8D%A1%E5%8D%A1%E7%BD%97/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E5%8D%A1%E5%8D%A1%E7%BD%97/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E5%8D%A1%E5%8D%A1%E7%BD%97/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E5%8D%A1%E5%8D%A1%E7%BD%97/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E5%8D%A1%E5%8D%A1%E7%BD%97/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E5%8D%A1%E5%8D%A1%E7%BD%97/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E5%8D%A1%E5%8D%A1%E7%BD%97/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E5%8D%A1%E5%8D%A1%E7%BD%97/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E5%8D%A1%E5%8D%A1%E7%BD%97/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E5%8D%A1%E5%8D%A1%E7%BD%97/outro.webp"
+      }
+    },
+    {
+      "name": "卡提希娅",
+      "element": "气动",
+      "path": "/combo-assets/button-icons/tide/characters/%E5%8D%A1%E6%8F%90%E5%B8%8C%E5%A8%85",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E5%8D%A1%E6%8F%90%E5%B8%8C%E5%A8%85/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E5%8D%A1%E6%8F%90%E5%B8%8C%E5%A8%85/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E5%8D%A1%E6%8F%90%E5%B8%8C%E5%A8%85/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E5%8D%A1%E6%8F%90%E5%B8%8C%E5%A8%85/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E5%8D%A1%E6%8F%90%E5%B8%8C%E5%A8%85/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E5%8D%A1%E6%8F%90%E5%B8%8C%E5%A8%85/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E5%8D%A1%E6%8F%90%E5%B8%8C%E5%A8%85/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E5%8D%A1%E6%8F%90%E5%B8%8C%E5%A8%85/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E5%8D%A1%E6%8F%90%E5%B8%8C%E5%A8%85/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E5%8D%A1%E6%8F%90%E5%B8%8C%E5%A8%85/outro.webp"
+      }
+    },
+    {
+      "name": "吟霖",
+      "element": "导电",
+      "path": "/combo-assets/button-icons/tide/characters/%E5%90%9F%E9%9C%96",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E5%90%9F%E9%9C%96/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E5%90%9F%E9%9C%96/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E5%90%9F%E9%9C%96/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E5%90%9F%E9%9C%96/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E5%90%9F%E9%9C%96/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E5%90%9F%E9%9C%96/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E5%90%9F%E9%9C%96/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E5%90%9F%E9%9C%96/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E5%90%9F%E9%9C%96/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E5%90%9F%E9%9C%96/outro.webp"
+      }
+    },
+    {
+      "name": "嘉贝莉娜",
+      "element": "热熔",
+      "path": "/combo-assets/button-icons/tide/characters/%E5%98%89%E8%B4%9D%E8%8E%89%E5%A8%9C",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E5%98%89%E8%B4%9D%E8%8E%89%E5%A8%9C/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E5%98%89%E8%B4%9D%E8%8E%89%E5%A8%9C/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E5%98%89%E8%B4%9D%E8%8E%89%E5%A8%9C/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E5%98%89%E8%B4%9D%E8%8E%89%E5%A8%9C/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E5%98%89%E8%B4%9D%E8%8E%89%E5%A8%9C/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E5%98%89%E8%B4%9D%E8%8E%89%E5%A8%9C/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E5%98%89%E8%B4%9D%E8%8E%89%E5%A8%9C/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E5%98%89%E8%B4%9D%E8%8E%89%E5%A8%9C/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E5%98%89%E8%B4%9D%E8%8E%89%E5%A8%9C/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E5%98%89%E8%B4%9D%E8%8E%89%E5%A8%9C/outro.webp"
+      }
+    },
+    {
+      "name": "坎特蕾拉",
+      "element": "湮灭",
+      "path": "/combo-assets/button-icons/tide/characters/%E5%9D%8E%E7%89%B9%E8%95%BE%E6%8B%89",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E5%9D%8E%E7%89%B9%E8%95%BE%E6%8B%89/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E5%9D%8E%E7%89%B9%E8%95%BE%E6%8B%89/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E5%9D%8E%E7%89%B9%E8%95%BE%E6%8B%89/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E5%9D%8E%E7%89%B9%E8%95%BE%E6%8B%89/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E5%9D%8E%E7%89%B9%E8%95%BE%E6%8B%89/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E5%9D%8E%E7%89%B9%E8%95%BE%E6%8B%89/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E5%9D%8E%E7%89%B9%E8%95%BE%E6%8B%89/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E5%9D%8E%E7%89%B9%E8%95%BE%E6%8B%89/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E5%9D%8E%E7%89%B9%E8%95%BE%E6%8B%89/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E5%9D%8E%E7%89%B9%E8%95%BE%E6%8B%89/outro.webp"
+      }
+    },
+    {
+      "name": "夏空",
+      "element": "气动",
+      "path": "/combo-assets/button-icons/tide/characters/%E5%A4%8F%E7%A9%BA",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E5%A4%8F%E7%A9%BA/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E5%A4%8F%E7%A9%BA/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E5%A4%8F%E7%A9%BA/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E5%A4%8F%E7%A9%BA/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E5%A4%8F%E7%A9%BA/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E5%A4%8F%E7%A9%BA/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E5%A4%8F%E7%A9%BA/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E5%A4%8F%E7%A9%BA/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E5%A4%8F%E7%A9%BA/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E5%A4%8F%E7%A9%BA/outro.webp"
+      }
+    },
+    {
+      "name": "奥古斯塔",
+      "element": "导电",
+      "path": "/combo-assets/button-icons/tide/characters/%E5%A5%A5%E5%8F%A4%E6%96%AF%E5%A1%94",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E5%A5%A5%E5%8F%A4%E6%96%AF%E5%A1%94/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E5%A5%A5%E5%8F%A4%E6%96%AF%E5%A1%94/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E5%A5%A5%E5%8F%A4%E6%96%AF%E5%A1%94/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E5%A5%A5%E5%8F%A4%E6%96%AF%E5%A1%94/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E5%A5%A5%E5%8F%A4%E6%96%AF%E5%A1%94/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E5%A5%A5%E5%8F%A4%E6%96%AF%E5%A1%94/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E5%A5%A5%E5%8F%A4%E6%96%AF%E5%A1%94/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E5%A5%A5%E5%8F%A4%E6%96%AF%E5%A1%94/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E5%A5%A5%E5%8F%A4%E6%96%AF%E5%A1%94/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E5%A5%A5%E5%8F%A4%E6%96%AF%E5%A1%94/outro.webp"
+      }
+    },
+    {
+      "name": "守岸人",
+      "element": "衍射",
+      "path": "/combo-assets/button-icons/tide/characters/%E5%AE%88%E5%B2%B8%E4%BA%BA",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E5%AE%88%E5%B2%B8%E4%BA%BA/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E5%AE%88%E5%B2%B8%E4%BA%BA/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E5%AE%88%E5%B2%B8%E4%BA%BA/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E5%AE%88%E5%B2%B8%E4%BA%BA/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E5%AE%88%E5%B2%B8%E4%BA%BA/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E5%AE%88%E5%B2%B8%E4%BA%BA/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E5%AE%88%E5%B2%B8%E4%BA%BA/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E5%AE%88%E5%B2%B8%E4%BA%BA/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E5%AE%88%E5%B2%B8%E4%BA%BA/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E5%AE%88%E5%B2%B8%E4%BA%BA/outro.webp"
+      }
+    },
+    {
+      "name": "安可",
+      "element": "热熔",
+      "path": "/combo-assets/button-icons/tide/characters/%E5%AE%89%E5%8F%AF",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E5%AE%89%E5%8F%AF/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E5%AE%89%E5%8F%AF/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E5%AE%89%E5%8F%AF/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E5%AE%89%E5%8F%AF/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E5%AE%89%E5%8F%AF/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E5%AE%89%E5%8F%AF/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E5%AE%89%E5%8F%AF/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E5%AE%89%E5%8F%AF/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E5%AE%89%E5%8F%AF/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E5%AE%89%E5%8F%AF/outro.webp"
+      }
+    },
+    {
+      "name": "尤诺",
+      "element": "气动",
+      "path": "/combo-assets/button-icons/tide/characters/%E5%B0%A4%E8%AF%BA",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E5%B0%A4%E8%AF%BA/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E5%B0%A4%E8%AF%BA/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E5%B0%A4%E8%AF%BA/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E5%B0%A4%E8%AF%BA/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E5%B0%A4%E8%AF%BA/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E5%B0%A4%E8%AF%BA/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E5%B0%A4%E8%AF%BA/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E5%B0%A4%E8%AF%BA/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E5%B0%A4%E8%AF%BA/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E5%B0%A4%E8%AF%BA/outro.webp"
+      }
+    },
+    {
+      "name": "布兰特",
+      "element": "热熔",
+      "path": "/combo-assets/button-icons/tide/characters/%E5%B8%83%E5%85%B0%E7%89%B9",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E5%B8%83%E5%85%B0%E7%89%B9/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E5%B8%83%E5%85%B0%E7%89%B9/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E5%B8%83%E5%85%B0%E7%89%B9/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E5%B8%83%E5%85%B0%E7%89%B9/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E5%B8%83%E5%85%B0%E7%89%B9/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E5%B8%83%E5%85%B0%E7%89%B9/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E5%B8%83%E5%85%B0%E7%89%B9/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E5%B8%83%E5%85%B0%E7%89%B9/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E5%B8%83%E5%85%B0%E7%89%B9/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E5%B8%83%E5%85%B0%E7%89%B9/outro.webp"
+      }
+    },
+    {
+      "name": "弗洛洛",
+      "element": "湮灭",
+      "path": "/combo-assets/button-icons/tide/characters/%E5%BC%97%E6%B4%9B%E6%B4%9B",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E5%BC%97%E6%B4%9B%E6%B4%9B/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E5%BC%97%E6%B4%9B%E6%B4%9B/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E5%BC%97%E6%B4%9B%E6%B4%9B/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E5%BC%97%E6%B4%9B%E6%B4%9B/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E5%BC%97%E6%B4%9B%E6%B4%9B/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E5%BC%97%E6%B4%9B%E6%B4%9B/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E5%BC%97%E6%B4%9B%E6%B4%9B/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E5%BC%97%E6%B4%9B%E6%B4%9B/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E5%BC%97%E6%B4%9B%E6%B4%9B/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E5%BC%97%E6%B4%9B%E6%B4%9B/outro.webp"
+      }
+    },
+    {
+      "name": "忌炎",
+      "element": "气动",
+      "path": "/combo-assets/button-icons/tide/characters/%E5%BF%8C%E7%82%8E",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E5%BF%8C%E7%82%8E/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E5%BF%8C%E7%82%8E/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E5%BF%8C%E7%82%8E/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E5%BF%8C%E7%82%8E/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E5%BF%8C%E7%82%8E/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E5%BF%8C%E7%82%8E/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E5%BF%8C%E7%82%8E/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E5%BF%8C%E7%82%8E/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E5%BF%8C%E7%82%8E/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E5%BF%8C%E7%82%8E/outro.webp"
+      }
+    },
+    {
+      "name": "折枝",
+      "element": "冷凝",
+      "path": "/combo-assets/button-icons/tide/characters/%E6%8A%98%E6%9E%9D",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E6%8A%98%E6%9E%9D/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E6%8A%98%E6%9E%9D/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E6%8A%98%E6%9E%9D/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E6%8A%98%E6%9E%9D/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E6%8A%98%E6%9E%9D/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E6%8A%98%E6%9E%9D/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E6%8A%98%E6%9E%9D/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E6%8A%98%E6%9E%9D/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E6%8A%98%E6%9E%9D/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E6%8A%98%E6%9E%9D/outro.webp"
+      }
+    },
+    {
+      "name": "散华",
+      "element": "冷凝",
+      "path": "/combo-assets/button-icons/tide/characters/%E6%95%A3%E5%8D%8E",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E6%95%A3%E5%8D%8E/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E6%95%A3%E5%8D%8E/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E6%95%A3%E5%8D%8E/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E6%95%A3%E5%8D%8E/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E6%95%A3%E5%8D%8E/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E6%95%A3%E5%8D%8E/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E6%95%A3%E5%8D%8E/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E6%95%A3%E5%8D%8E/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E6%95%A3%E5%8D%8E/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E6%95%A3%E5%8D%8E/outro.webp"
+      }
+    },
+    {
+      "name": "景燃",
+      "element": "热熔",
+      "path": "/combo-assets/button-icons/tide/characters/%E6%99%AF%E7%87%83",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E6%99%AF%E7%87%83/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E6%99%AF%E7%87%83/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E6%99%AF%E7%87%83/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E6%99%AF%E7%87%83/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E6%99%AF%E7%87%83/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E6%99%AF%E7%87%83/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E6%99%AF%E7%87%83/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E6%99%AF%E7%87%83/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E6%99%AF%E7%87%83/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E6%99%AF%E7%87%83/outro.webp"
+      }
+    },
+    {
+      "name": "桃祈",
+      "element": "湮灭",
+      "path": "/combo-assets/button-icons/tide/characters/%E6%A1%83%E7%A5%88",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E6%A1%83%E7%A5%88/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E6%A1%83%E7%A5%88/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E6%A1%83%E7%A5%88/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E6%A1%83%E7%A5%88/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E6%A1%83%E7%A5%88/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E6%A1%83%E7%A5%88/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E6%A1%83%E7%A5%88/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E6%A1%83%E7%A5%88/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E6%A1%83%E7%A5%88/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E6%A1%83%E7%A5%88/outro.webp"
+      }
+    },
+    {
+      "name": "椿",
+      "element": "湮灭",
+      "path": "/combo-assets/button-icons/tide/characters/%E6%A4%BF",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E6%A4%BF/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E6%A4%BF/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E6%A4%BF/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E6%A4%BF/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E6%A4%BF/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E6%A4%BF/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E6%A4%BF/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E6%A4%BF/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E6%A4%BF/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E6%A4%BF/outro.webp"
+      }
+    },
+    {
+      "name": "洛可可",
+      "element": "湮灭",
+      "path": "/combo-assets/button-icons/tide/characters/%E6%B4%9B%E5%8F%AF%E5%8F%AF",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E6%B4%9B%E5%8F%AF%E5%8F%AF/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E6%B4%9B%E5%8F%AF%E5%8F%AF/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E6%B4%9B%E5%8F%AF%E5%8F%AF/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E6%B4%9B%E5%8F%AF%E5%8F%AF/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E6%B4%9B%E5%8F%AF%E5%8F%AF/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E6%B4%9B%E5%8F%AF%E5%8F%AF/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E6%B4%9B%E5%8F%AF%E5%8F%AF/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E6%B4%9B%E5%8F%AF%E5%8F%AF/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E6%B4%9B%E5%8F%AF%E5%8F%AF/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E6%B4%9B%E5%8F%AF%E5%8F%AF/outro.webp"
+      }
+    },
+    {
+      "name": "洛瑟菈",
+      "element": "冷凝",
+      "path": "/combo-assets/button-icons/tide/characters/%E6%B4%9B%E7%91%9F%E8%8F%88",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E6%B4%9B%E7%91%9F%E8%8F%88/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E6%B4%9B%E7%91%9F%E8%8F%88/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E6%B4%9B%E7%91%9F%E8%8F%88/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E6%B4%9B%E7%91%9F%E8%8F%88/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E6%B4%9B%E7%91%9F%E8%8F%88/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E6%B4%9B%E7%91%9F%E8%8F%88/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E6%B4%9B%E7%91%9F%E8%8F%88/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E6%B4%9B%E7%91%9F%E8%8F%88/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E6%B4%9B%E7%91%9F%E8%8F%88/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E6%B4%9B%E7%91%9F%E8%8F%88/outro.webp"
+      }
+    },
+    {
+      "name": "清宵",
+      "element": "气动",
+      "path": "/combo-assets/button-icons/tide/characters/%E6%B8%85%E5%AE%B5",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E6%B8%85%E5%AE%B5/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E6%B8%85%E5%AE%B5/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E6%B8%85%E5%AE%B5/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E6%B8%85%E5%AE%B5/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E6%B8%85%E5%AE%B5/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E6%B8%85%E5%AE%B5/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E6%B8%85%E5%AE%B5/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E6%B8%85%E5%AE%B5/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E6%B8%85%E5%AE%B5/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E6%B8%85%E5%AE%B5/outro.webp"
+      }
+    },
+    {
+      "name": "渊武",
+      "element": "导电",
+      "path": "/combo-assets/button-icons/tide/characters/%E6%B8%8A%E6%AD%A6",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E6%B8%8A%E6%AD%A6/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E6%B8%8A%E6%AD%A6/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E6%B8%8A%E6%AD%A6/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E6%B8%8A%E6%AD%A6/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E6%B8%8A%E6%AD%A6/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E6%B8%8A%E6%AD%A6/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E6%B8%8A%E6%AD%A6/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E6%B8%8A%E6%AD%A6/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E6%B8%8A%E6%AD%A6/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E6%B8%8A%E6%AD%A6/outro.webp"
+      }
+    },
+    {
+      "name": "漂泊者·导电（女）",
+      "element": "导电",
+      "path": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E5%AF%BC%E7%94%B5%EF%BC%88%E5%A5%B3%EF%BC%89",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E5%AF%BC%E7%94%B5%EF%BC%88%E5%A5%B3%EF%BC%89/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E5%AF%BC%E7%94%B5%EF%BC%88%E5%A5%B3%EF%BC%89/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E5%AF%BC%E7%94%B5%EF%BC%88%E5%A5%B3%EF%BC%89/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E5%AF%BC%E7%94%B5%EF%BC%88%E5%A5%B3%EF%BC%89/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E5%AF%BC%E7%94%B5%EF%BC%88%E5%A5%B3%EF%BC%89/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E5%AF%BC%E7%94%B5%EF%BC%88%E5%A5%B3%EF%BC%89/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E5%AF%BC%E7%94%B5%EF%BC%88%E5%A5%B3%EF%BC%89/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E5%AF%BC%E7%94%B5%EF%BC%88%E5%A5%B3%EF%BC%89/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E5%AF%BC%E7%94%B5%EF%BC%88%E5%A5%B3%EF%BC%89/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E5%AF%BC%E7%94%B5%EF%BC%88%E5%A5%B3%EF%BC%89/outro.webp"
+      }
+    },
+    {
+      "name": "漂泊者·导电（男）",
+      "element": "导电",
+      "path": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E5%AF%BC%E7%94%B5%EF%BC%88%E7%94%B7%EF%BC%89",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E5%AF%BC%E7%94%B5%EF%BC%88%E7%94%B7%EF%BC%89/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E5%AF%BC%E7%94%B5%EF%BC%88%E7%94%B7%EF%BC%89/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E5%AF%BC%E7%94%B5%EF%BC%88%E7%94%B7%EF%BC%89/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E5%AF%BC%E7%94%B5%EF%BC%88%E7%94%B7%EF%BC%89/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E5%AF%BC%E7%94%B5%EF%BC%88%E7%94%B7%EF%BC%89/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E5%AF%BC%E7%94%B5%EF%BC%88%E7%94%B7%EF%BC%89/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E5%AF%BC%E7%94%B5%EF%BC%88%E7%94%B7%EF%BC%89/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E5%AF%BC%E7%94%B5%EF%BC%88%E7%94%B7%EF%BC%89/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E5%AF%BC%E7%94%B5%EF%BC%88%E7%94%B7%EF%BC%89/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E5%AF%BC%E7%94%B5%EF%BC%88%E7%94%B7%EF%BC%89/outro.webp"
+      }
+    },
+    {
+      "name": "漂泊者·气动（女）",
+      "element": "气动",
+      "path": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E6%B0%94%E5%8A%A8%EF%BC%88%E5%A5%B3%EF%BC%89",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E6%B0%94%E5%8A%A8%EF%BC%88%E5%A5%B3%EF%BC%89/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E6%B0%94%E5%8A%A8%EF%BC%88%E5%A5%B3%EF%BC%89/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E6%B0%94%E5%8A%A8%EF%BC%88%E5%A5%B3%EF%BC%89/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E6%B0%94%E5%8A%A8%EF%BC%88%E5%A5%B3%EF%BC%89/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E6%B0%94%E5%8A%A8%EF%BC%88%E5%A5%B3%EF%BC%89/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E6%B0%94%E5%8A%A8%EF%BC%88%E5%A5%B3%EF%BC%89/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E6%B0%94%E5%8A%A8%EF%BC%88%E5%A5%B3%EF%BC%89/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E6%B0%94%E5%8A%A8%EF%BC%88%E5%A5%B3%EF%BC%89/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E6%B0%94%E5%8A%A8%EF%BC%88%E5%A5%B3%EF%BC%89/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E6%B0%94%E5%8A%A8%EF%BC%88%E5%A5%B3%EF%BC%89/outro.webp"
+      }
+    },
+    {
+      "name": "漂泊者·气动（男）",
+      "element": "气动",
+      "path": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E6%B0%94%E5%8A%A8%EF%BC%88%E7%94%B7%EF%BC%89",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E6%B0%94%E5%8A%A8%EF%BC%88%E7%94%B7%EF%BC%89/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E6%B0%94%E5%8A%A8%EF%BC%88%E7%94%B7%EF%BC%89/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E6%B0%94%E5%8A%A8%EF%BC%88%E7%94%B7%EF%BC%89/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E6%B0%94%E5%8A%A8%EF%BC%88%E7%94%B7%EF%BC%89/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E6%B0%94%E5%8A%A8%EF%BC%88%E7%94%B7%EF%BC%89/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E6%B0%94%E5%8A%A8%EF%BC%88%E7%94%B7%EF%BC%89/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E6%B0%94%E5%8A%A8%EF%BC%88%E7%94%B7%EF%BC%89/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E6%B0%94%E5%8A%A8%EF%BC%88%E7%94%B7%EF%BC%89/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E6%B0%94%E5%8A%A8%EF%BC%88%E7%94%B7%EF%BC%89/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E6%B0%94%E5%8A%A8%EF%BC%88%E7%94%B7%EF%BC%89/outro.webp"
+      }
+    },
+    {
+      "name": "漂泊者·湮灭（女）",
+      "element": "湮灭",
+      "path": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E6%B9%AE%E7%81%AD%EF%BC%88%E5%A5%B3%EF%BC%89",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E6%B9%AE%E7%81%AD%EF%BC%88%E5%A5%B3%EF%BC%89/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E6%B9%AE%E7%81%AD%EF%BC%88%E5%A5%B3%EF%BC%89/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E6%B9%AE%E7%81%AD%EF%BC%88%E5%A5%B3%EF%BC%89/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E6%B9%AE%E7%81%AD%EF%BC%88%E5%A5%B3%EF%BC%89/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E6%B9%AE%E7%81%AD%EF%BC%88%E5%A5%B3%EF%BC%89/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E6%B9%AE%E7%81%AD%EF%BC%88%E5%A5%B3%EF%BC%89/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E6%B9%AE%E7%81%AD%EF%BC%88%E5%A5%B3%EF%BC%89/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E6%B9%AE%E7%81%AD%EF%BC%88%E5%A5%B3%EF%BC%89/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E6%B9%AE%E7%81%AD%EF%BC%88%E5%A5%B3%EF%BC%89/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E6%B9%AE%E7%81%AD%EF%BC%88%E5%A5%B3%EF%BC%89/outro.webp"
+      }
+    },
+    {
+      "name": "漂泊者·湮灭（男）",
+      "element": "湮灭",
+      "path": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E6%B9%AE%E7%81%AD%EF%BC%88%E7%94%B7%EF%BC%89",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E6%B9%AE%E7%81%AD%EF%BC%88%E7%94%B7%EF%BC%89/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E6%B9%AE%E7%81%AD%EF%BC%88%E7%94%B7%EF%BC%89/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E6%B9%AE%E7%81%AD%EF%BC%88%E7%94%B7%EF%BC%89/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E6%B9%AE%E7%81%AD%EF%BC%88%E7%94%B7%EF%BC%89/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E6%B9%AE%E7%81%AD%EF%BC%88%E7%94%B7%EF%BC%89/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E6%B9%AE%E7%81%AD%EF%BC%88%E7%94%B7%EF%BC%89/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E6%B9%AE%E7%81%AD%EF%BC%88%E7%94%B7%EF%BC%89/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E6%B9%AE%E7%81%AD%EF%BC%88%E7%94%B7%EF%BC%89/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E6%B9%AE%E7%81%AD%EF%BC%88%E7%94%B7%EF%BC%89/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E6%B9%AE%E7%81%AD%EF%BC%88%E7%94%B7%EF%BC%89/outro.webp"
+      }
+    },
+    {
+      "name": "漂泊者·衍射（女）",
+      "element": "衍射",
+      "path": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E8%A1%8D%E5%B0%84%EF%BC%88%E5%A5%B3%EF%BC%89",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E8%A1%8D%E5%B0%84%EF%BC%88%E5%A5%B3%EF%BC%89/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E8%A1%8D%E5%B0%84%EF%BC%88%E5%A5%B3%EF%BC%89/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E8%A1%8D%E5%B0%84%EF%BC%88%E5%A5%B3%EF%BC%89/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E8%A1%8D%E5%B0%84%EF%BC%88%E5%A5%B3%EF%BC%89/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E8%A1%8D%E5%B0%84%EF%BC%88%E5%A5%B3%EF%BC%89/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E8%A1%8D%E5%B0%84%EF%BC%88%E5%A5%B3%EF%BC%89/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E8%A1%8D%E5%B0%84%EF%BC%88%E5%A5%B3%EF%BC%89/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E8%A1%8D%E5%B0%84%EF%BC%88%E5%A5%B3%EF%BC%89/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E8%A1%8D%E5%B0%84%EF%BC%88%E5%A5%B3%EF%BC%89/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E8%A1%8D%E5%B0%84%EF%BC%88%E5%A5%B3%EF%BC%89/outro.webp"
+      }
+    },
+    {
+      "name": "漂泊者·衍射（男）",
+      "element": "衍射",
+      "path": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E8%A1%8D%E5%B0%84%EF%BC%88%E7%94%B7%EF%BC%89",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E8%A1%8D%E5%B0%84%EF%BC%88%E7%94%B7%EF%BC%89/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E8%A1%8D%E5%B0%84%EF%BC%88%E7%94%B7%EF%BC%89/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E8%A1%8D%E5%B0%84%EF%BC%88%E7%94%B7%EF%BC%89/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E8%A1%8D%E5%B0%84%EF%BC%88%E7%94%B7%EF%BC%89/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E8%A1%8D%E5%B0%84%EF%BC%88%E7%94%B7%EF%BC%89/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E8%A1%8D%E5%B0%84%EF%BC%88%E7%94%B7%EF%BC%89/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E8%A1%8D%E5%B0%84%EF%BC%88%E7%94%B7%EF%BC%89/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E8%A1%8D%E5%B0%84%EF%BC%88%E7%94%B7%EF%BC%89/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E8%A1%8D%E5%B0%84%EF%BC%88%E7%94%B7%EF%BC%89/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E6%BC%82%E6%B3%8A%E8%80%85%C2%B7%E8%A1%8D%E5%B0%84%EF%BC%88%E7%94%B7%EF%BC%89/outro.webp"
+      }
+    },
+    {
+      "name": "灯灯",
+      "element": "导电",
+      "path": "/combo-assets/button-icons/tide/characters/%E7%81%AF%E7%81%AF",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E7%81%AF%E7%81%AF/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E7%81%AF%E7%81%AF/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E7%81%AF%E7%81%AF/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E7%81%AF%E7%81%AF/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E7%81%AF%E7%81%AF/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E7%81%AF%E7%81%AF/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E7%81%AF%E7%81%AF/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E7%81%AF%E7%81%AF/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E7%81%AF%E7%81%AF/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E7%81%AF%E7%81%AF/outro.webp"
+      }
+    },
+    {
+      "name": "炽霞",
+      "element": "热熔",
+      "path": "/combo-assets/button-icons/tide/characters/%E7%82%BD%E9%9C%9E",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E7%82%BD%E9%9C%9E/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E7%82%BD%E9%9C%9E/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E7%82%BD%E9%9C%9E/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E7%82%BD%E9%9C%9E/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E7%82%BD%E9%9C%9E/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E7%82%BD%E9%9C%9E/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E7%82%BD%E9%9C%9E/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E7%82%BD%E9%9C%9E/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E7%82%BD%E9%9C%9E/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E7%82%BD%E9%9C%9E/outro.webp"
+      }
+    },
+    {
+      "name": "爱弥斯",
+      "element": "热熔",
+      "path": "/combo-assets/button-icons/tide/characters/%E7%88%B1%E5%BC%A5%E6%96%AF",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E7%88%B1%E5%BC%A5%E6%96%AF/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E7%88%B1%E5%BC%A5%E6%96%AF/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E7%88%B1%E5%BC%A5%E6%96%AF/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E7%88%B1%E5%BC%A5%E6%96%AF/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E7%88%B1%E5%BC%A5%E6%96%AF/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E7%88%B1%E5%BC%A5%E6%96%AF/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E7%88%B1%E5%BC%A5%E6%96%AF/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E7%88%B1%E5%BC%A5%E6%96%AF/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E7%88%B1%E5%BC%A5%E6%96%AF/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E7%88%B1%E5%BC%A5%E6%96%AF/outro.webp"
+      }
+    },
+    {
+      "name": "珂莱塔",
+      "element": "冷凝",
+      "path": "/combo-assets/button-icons/tide/characters/%E7%8F%82%E8%8E%B1%E5%A1%94",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E7%8F%82%E8%8E%B1%E5%A1%94/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E7%8F%82%E8%8E%B1%E5%A1%94/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E7%8F%82%E8%8E%B1%E5%A1%94/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E7%8F%82%E8%8E%B1%E5%A1%94/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E7%8F%82%E8%8E%B1%E5%A1%94/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E7%8F%82%E8%8E%B1%E5%A1%94/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E7%8F%82%E8%8E%B1%E5%A1%94/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E7%8F%82%E8%8E%B1%E5%A1%94/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E7%8F%82%E8%8E%B1%E5%A1%94/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E7%8F%82%E8%8E%B1%E5%A1%94/outro.webp"
+      }
+    },
+    {
+      "name": "琳奈",
+      "element": "衍射",
+      "path": "/combo-assets/button-icons/tide/characters/%E7%90%B3%E5%A5%88",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E7%90%B3%E5%A5%88/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E7%90%B3%E5%A5%88/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E7%90%B3%E5%A5%88/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E7%90%B3%E5%A5%88/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E7%90%B3%E5%A5%88/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E7%90%B3%E5%A5%88/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E7%90%B3%E5%A5%88/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E7%90%B3%E5%A5%88/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E7%90%B3%E5%A5%88/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E7%90%B3%E5%A5%88/outro.webp"
+      }
+    },
+    {
+      "name": "白芷",
+      "element": "冷凝",
+      "path": "/combo-assets/button-icons/tide/characters/%E7%99%BD%E8%8A%B7",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E7%99%BD%E8%8A%B7/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E7%99%BD%E8%8A%B7/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E7%99%BD%E8%8A%B7/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E7%99%BD%E8%8A%B7/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E7%99%BD%E8%8A%B7/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E7%99%BD%E8%8A%B7/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E7%99%BD%E8%8A%B7/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E7%99%BD%E8%8A%B7/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E7%99%BD%E8%8A%B7/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E7%99%BD%E8%8A%B7/outro.webp"
+      }
+    },
+    {
+      "name": "相里要",
+      "element": "导电",
+      "path": "/combo-assets/button-icons/tide/characters/%E7%9B%B8%E9%87%8C%E8%A6%81",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E7%9B%B8%E9%87%8C%E8%A6%81/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E7%9B%B8%E9%87%8C%E8%A6%81/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E7%9B%B8%E9%87%8C%E8%A6%81/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E7%9B%B8%E9%87%8C%E8%A6%81/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E7%9B%B8%E9%87%8C%E8%A6%81/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E7%9B%B8%E9%87%8C%E8%A6%81/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E7%9B%B8%E9%87%8C%E8%A6%81/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E7%9B%B8%E9%87%8C%E8%A6%81/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E7%9B%B8%E9%87%8C%E8%A6%81/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E7%9B%B8%E9%87%8C%E8%A6%81/outro.webp"
+      }
+    },
+    {
+      "name": "秋水",
+      "element": "气动",
+      "path": "/combo-assets/button-icons/tide/characters/%E7%A7%8B%E6%B0%B4",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E7%A7%8B%E6%B0%B4/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E7%A7%8B%E6%B0%B4/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E7%A7%8B%E6%B0%B4/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E7%A7%8B%E6%B0%B4/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E7%A7%8B%E6%B0%B4/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E7%A7%8B%E6%B0%B4/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E7%A7%8B%E6%B0%B4/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E7%A7%8B%E6%B0%B4/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E7%A7%8B%E6%B0%B4/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E7%A7%8B%E6%B0%B4/outro.webp"
+      }
+    },
+    {
+      "name": "秧秧",
+      "element": "气动",
+      "path": "/combo-assets/button-icons/tide/characters/%E7%A7%A7%E7%A7%A7",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E7%A7%A7%E7%A7%A7/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E7%A7%A7%E7%A7%A7/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E7%A7%A7%E7%A7%A7/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E7%A7%A7%E7%A7%A7/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E7%A7%A7%E7%A7%A7/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E7%A7%A7%E7%A7%A7/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E7%A7%A7%E7%A7%A7/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E7%A7%A7%E7%A7%A7/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E7%A7%A7%E7%A7%A7/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E7%A7%A7%E7%A7%A7/outro.webp"
+      }
+    },
+    {
+      "name": "秧秧·玄翎",
+      "element": "湮灭",
+      "path": "/combo-assets/button-icons/tide/characters/%E7%A7%A7%E7%A7%A7%C2%B7%E7%8E%84%E7%BF%8E",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E7%A7%A7%E7%A7%A7%C2%B7%E7%8E%84%E7%BF%8E/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E7%A7%A7%E7%A7%A7%C2%B7%E7%8E%84%E7%BF%8E/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E7%A7%A7%E7%A7%A7%C2%B7%E7%8E%84%E7%BF%8E/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E7%A7%A7%E7%A7%A7%C2%B7%E7%8E%84%E7%BF%8E/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E7%A7%A7%E7%A7%A7%C2%B7%E7%8E%84%E7%BF%8E/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E7%A7%A7%E7%A7%A7%C2%B7%E7%8E%84%E7%BF%8E/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E7%A7%A7%E7%A7%A7%C2%B7%E7%8E%84%E7%BF%8E/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E7%A7%A7%E7%A7%A7%C2%B7%E7%8E%84%E7%BF%8E/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E7%A7%A7%E7%A7%A7%C2%B7%E7%8E%84%E7%BF%8E/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E7%A7%A7%E7%A7%A7%C2%B7%E7%8E%84%E7%BF%8E/outro.webp"
+      }
+    },
+    {
+      "name": "穗穗",
+      "element": "冷凝",
+      "path": "/combo-assets/button-icons/tide/characters/%E7%A9%97%E7%A9%97",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E7%A9%97%E7%A9%97/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E7%A9%97%E7%A9%97/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E7%A9%97%E7%A9%97/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E7%A9%97%E7%A9%97/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E7%A9%97%E7%A9%97/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E7%A9%97%E7%A9%97/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E7%A9%97%E7%A9%97/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E7%A9%97%E7%A9%97/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E7%A9%97%E7%A9%97/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E7%A9%97%E7%A9%97/outro.webp"
+      }
+    },
+    {
+      "name": "绯雪",
+      "element": "冷凝",
+      "path": "/combo-assets/button-icons/tide/characters/%E7%BB%AF%E9%9B%AA",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E7%BB%AF%E9%9B%AA/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E7%BB%AF%E9%9B%AA/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E7%BB%AF%E9%9B%AA/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E7%BB%AF%E9%9B%AA/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E7%BB%AF%E9%9B%AA/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E7%BB%AF%E9%9B%AA/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E7%BB%AF%E9%9B%AA/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E7%BB%AF%E9%9B%AA/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E7%BB%AF%E9%9B%AA/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E7%BB%AF%E9%9B%AA/outro.webp"
+      }
+    },
+    {
+      "name": "维里奈",
+      "element": "衍射",
+      "path": "/combo-assets/button-icons/tide/characters/%E7%BB%B4%E9%87%8C%E5%A5%88",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E7%BB%B4%E9%87%8C%E5%A5%88/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E7%BB%B4%E9%87%8C%E5%A5%88/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E7%BB%B4%E9%87%8C%E5%A5%88/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E7%BB%B4%E9%87%8C%E5%A5%88/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E7%BB%B4%E9%87%8C%E5%A5%88/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E7%BB%B4%E9%87%8C%E5%A5%88/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E7%BB%B4%E9%87%8C%E5%A5%88/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E7%BB%B4%E9%87%8C%E5%A5%88/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E7%BB%B4%E9%87%8C%E5%A5%88/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E7%BB%B4%E9%87%8C%E5%A5%88/outro.webp"
+      }
+    },
+    {
+      "name": "莫宁",
+      "element": "热熔",
+      "path": "/combo-assets/button-icons/tide/characters/%E8%8E%AB%E5%AE%81",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E8%8E%AB%E5%AE%81/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E8%8E%AB%E5%AE%81/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E8%8E%AB%E5%AE%81/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E8%8E%AB%E5%AE%81/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E8%8E%AB%E5%AE%81/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E8%8E%AB%E5%AE%81/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E8%8E%AB%E5%AE%81/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E8%8E%AB%E5%AE%81/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E8%8E%AB%E5%AE%81/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E8%8E%AB%E5%AE%81/outro.webp"
+      }
+    },
+    {
+      "name": "莫特斐",
+      "element": "热熔",
+      "path": "/combo-assets/button-icons/tide/characters/%E8%8E%AB%E7%89%B9%E6%96%90",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E8%8E%AB%E7%89%B9%E6%96%90/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E8%8E%AB%E7%89%B9%E6%96%90/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E8%8E%AB%E7%89%B9%E6%96%90/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E8%8E%AB%E7%89%B9%E6%96%90/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E8%8E%AB%E7%89%B9%E6%96%90/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E8%8E%AB%E7%89%B9%E6%96%90/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E8%8E%AB%E7%89%B9%E6%96%90/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E8%8E%AB%E7%89%B9%E6%96%90/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E8%8E%AB%E7%89%B9%E6%96%90/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E8%8E%AB%E7%89%B9%E6%96%90/outro.webp"
+      }
+    },
+    {
+      "name": "菲比",
+      "element": "衍射",
+      "path": "/combo-assets/button-icons/tide/characters/%E8%8F%B2%E6%AF%94",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E8%8F%B2%E6%AF%94/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E8%8F%B2%E6%AF%94/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E8%8F%B2%E6%AF%94/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E8%8F%B2%E6%AF%94/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E8%8F%B2%E6%AF%94/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E8%8F%B2%E6%AF%94/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E8%8F%B2%E6%AF%94/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E8%8F%B2%E6%AF%94/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E8%8F%B2%E6%AF%94/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E8%8F%B2%E6%AF%94/outro.webp"
+      }
+    },
+    {
+      "name": "西格莉卡",
+      "element": "气动",
+      "path": "/combo-assets/button-icons/tide/characters/%E8%A5%BF%E6%A0%BC%E8%8E%89%E5%8D%A1",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E8%A5%BF%E6%A0%BC%E8%8E%89%E5%8D%A1/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E8%A5%BF%E6%A0%BC%E8%8E%89%E5%8D%A1/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E8%A5%BF%E6%A0%BC%E8%8E%89%E5%8D%A1/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E8%A5%BF%E6%A0%BC%E8%8E%89%E5%8D%A1/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E8%A5%BF%E6%A0%BC%E8%8E%89%E5%8D%A1/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E8%A5%BF%E6%A0%BC%E8%8E%89%E5%8D%A1/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E8%A5%BF%E6%A0%BC%E8%8E%89%E5%8D%A1/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E8%A5%BF%E6%A0%BC%E8%8E%89%E5%8D%A1/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E8%A5%BF%E6%A0%BC%E8%8E%89%E5%8D%A1/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E8%A5%BF%E6%A0%BC%E8%8E%89%E5%8D%A1/outro.webp"
+      }
+    },
+    {
+      "name": "赞妮",
+      "element": "衍射",
+      "path": "/combo-assets/button-icons/tide/characters/%E8%B5%9E%E5%A6%AE",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E8%B5%9E%E5%A6%AE/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E8%B5%9E%E5%A6%AE/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E8%B5%9E%E5%A6%AE/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E8%B5%9E%E5%A6%AE/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E8%B5%9E%E5%A6%AE/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E8%B5%9E%E5%A6%AE/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E8%B5%9E%E5%A6%AE/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E8%B5%9E%E5%A6%AE/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E8%B5%9E%E5%A6%AE/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E8%B5%9E%E5%A6%AE/outro.webp"
+      }
+    },
+    {
+      "name": "达妮娅",
+      "element": "热熔",
+      "path": "/combo-assets/button-icons/tide/characters/%E8%BE%BE%E5%A6%AE%E5%A8%85",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E8%BE%BE%E5%A6%AE%E5%A8%85/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E8%BE%BE%E5%A6%AE%E5%A8%85/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E8%BE%BE%E5%A6%AE%E5%A8%85/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E8%BE%BE%E5%A6%AE%E5%A8%85/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E8%BE%BE%E5%A6%AE%E5%A8%85/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E8%BE%BE%E5%A6%AE%E5%A8%85/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E8%BE%BE%E5%A6%AE%E5%A8%85/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E8%BE%BE%E5%A6%AE%E5%A8%85/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E8%BE%BE%E5%A6%AE%E5%A8%85/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E8%BE%BE%E5%A6%AE%E5%A8%85/outro.webp"
+      }
+    },
+    {
+      "name": "釉瑚",
+      "element": "冷凝",
+      "path": "/combo-assets/button-icons/tide/characters/%E9%87%89%E7%91%9A",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E9%87%89%E7%91%9A/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E9%87%89%E7%91%9A/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E9%87%89%E7%91%9A/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E9%87%89%E7%91%9A/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E9%87%89%E7%91%9A/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E9%87%89%E7%91%9A/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E9%87%89%E7%91%9A/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E9%87%89%E7%91%9A/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E9%87%89%E7%91%9A/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E9%87%89%E7%91%9A/outro.webp"
+      }
+    },
+    {
+      "name": "鉴心",
+      "element": "气动",
+      "path": "/combo-assets/button-icons/tide/characters/%E9%89%B4%E5%BF%83",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E9%89%B4%E5%BF%83/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E9%89%B4%E5%BF%83/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E9%89%B4%E5%BF%83/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E9%89%B4%E5%BF%83/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E9%89%B4%E5%BF%83/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E9%89%B4%E5%BF%83/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E9%89%B4%E5%BF%83/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E9%89%B4%E5%BF%83/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E9%89%B4%E5%BF%83/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E9%89%B4%E5%BF%83/outro.webp"
+      }
+    },
+    {
+      "name": "长离",
+      "element": "热熔",
+      "path": "/combo-assets/button-icons/tide/characters/%E9%95%BF%E7%A6%BB",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E9%95%BF%E7%A6%BB/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E9%95%BF%E7%A6%BB/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E9%95%BF%E7%A6%BB/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E9%95%BF%E7%A6%BB/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E9%95%BF%E7%A6%BB/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E9%95%BF%E7%A6%BB/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E9%95%BF%E7%A6%BB/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E9%95%BF%E7%A6%BB/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E9%95%BF%E7%A6%BB/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E9%95%BF%E7%A6%BB/outro.webp"
+      }
+    },
+    {
+      "name": "陆·赫斯",
+      "element": "衍射",
+      "path": "/combo-assets/button-icons/tide/characters/%E9%99%86%C2%B7%E8%B5%AB%E6%96%AF",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E9%99%86%C2%B7%E8%B5%AB%E6%96%AF/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E9%99%86%C2%B7%E8%B5%AB%E6%96%AF/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E9%99%86%C2%B7%E8%B5%AB%E6%96%AF/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E9%99%86%C2%B7%E8%B5%AB%E6%96%AF/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E9%99%86%C2%B7%E8%B5%AB%E6%96%AF/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E9%99%86%C2%B7%E8%B5%AB%E6%96%AF/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E9%99%86%C2%B7%E8%B5%AB%E6%96%AF/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E9%99%86%C2%B7%E8%B5%AB%E6%96%AF/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E9%99%86%C2%B7%E8%B5%AB%E6%96%AF/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E9%99%86%C2%B7%E8%B5%AB%E6%96%AF/outro.webp"
+      }
+    },
+    {
+      "name": "露帕",
+      "element": "热熔",
+      "path": "/combo-assets/button-icons/tide/characters/%E9%9C%B2%E5%B8%95",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E9%9C%B2%E5%B8%95/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E9%9C%B2%E5%B8%95/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E9%9C%B2%E5%B8%95/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E9%9C%B2%E5%B8%95/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E9%9C%B2%E5%B8%95/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E9%9C%B2%E5%B8%95/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E9%9C%B2%E5%B8%95/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E9%9C%B2%E5%B8%95/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E9%9C%B2%E5%B8%95/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E9%9C%B2%E5%B8%95/outro.webp"
+      }
+    },
+    {
+      "name": "露西",
+      "element": "衍射",
+      "path": "/combo-assets/button-icons/tide/characters/%E9%9C%B2%E8%A5%BF",
+      "icons": {
+        "basic_attack": "/combo-assets/button-icons/tide/characters/%E9%9C%B2%E8%A5%BF/basic_attack.webp",
+        "heavy_attack": "/combo-assets/button-icons/tide/characters/%E9%9C%B2%E8%A5%BF/heavy_attack.webp",
+        "skill": "/combo-assets/button-icons/tide/characters/%E9%9C%B2%E8%A5%BF/skill.webp",
+        "skill_hold": "/combo-assets/button-icons/tide/characters/%E9%9C%B2%E8%A5%BF/skill_hold.webp",
+        "echo": "/combo-assets/button-icons/tide/characters/%E9%9C%B2%E8%A5%BF/echo.webp",
+        "echo_hold": "/combo-assets/button-icons/tide/characters/%E9%9C%B2%E8%A5%BF/echo_hold.webp",
+        "liberation": "/combo-assets/button-icons/tide/characters/%E9%9C%B2%E8%A5%BF/liberation.webp",
+        "liberation_hold": "/combo-assets/button-icons/tide/characters/%E9%9C%B2%E8%A5%BF/liberation_hold.webp",
+        "intro": "/combo-assets/button-icons/tide/characters/%E9%9C%B2%E8%A5%BF/intro.webp",
+        "outro": "/combo-assets/button-icons/tide/characters/%E9%9C%B2%E8%A5%BF/outro.webp"
+      }
+    }
+  ]
+}

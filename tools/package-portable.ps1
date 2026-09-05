@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "0.63",
+    [string]$Version = "0.65",
     [string]$Date = (Get-Date -Format "yyyyMMdd"),
     [string]$OutputDirectory = "release-packages",
     [switch]$SkipBuild
@@ -18,10 +18,12 @@ if (-not $SkipBuild) {
     $previousExperimentalLabs = $env:WWCOMBO_INCLUDE_EXPERIMENTAL_ANALYSIS_LABS
     $previousBuffTimer = $env:WWCOMBO_INCLUDE_BUFF_TIMER
     $previousSimulatedInput = $env:WWCOMBO_INCLUDE_SIMULATED_INPUT
+    $previousSimulatedInputDlcRequired = $env:WWCOMBO_SIMULATED_INPUT_DLC_REQUIRED
     try {
         $env:WWCOMBO_INCLUDE_EXPERIMENTAL_ANALYSIS_LABS = "0"
-        $env:WWCOMBO_INCLUDE_BUFF_TIMER = "0"
-        $env:WWCOMBO_INCLUDE_SIMULATED_INPUT = "0"
+        $env:WWCOMBO_INCLUDE_BUFF_TIMER = "1"
+        $env:WWCOMBO_INCLUDE_SIMULATED_INPUT = "1"
+        $env:WWCOMBO_SIMULATED_INPUT_DLC_REQUIRED = "1"
         cargo tauri build --no-bundle --features release-core
     } finally {
         if ($null -eq $previousExperimentalLabs) {
@@ -39,27 +41,40 @@ if (-not $SkipBuild) {
         } else {
             $env:WWCOMBO_INCLUDE_SIMULATED_INPUT = $previousSimulatedInput
         }
+        if ($null -eq $previousSimulatedInputDlcRequired) {
+            Remove-Item Env:WWCOMBO_SIMULATED_INPUT_DLC_REQUIRED -ErrorAction SilentlyContinue
+        } else {
+            $env:WWCOMBO_SIMULATED_INPUT_DLC_REQUIRED = $previousSimulatedInputDlcRequired
+        }
         Pop-Location
     }
 }
 if (-not (Test-Path -LiteralPath $releaseExe -PathType Leaf)) { throw "Release executable is missing: $releaseExe" }
 
 $distRoot = Join-Path $repositoryRoot "dist"
-$forbiddenFrontendModules = @()
-$realtimeVisionEntry = Join-Path $distRoot "realtime-vision.html"
-if (Test-Path -LiteralPath $realtimeVisionEntry -PathType Leaf) { $forbiddenFrontendModules += $realtimeVisionEntry }
-$forbiddenFrontendModules += @(Get-ChildItem -LiteralPath (Join-Path $distRoot "assets") -File -ErrorAction SilentlyContinue | Where-Object {
-    $_.Name -match '^(RealtimeVisionLab|realtimeVisionInput|simulatedInput)-'
-} | ForEach-Object FullName)
-if ($forbiddenFrontendModules.Count -gt 0) {
-    throw "Core build still contains excluded frontend modules: $($forbiddenFrontendModules -join ', ')"
-}
-$forbiddenFrontendText = Get-ChildItem -LiteralPath (Join-Path $distRoot "assets") -File -Filter "*.js" -ErrorAction SilentlyContinue | Select-String -SimpleMatch -Pattern @(
-    "Key-triggered Buff Timer",
-    "Automatic simulation is armed and will run with the practice start key."
+$requiredFrontendModules = @(
+    (Join-Path $distRoot "realtime-vision.html"),
+    (Join-Path $distRoot "assets")
 )
-if ($forbiddenFrontendText) {
-    throw "Core build still exposes excluded experimental controls: $(($forbiddenFrontendText.Path | Sort-Object -Unique) -join ', ')"
+foreach ($requiredModule in $requiredFrontendModules) {
+    if (-not (Test-Path -LiteralPath $requiredModule)) { throw "Core build is missing required video/Buff module: $requiredModule" }
+}
+$requiredFrontendChunks = Get-ChildItem -LiteralPath (Join-Path $distRoot "assets") -File -ErrorAction SilentlyContinue | Where-Object {
+    $_.Name -match '^(VideoAxisWorkbench|RealtimeVisionLab|realtimeVisionInput|realtimeVisionWorker)-'
+}
+if ($requiredFrontendChunks.Count -lt 3) {
+    throw "Core build is missing video/Buff frontend chunks. Found: $($requiredFrontendChunks.Name -join ', ')"
+}
+
+function Get-Sha256Hex([string]$Path) {
+    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+    $stream = [IO.File]::OpenRead($Path)
+    try {
+        return ([BitConverter]::ToString($sha256.ComputeHash($stream))).Replace('-', '').ToLowerInvariant()
+    } finally {
+        $stream.Dispose()
+        $sha256.Dispose()
+    }
 }
 
 New-Item -ItemType Directory -Force -Path $outputRoot | Out-Null
@@ -94,6 +109,7 @@ foreach ($document in $documents) {
     Copy-Item -LiteralPath $source -Destination $destination
 }
 New-Item -ItemType Directory -Force -Path (Join-Path $packageRoot "wwcombo dlc\ffmpeg") | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path $packageRoot "wwcombo dlc\simulated-input") | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $packageRoot "wwcombo dlc\live2d") | Out-Null
 
 $buildInfo = @(
@@ -101,8 +117,8 @@ $buildInfo = @(
     "Built: $((Get-Date).ToString('yyyy-MM-dd HH:mm:ss zzz'))",
     "Version: $Version",
     "Type: Windows x64 core portable build",
-    "Contains: wwcombo.exe, documentation, and an empty wwcombo dlc folder.",
-    "Excluded: FFmpeg, Live2D source assets, Buff recognition/timer UI, automatic simulated-input execution, scripts, community website source, test runtimes, node_modules, and project source."
+    "Contains: wwcombo.exe, video workbench UI, realtime Buff recognition UI, documentation, and an empty wwcombo dlc folder.",
+    "Excluded: FFmpeg, Live2D source assets, and the native simulated-input executor. Install the separate FFmpeg, Live2D, or Simulated Demo DLC beside wwcombo.exe when needed. Scripts, community website source, test runtimes, node_modules, and project source are also excluded."
 ) -join "`r`n"
 Set-Content -LiteralPath (Join-Path $packageRoot "BUILD-INFO.txt") -Value $buildInfo -Encoding utf8
 
@@ -113,7 +129,7 @@ if ($forbidden) { throw "Core package contains forbidden optional assets: $($for
 
 $checksumLines = Get-ChildItem -LiteralPath $packageRoot -File -Recurse | Sort-Object FullName | ForEach-Object {
     $relative = $_.FullName.Substring($packageRoot.Length + 1)
-    "$((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant())  $relative"
+    "$(Get-Sha256Hex $_.FullName)  $relative"
 }
 Set-Content -LiteralPath (Join-Path $packageRoot "SHA256SUMS.txt") -Value ($checksumLines -join "`r`n") -Encoding utf8
 

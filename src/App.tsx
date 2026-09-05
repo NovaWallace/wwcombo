@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState  } from 'react';
 import type { CSSProperties, FocusEvent as ReactFocusEvent, InputHTMLAttributes, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactNode, WheelEvent as ReactWheelEvent  } from 'react';
 import { createPortal  } from 'react-dom';
-import { Activity, ArrowLeft, BookOpen, Bug, Calculator, Check, ChevronLeft, ChevronRight, Clock3, Diamond, Download, ExternalLink, Eye, EyeOff, FileInput, FileText, FileVideo, FolderOpen, Gamepad2, GraduationCap, GripVertical, History, Keyboard, Layers, Lock, Moon, Music2, Move, NotebookPen, Palette, Pause, Pencil, PanelBottomClose, PanelBottomOpen, Plus, Play, RadioTower, RefreshCw, Repeat2, RotateCcw, Save, Scissors, Settings, Share2, Square, Stamp, Sun, Target, Trash2, TriangleAlert, Upload, Users, Waves, X  } from 'lucide-react';
+import { Activity, ArrowLeft, BookOpen, Bug, Calculator, Check, ChevronLeft, ChevronRight, Clipboard, Clock3, Combine, Copy, Diamond, Download, ExternalLink, Eye, EyeOff, FileInput, FileText, FileVideo, FolderOpen, Gamepad2, GraduationCap, GripVertical, History, Keyboard, Layers, Lock, Moon, Music2, Move, NotebookPen, Palette, Pause, Pencil, PanelBottomClose, PanelBottomOpen, Plus, Play, RadioTower, Redo2, RefreshCw, Repeat2, RotateCcw, Save, Scissors, Settings, Share2, Split, Square, Stamp, Sun, Target, Trash2, TriangleAlert, Undo2, Upload, Users, Waves, Wrench, X  } from 'lucide-react';
 import {
   CharacterSlot,
   AfygTimingKeyframe,
@@ -73,7 +73,7 @@ import { DecoratedNoteRow  } from './noteRowDecoration';
 import { EmbeddedBrowserExitControl } from './EmbeddedBrowserExitControl';
 import { NumericDraftInput  } from './NumericDraftInput';
 import { currentPeriodLabelAtStep, localizedPeriodLabel  } from './periodLabels';
-import { DEFAULT_SHORTCUT_SETTINGS, SHORTCUT_DEFINITIONS, TIMELINE_PLACEMENT_SHORTCUT_MOVES, normalizeShortcutSettings, shortcutActionsCanShareChord, shortcutChordFromKeyboardEvent, shortcutDisplayLabel, shortcutMatches, shortcutMatchesCode  } from './shortcutSettings';
+import { DEFAULT_SHORTCUT_SETTINGS, SHORTCUT_DEFINITIONS, TIMELINE_PLACEMENT_SHORTCUT_MOVES, normalizeShortcutSettings, shortcutActionsCanShareChord, shortcutChordFromKeyboardEvent, shortcutChordFromWheelDelta, shortcutDisplayLabel, shortcutMatches, shortcutMatchesCode  } from './shortcutSettings';
 import type { ShortcutAction, ShortcutSettings  } from './shortcutSettings';
 import { parseTextAxis, textAxisExampleForLanguage  } from './textAxisParser';
 import type { TextAxisCharacter, TextAxisParseResult  } from './textAxisParser';
@@ -95,7 +95,7 @@ const realtimeVisionInputPublisher = __BUFF_TIMER_ENABLED__
 const VideoAxisWorkbench = lazy(() => import('./VideoAxisWorkbench').then((module) => ({ default: module.VideoAxisWorkbench })));
 
 type Page = 'home' | 'record' | 'practice' | 'appearance' | 'experiment' | 'community' | 'settings';
-type ExperimentPage = 'axis' | 'keymap' | 'export-axis' | 'afyg-dps' | 'realtime-vision';
+type ExperimentPage = 'axis' | 'keymap' | 'export-axis' | 'afyg-dps' | 'realtime-vision' | 'simulated-input';
 type HomeDestination = 'record' | 'practice' | 'appearance' | 'community' | 'experiment' | 'settings';
 type EditorTab = 'timeline' | 'content';
 type PracticePreset = 'strict' | 'lenient' | 'simple';
@@ -109,6 +109,7 @@ type LaneKind = 'main' | 'independent';
 type DlcStatus = {
   rootPath: string;
   ffmpegInstalled: boolean;
+  simulatedInputInstalled: boolean;
   live2dAssets: Array<{
     id: string;
     skeletonUrl: string;
@@ -117,7 +118,7 @@ type DlcStatus = {
   }>;
 };
 
-const EMPTY_DLC_STATUS: DlcStatus = { rootPath: '', ffmpegInstalled: false, live2dAssets: [] };
+const EMPTY_DLC_STATUS: DlcStatus = { rootPath: '', ffmpegInstalled: false, simulatedInputInstalled: false, live2dAssets: [] };
 type DefaultAvatarEntry = { name: string; src: string; remote?: boolean  };
 type RemoteAvatarCacheRecord = { dataUrl: string; cachedAt: number  };
 type DefaultBasePresetEntry = ComboBasePreset;
@@ -138,6 +139,34 @@ type TimelineClipboardControl = { value: CopiedTimelineSelection | null; onChang
 type TimelinePlacementPoint = { slot?: CharacterSlot; lane?: LaneKind; auxiliary?: boolean; startMs: number  };
 type CustomIconSources = Record<string, string>;
 type PendingPlacement = { kind: 'step'  } | { kind: 'period'  } | { kind: 'move'; moveId: string; adaptiveSwitch?: boolean; contentLabel?: string; contentSuffix?: string  } | { kind: 'cut'  } | { kind: 'delete'  } | ({ kind: 'copy'  } & CopiedTimelineSelection);
+type TimelineToolbarGroup = 'add' | 'modify' | 'edit' | null;
+type TimelineToolbarPressMode = 'tap' | 'hold';
+type TimelineToolbarEditMode = 'multi' | 'delete' | null;
+type TimelineToolbarMoveTool = { moveId: string; code: string; adaptiveSwitch?: boolean; contentLabel?: string; shortcutAction?: ShortcutAction };
+const TIMELINE_TOOLBAR_MOVE_TOOLS: Record<TimelineToolbarPressMode, TimelineToolbarMoveTool[]> = {
+  tap: [
+    { moveId: 'basic_attack', code: 'A', shortcutAction: 'timelinePlaceBasic' },
+    { moveId: 'skill', code: 'E', shortcutAction: 'timelinePlaceSkill' },
+    { moveId: 'echo', code: 'Q', shortcutAction: 'timelinePlaceEcho' },
+    { moveId: 'liberation', code: 'R', shortcutAction: 'timelinePlaceLiberation' },
+    { moveId: 'dodge', code: 'D', shortcutAction: 'timelinePlaceDodge' },
+    { moveId: 'jump', code: 'J', shortcutAction: 'timelinePlaceJump' },
+    { moveId: 'tool', code: 'T' },
+    { moveId: 'empty_action', code: 'F', contentLabel: 'f', shortcutAction: 'timelinePlaceFinisher' },
+    { moveId: 'switch_1', code: '', adaptiveSwitch: true, shortcutAction: 'timelineAdaptiveSwitch' }
+  ],
+  hold: [
+    { moveId: 'heavy_attack', code: 'Z', shortcutAction: 'timelinePlaceHeavy' },
+    { moveId: 'skill_hold', code: 'E', shortcutAction: 'timelinePlaceSkillHold' },
+    { moveId: 'echo_hold', code: 'Q', shortcutAction: 'timelinePlaceEchoHold' },
+    { moveId: 'liberation_hold', code: 'R', shortcutAction: 'timelinePlaceLiberationHold' },
+    { moveId: 'dodge_hold', code: 'D', shortcutAction: 'timelinePlaceDodgeHold' },
+    { moveId: 'jump_hold', code: 'J', shortcutAction: 'timelinePlaceJumpHold' },
+    { moveId: 'tool', code: 'T' },
+    { moveId: 'empty_action', code: 'F', contentLabel: 'f', shortcutAction: 'timelinePlaceFinisher' },
+    { moveId: 'switch_1', code: '', adaptiveSwitch: true, shortcutAction: 'timelineAdaptiveSwitch' }
+  ]
+};
 type SelectionBox = { x: number; y: number; width: number; height: number  };
 type CharacterSlotMap = Record<CharacterSlot, CharacterSlot>;
 type LocalizedMessage = { chinese: string; english: string };
@@ -315,6 +344,7 @@ const DEFAULT_OVERLAY_NOTE_LAYOUT_BOUNDS: OverlayNoteLayoutBounds = {
 const DEFAULT_RHYTHM_UI: RhythmUiSettings = { width: 1739, height: 240, scale: 1, laneGap: 7, roleSpacing: 120, fallSpeed: 0.18, judgeLineOffset: 200, ringStartScale: 1.78, ringEndScale: 1.25, ringOffsetX: 0, ringOffsetY: -9, ringDurationMs: 420, feedbackX: 50, feedbackY: 64  };
 const COMMUNITY_SITE_URL = (import.meta.env.VITE_COMMUNITY_SITE_URL || 'https://nova.fb520.site/').trim();
 const COMMUNITY_SITE_ORIGIN = new URL(COMMUNITY_SITE_URL).origin;
+const COMMUNITY_ACCOUNT_TOKEN_STORAGE_KEY = 'wwcombo-community-account-token-v1';
 const COMMUNITY_IMPORT_MAX_BYTES = 2_000_000;
 const COMMUNITY_UPLOAD_MAX_BYTES = 1_048_576;
 const COMMUNITY_LIBRARY_MAX_ITEMS = 200;
@@ -421,9 +451,25 @@ function isCommunityLibraryItemRequestMessage(value: unknown): value is Communit
     && message.chartId.length <= 160;
  }
 
+function isCommunityAccountSessionMessage(value: unknown): value is { type: 'wwcombo:community-account-session'; version: 1; token: string; session: { authenticated: boolean; email: string; roles: string[]; expiresAt?: number } } {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const message = value as { type?: unknown; version?: unknown; token?: unknown; session?: unknown };
+  if (message.type !== 'wwcombo:community-account-session' || message.version !== 1 || typeof message.token !== 'string' || message.token.length > 2048) return false;
+  if (!message.session || typeof message.session !== 'object' || Array.isArray(message.session)) return false;
+  const session = message.session as { authenticated?: unknown; email?: unknown; roles?: unknown; expiresAt?: unknown };
+  return typeof session.authenticated === 'boolean'
+    && typeof session.email === 'string'
+    && session.email.length <= 254
+    && Array.isArray(session.roles)
+    && session.roles.length <= 20
+    && session.roles.every((role) => typeof role === 'string' && role.length <= 80)
+    && (session.expiresAt === undefined || typeof session.expiresAt === 'number');
+ }
+
 function communitySiteEmbedUrl(language: AppLanguage, appearanceMode: AppearanceMode): string {
   const url = new URL(COMMUNITY_SITE_URL);
   url.searchParams.set('client', '1');
+  url.searchParams.set('parentOrigin', window.location.origin);
   url.searchParams.set('lang', language);
   url.searchParams.set('theme', appearanceMode === 'day' || appearanceMode === 'coast' ? 'day' : 'night');
   return url.toString();
@@ -1106,6 +1152,25 @@ function constrainAxisPeriods(periods: ComboPeriod[]): ComboPeriod[] {
   return [...floating, ...axis].sort((a, b) => a.startMs - b.startMs || a.id.localeCompare(b.id));
  }
 
+function createDefaultAxisPeriods(): ComboPeriod[] {
+  return [
+    normalizePeriod({ id: crypto.randomUUID(), kind: 'startup_axis', label: defaultPeriodLabel('startup_axis'), startMs: 0, endMs: DEFAULT_AXIS_DURATION  }),
+    normalizePeriod({ id: crypto.randomUUID(), kind: 'loop_axis', label: '循环轴', startMs: DEFAULT_AXIS_DURATION, endMs: DEFAULT_AXIS_DURATION * 2, loopIndex: 1  })
+  ];
+ }
+
+function ensureNewChartAxisPeriods(periods: ComboPeriod[] | undefined): ComboPeriod[] {
+  const normalized = constrainAxisPeriods(periods ?? []);
+  const floating = normalized.filter((period) => period.kind !== 'startup_axis' && period.kind !== 'loop_axis');
+  const startup = normalized.find((period) => period.kind === 'startup_axis');
+  const loops = normalized.filter((period) => period.kind === 'loop_axis');
+  if (startup && loops.length) return normalized;
+  if (!startup && !loops.length) return [...floating, ...createDefaultAxisPeriods()];
+  const nextStartup = startup ?? normalizePeriod({ id: crypto.randomUUID(), kind: 'startup_axis', label: defaultPeriodLabel('startup_axis'), startMs: 0, endMs: DEFAULT_AXIS_DURATION  });
+  const nextLoops = loops.length ? loops : [normalizePeriod({ id: crypto.randomUUID(), kind: 'loop_axis', label: '循环轴', startMs: nextStartup.endMs, endMs: nextStartup.endMs + DEFAULT_AXIS_DURATION, loopIndex: 1  })];
+  return constrainAxisPeriods([...floating, nextStartup, ...nextLoops]);
+ }
+
 function applyFreeFirePeriods(chart: ComboChart): ComboChart {
   const periods = constrainAxisPeriods(chart.periods ?? []);
   const freeRanges = periods.filter((period) => period.kind === 'free_fire');
@@ -1398,8 +1463,14 @@ function switchIconText(slot: CharacterSlot): string {
 function remapSwitchText(value: string, previousSlot: CharacterSlot, nextSlot: CharacterSlot): string {
   const trimmed = value.trim();
   if (trimmed === `切人${previousSlot }`) return `切人${nextSlot }`;
+  const chineseSwitch = new RegExp(`^切人${previousSlot }([bByY])$`, 'u').exec(trimmed);
+  if (chineseSwitch) return `切人${nextSlot }${chineseSwitch[1] }`;
   if (trimmed === String(previousSlot)) return String(nextSlot);
-  if (trimmed.toLowerCase() === switchIconText(previousSlot)) return switchIconText(nextSlot);
+  const iconSwitch = new RegExp(`^${switchIconText(previousSlot )}([bByY])?$`, 'i').exec(trimmed);
+  if (iconSwitch) {
+    const suffix = iconSwitch[1] ?? '';
+    return `${switchIconText(nextSlot )}${suffix }`;
+  }
   return value;
  }
 
@@ -1444,7 +1515,8 @@ function sortChartForPractice(chart: ComboChart | null): ComboChart | null {
 
 function createChartFromRecording(snapshot: RecordingSnapshot, recorder: ComboRecorder, title = `录制连段 ${new Date().toLocaleTimeString() }`): ComboChart | null {
   if (!snapshot.units.length) return null;
-  return normalizeChart(recorder.toChart(title, snapshot));
+  const recorded = recorder.toChart(title, snapshot);
+  return normalizeChart({ ...recorded, periods: ensureNewChartAxisPeriods(recorded.periods)  });
  }
 
 function normalizeOverlayBounds(value: unknown, fallback: OverlayBounds): OverlayBounds {
@@ -1569,7 +1641,7 @@ function normalizeRecordingRecognitionSettings(value: unknown): RecordingRecogni
  }
 
 function loadSavedState() {
-  const fallback = { compatibilityMode: false, moves: DEFAULT_MOVES, bindings: DEFAULT_BINDINGS, gamepadBindings: DEFAULT_GAMEPAD_BINDINGS, inputMode: 'keyboard' as InputMode, gamepadIconSet: 'xbox' as GamepadIconSet, keyboardIconMode: 'actual' as KeyboardIconMode, shortcutSettings: DEFAULT_SHORTCUT_SETTINGS, customIconSources: { } as CustomIconSources, chart: null as ComboChart | null, library: [] as ComboChart[], startingCharacterSlot: 1 as CharacterSlot, practiceRoleOrder: [...CHARACTER_SLOTS], overlaySettings: DEFAULT_OVERLAY_SETTINGS, overlayLayoutBounds: DEFAULT_OVERLAY_LAYOUT_BOUNDS, overlayNoteLayoutBounds: DEFAULT_OVERLAY_NOTE_LAYOUT_BOUNDS, comboImageStyle: createDefaultComboImageStyle(), verticalComboImageStyle: createDefaultVerticalComboImageStyle(), waterfallComboImageStyle: createDefaultWaterfallComboImageStyle(), roleBaseFollowsAvatar: false, rhythmUiSettings: DEFAULT_RHYTHM_UI, axisGateEnabled: false, resetPracticeProgressOnStop: false, exportDirectory: DEFAULT_EXPORT_DIRECTORY, recordingIndicatorEnabled: true, recordingIndicatorCorner: 'bottom-left' as RecordingIndicatorCorner, recordingRecognitionSettings: DEFAULT_RECORDING_RECOGNITION_SETTINGS, simulatedInputSettings: DEFAULT_SIMULATED_INPUT_SETTINGS, live2dEnabled: true, homeSpineId: normalizeHomeSpineId(null), homeSpineTransforms: {} as HomeSpineTransforms, teamPresets: [] as TeamPresetEntry[]  };
+  const fallback = { compatibilityMode: false, moves: DEFAULT_MOVES, bindings: DEFAULT_BINDINGS, gamepadBindings: DEFAULT_GAMEPAD_BINDINGS, inputMode: 'keyboard' as InputMode, gamepadIconSet: 'xbox' as GamepadIconSet, keyboardIconMode: 'actual' as KeyboardIconMode, shortcutSettings: DEFAULT_SHORTCUT_SETTINGS, customIconSources: { } as CustomIconSources, chart: null as ComboChart | null, library: [] as ComboChart[], startingCharacterSlot: 1 as CharacterSlot, practiceRoleOrder: [...CHARACTER_SLOTS], overlaySettings: DEFAULT_OVERLAY_SETTINGS, overlayLayoutBounds: DEFAULT_OVERLAY_LAYOUT_BOUNDS, overlayNoteLayoutBounds: DEFAULT_OVERLAY_NOTE_LAYOUT_BOUNDS, comboImageStyle: createDefaultComboImageStyle(), verticalComboImageStyle: createDefaultVerticalComboImageStyle(), waterfallComboImageStyle: createDefaultWaterfallComboImageStyle(), roleBaseFollowsAvatar: false, rhythmUiSettings: DEFAULT_RHYTHM_UI, axisGateEnabled: false, resetPracticeProgressOnStop: false, exportDirectory: DEFAULT_EXPORT_DIRECTORY, recordingIndicatorEnabled: true, recordingIndicatorCorner: 'bottom-left' as RecordingIndicatorCorner, recordingRecognitionSettings: DEFAULT_RECORDING_RECOGNITION_SETTINGS, simulatedInputSettings: DEFAULT_SIMULATED_INPUT_SETTINGS, simulatedInputChartId: null as string | null, live2dEnabled: true, homeSpineId: normalizeHomeSpineId(null), homeSpineTransforms: {} as HomeSpineTransforms, teamPresets: [] as TeamPresetEntry[]  };
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return fallback;
@@ -1612,7 +1684,7 @@ function loadSavedState() {
       exportDirectory: typeof parsed.exportDirectory === 'string' ? parsed.exportDirectory : DEFAULT_EXPORT_DIRECTORY,
       recordingIndicatorEnabled: parsed.recordingIndicatorEnabled !== false,
       recordingIndicatorCorner: ['top-left', 'top-right', 'bottom-left', 'bottom-right'].includes(parsed.recordingIndicatorCorner) ? parsed.recordingIndicatorCorner as RecordingIndicatorCorner : 'bottom-left' as RecordingIndicatorCorner,
-      recordingRecognitionSettings: normalizeRecordingRecognitionSettings(parsed.recordingRecognitionSettings), simulatedInputSettings: normalizeSimulatedInputSettings(parsed.simulatedInputSettings),
+      recordingRecognitionSettings: normalizeRecordingRecognitionSettings(parsed.recordingRecognitionSettings), simulatedInputSettings: normalizeSimulatedInputSettings(parsed.simulatedInputSettings), simulatedInputChartId: typeof parsed.simulatedInputChartId === 'string' && parsed.simulatedInputChartId.trim() ? parsed.simulatedInputChartId : null,
       live2dEnabled: parsed.live2dEnabled !== false,
       homeSpineId: normalizeHomeSpineId(parsed.homeSpineId),
       homeSpineTransforms: normalizeHomeSpineTransforms(parsed.homeSpineTransforms),
@@ -1708,7 +1780,7 @@ function loadAppearanceMode(): AppearanceMode {
   } catch {
     return 'night';
   }
- }
+}
 
 function loadFirstRunHelpPrompted(): boolean {
   try {
@@ -1788,6 +1860,8 @@ export default function App() {
     }).catch(() => undefined);
     return () => { active = false; };
   }, [desktop]);
+  const simulatedInputAvailable = __SIMULATED_INPUT_ENABLED__
+    && (!__SIMULATED_INPUT_DLC_REQUIRED__ || !desktop || dlcStatus.simulatedInputInstalled);
   const [page, setPage] = useState<Page>('home');
   const [settingsView, setSettingsView] = useState<SettingsView>('settings');
   const [helpTab, setHelpTab] = useState<HelpTab>('learner');
@@ -1840,6 +1914,7 @@ export default function App() {
   const [recordingIndicatorCorner, setRecordingIndicatorCorner] = useState<RecordingIndicatorCorner>(saved.recordingIndicatorCorner);
   const [recordingRecognitionSettings, setRecordingRecognitionSettings] = useState<RecordingRecognitionSettings>(saved.recordingRecognitionSettings);
   const [simulatedInputSettings, setSimulatedInputSettings] = useState<SimulatedInputSettings>(saved.simulatedInputSettings);
+  const [simulatedInputChartId, setSimulatedInputChartId] = useState<string | null>(saved.simulatedInputChartId ?? null);
   const [live2dEnabled, setLive2dEnabled] = useState(saved.live2dEnabled);
   const [homeSpineId, setHomeSpineId] = useState<HomeSpineId>(saved.homeSpineId);
   const [homeSpineTransforms, setHomeSpineTransforms] = useState<HomeSpineTransforms>(saved.homeSpineTransforms);
@@ -1851,6 +1926,8 @@ export default function App() {
   const [quickInputOpen, setQuickInputOpen] = useState(false);
   const [quickInputStartStepId, setQuickInputStartStepId] = useState<string | null>(null);
   const [quickInputMemory, setQuickInputMemory] = useState<string[]>([]);
+  const [simulatedInputQuickInputMemory, setSimulatedInputQuickInputMemory] = useState<string[]>([]);
+  const [quickInputTarget, setQuickInputTarget] = useState<'main' | 'simulated'>('main');
   const [quickTeamSelectionOpen, setQuickTeamSelectionOpen] = useState(false);
   const [videoWorkbenchOpen, setVideoWorkbenchOpen] = useState(false);
   const [videoWorkbenchMounted, setVideoWorkbenchMounted] = useState(false);
@@ -1876,9 +1953,11 @@ export default function App() {
   const [defaultAvatars, setDefaultAvatars] = useState<DefaultAvatarEntry[]>([]);
   const [defaultBasePresets, setDefaultBasePresets] = useState<DefaultBasePresetEntry[]>([]);
   const [timelineUndoStack, setTimelineUndoStack] = useState<TimelineHistorySnapshot[]>([]);
+  const [simulatedInputUndoStack, setSimulatedInputUndoStack] = useState<TimelineHistorySnapshot[]>([]);
   const [shareDraft, setShareDraft] = useState<CommunityShareDraft | null>(null);
   const [sharePreflightWarning, setSharePreflightWarning] = useState<SharePreflightWarning | null>(null);
   const [timelineRedoStack, setTimelineRedoStack] = useState<TimelineHistorySnapshot[]>([]);
+  const [simulatedInputRedoStack, setSimulatedInputRedoStack] = useState<TimelineHistorySnapshot[]>([]);
   const [communityFrameKey, setCommunityFrameKey] = useState(0);
   const [communityFrameStatus, setCommunityFrameStatus] = useState<'loading' | 'ready' | 'error'>('loading');
 
@@ -1911,7 +1990,6 @@ export default function App() {
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const communityFrameRef = useRef<HTMLIFrameElement | null>(null);
   const communityFrameReadyRef = useRef(false);
-  const communityFrameTimeoutRef = useRef<number | null>(null);
   const pendingCommunityUploadRef = useRef<CommunityUploadPackage | null>(null);
   const avatarInputRefs = useRef<Record<number, HTMLInputElement | null>>({ });
   const holdPressRef = useRef(new Map<string, { pressEvent: TrainerLikeInputEvent; holdCode: string; thresholdMs: number; timer: number | null; holdTriggered: boolean  }>());
@@ -1935,6 +2013,19 @@ export default function App() {
   demoPlaybackRateRef.current = clamp(demoPlaybackRate, 0.05, 4);
 
   const practiceChart = useMemo(() => sortChartForPractice(chart), [chart]);
+  const simulatedInputChart = useMemo(() => {
+    if (simulatedInputChartId) {
+      const selected = library.find((item) => item.id === simulatedInputChartId);
+      if (selected) return sortChartForPractice(selected);
+    }
+    return practiceChart;
+  }, [library, practiceChart, simulatedInputChartId]);
+  const simulatedInputTimelineStyle = useMemo(() => simulatedInputChartId && simulatedInputChart
+    ? normalizeComboImageStyle({ ...comboImageStyle, contentLabels: simulatedInputChart.contentLabels ?? {} })
+    : comboImageStyle, [comboImageStyle, simulatedInputChart, simulatedInputChartId]);
+  useEffect(() => {
+    if (simulatedInputChartId && !library.some((item) => item.id === simulatedInputChartId)) setSimulatedInputChartId(null);
+  }, [library, simulatedInputChartId]);
   const overlayPracticeChart = practicePlaybackChart ?? practiceChart;
   const realtimeVisionSettingsOpen = __BUFF_TIMER_ENABLED__ && page === 'experiment' && experimentPage === 'realtime-vision';
   const displayComboImageStyle = useMemo(() => inputMode === 'gamepad' ? withGamepadIconMappings(comboImageStyle, gamepadBindings, gamepadIconSet, customIconSources) : withKeyboardMouseIconMappings(comboImageStyle, bindings, customIconSources), [bindings, comboImageStyle, customIconSources, gamepadBindings, gamepadIconSet, inputMode]);
@@ -1968,7 +2059,9 @@ export default function App() {
   const appearanceComboImageStyle = overlaySettings.layout === 'waterfall' ? waterfallComboImageStyle : overlaySettings.layout === 'vertical' ? verticalComboImageStyle : comboImageStyle;
   const activeStep = overlayPracticeChart?.steps[practice.currentStepIndex] ?? null;
   const editorPreviewPractice = useMemo(() => previewPracticeAtTime(chart, editorPlaybackMs), [chart, editorPlaybackMs]);
-  const editorPlaybackDurationMs = useMemo(() => chart ? Math.max(0, ...chart.steps.map((step) => Math.max(step.startMin, step.startMax) + step.durationMax), ...(chart.periods ?? []).map((period) => period.endMs)) : 0, [chart]);
+  const simulatedInputEditorOpen = page === 'experiment' && experimentPage === 'simulated-input';
+  const editorPlaybackChart = simulatedInputEditorOpen ? simulatedInputChart : chart;
+  const editorPlaybackDurationMs = useMemo(() => editorPlaybackChart ? Math.max(0, ...editorPlaybackChart.steps.map((step) => Math.max(step.startMin, step.startMax) + step.durationMax), ...(editorPlaybackChart.periods ?? []).map((period) => period.endMs)) : 0, [editorPlaybackChart]);
   const practiceSettings = useMemo(() => ({ ...(practicePreset === 'strict' ? STRICT_PRACTICE : practicePreset === 'lenient' ? LENIENT_PRACTICE : SIMPLE_PRACTICE), axisGateEnabled  }), [practicePreset, axisGateEnabled]);
   const holdBindings = useMemo(() => holdBindingPairs(runtimeBindings, recordingRecognitionSettings), [runtimeBindings, recordingRecognitionSettings]);
   const keyboardMouseInputSignal = experimentInputSignal && !isGamepadEvent(experimentInputSignal) ? experimentInputSignal as typeof experimentInputSignal & { type: 'keydown' | 'keyup' | 'mousedown' | 'mouseup'  } : null;
@@ -1980,6 +2073,20 @@ export default function App() {
     setPractice(next);
   }
 
+  function manualPracticeStep(direction: -1 | 1, eventTime: number) {
+    if (!practiceRef.current) return;
+    const next = practiceRef.current.manualStep(direction, eventTime);
+    if (practicePreset === 'simple' && next.status === 'running') {
+      // Keep the demo clock aligned with the session after a manual seek;
+      // otherwise the next 50 ms tick would restore the old position.
+      demoPlaybackClockRef.current = {
+        wallTime: eventTime,
+        elapsedMs: next.elapsedMs ?? 0
+      };
+    }
+    publishPractice(next);
+  }
+
   useEffect(() => {
     const preventBrowserKeyboardAction = (event: KeyboardEvent) => {
       if (shouldPreventBrowserKeyDefault(event)) event.preventDefault();
@@ -1987,8 +2094,8 @@ export default function App() {
     const preventNativeContextMenu = (event: MouseEvent) => event.preventDefault();
     const preventNativeDrag = (event: DragEvent) => event.preventDefault();
     const preventAuxiliaryMouseDefault = (event: MouseEvent) => {
-      if (event.button === 1 || event.button === 3 || event.button === 4) event.preventDefault();
-     };
+       if (event.button === 1 || event.button === 3 || event.button === 4) event.preventDefault();
+      };
     const preventBrowserZoom = (event: WheelEvent) => {
       if (event.ctrlKey || event.metaKey) event.preventDefault();
      };
@@ -2115,9 +2222,9 @@ export default function App() {
    }, [page, Boolean(shareDraft)]);
 
   useEffect(() => {
-    const payload = JSON.stringify({ compatibilityMode, moves, bindings, gamepadBindings, inputMode, gamepadIconSet, keyboardIconMode, shortcutSettings, customIconSources, chart, library, startingCharacterSlot, practiceRoleOrder, overlaySettings, overlayLayoutBounds, overlayNoteLayoutBounds, comboImageStyle, verticalComboImageStyle, waterfallComboImageStyle, roleBaseFollowsAvatar, rhythmUiSettings, axisGateEnabled, resetPracticeProgressOnStop, exportDirectory, recordingIndicatorEnabled, recordingIndicatorCorner, recordingRecognitionSettings, simulatedInputSettings, live2dEnabled, homeSpineId, homeSpineTransforms, teamPresets  });
+    const payload = JSON.stringify({ compatibilityMode, moves, bindings, gamepadBindings, inputMode, gamepadIconSet, keyboardIconMode, shortcutSettings, customIconSources, chart, library, startingCharacterSlot, practiceRoleOrder, overlaySettings, overlayLayoutBounds, overlayNoteLayoutBounds, comboImageStyle, verticalComboImageStyle, waterfallComboImageStyle, roleBaseFollowsAvatar, rhythmUiSettings, axisGateEnabled, resetPracticeProgressOnStop, exportDirectory, recordingIndicatorEnabled, recordingIndicatorCorner, recordingRecognitionSettings, simulatedInputSettings, simulatedInputChartId, live2dEnabled, homeSpineId, homeSpineTransforms, teamPresets  });
     if (payload.length < LOCAL_STORAGE_SOFT_LIMIT) localStorage.setItem(STORAGE_KEY, payload);
-  }, [compatibilityMode, moves, bindings, gamepadBindings, inputMode, gamepadIconSet, keyboardIconMode, shortcutSettings, customIconSources, chart, library, startingCharacterSlot, practiceRoleOrder, overlaySettings, overlayLayoutBounds, overlayNoteLayoutBounds, comboImageStyle, verticalComboImageStyle, waterfallComboImageStyle, roleBaseFollowsAvatar, rhythmUiSettings, axisGateEnabled, resetPracticeProgressOnStop, exportDirectory, recordingIndicatorEnabled, recordingIndicatorCorner, recordingRecognitionSettings, simulatedInputSettings, live2dEnabled, homeSpineId, homeSpineTransforms, teamPresets]);
+  }, [compatibilityMode, moves, bindings, gamepadBindings, inputMode, gamepadIconSet, keyboardIconMode, shortcutSettings, customIconSources, chart, library, startingCharacterSlot, practiceRoleOrder, overlaySettings, overlayLayoutBounds, overlayNoteLayoutBounds, comboImageStyle, verticalComboImageStyle, waterfallComboImageStyle, roleBaseFollowsAvatar, rhythmUiSettings, axisGateEnabled, resetPracticeProgressOnStop, exportDirectory, recordingIndicatorEnabled, recordingIndicatorCorner, recordingRecognitionSettings, simulatedInputSettings, simulatedInputChartId, live2dEnabled, homeSpineId, homeSpineTransforms, teamPresets]);
 
   useEffect(() => setChartTitle(chart?.title ?? ''), [chart?.id]);
 
@@ -2162,6 +2269,16 @@ export default function App() {
           if (url.protocol === 'https:' || url.protocol === 'http:') void openExternalUrl(url.href);
         } catch {
           // Ignore malformed URLs from embedded content.
+        }
+        return;
+       }
+      if (isCommunityAccountSessionMessage(event.data)) {
+        const message = event.data;
+        try {
+          if (message.session.authenticated && message.token) localStorage.setItem(COMMUNITY_ACCOUNT_TOKEN_STORAGE_KEY, message.token);
+          else localStorage.removeItem(COMMUNITY_ACCOUNT_TOKEN_STORAGE_KEY);
+        } catch {
+          // Wiki authorization remains unavailable when account state cannot be persisted.
         }
         return;
        }
@@ -2213,10 +2330,6 @@ export default function App() {
     return () => window.removeEventListener('message', onCommunityMessage);
    }, [bindings, comboImageStyle.contentLabels, customIconSources, defaultAvatars, defaultBasePresets, gamepadBindings, gamepadIconSet, inputMode, language, library, moves, roleBaseFollowsAvatar, shortcutSettings]);
   useEffect(() => {
-    if (communityFrameTimeoutRef.current !== null) {
-      window.clearTimeout(communityFrameTimeoutRef.current);
-      communityFrameTimeoutRef.current = null;
-    }
     if (page !== 'community') {
       communityFrameReadyRef.current = false;
       setCommunityFrameStatus('loading');
@@ -2224,15 +2337,6 @@ export default function App() {
     }
     communityFrameReadyRef.current = false;
     setCommunityFrameStatus('loading');
-    communityFrameTimeoutRef.current = window.setTimeout(() => {
-      if (!communityFrameReadyRef.current) setCommunityFrameStatus('error');
-    }, 12_000);
-    return () => {
-      if (communityFrameTimeoutRef.current !== null) {
-        window.clearTimeout(communityFrameTimeoutRef.current);
-        communityFrameTimeoutRef.current = null;
-      }
-    };
    }, [communityFrameKey, page]);
   useEffect(() => {
     if (page === 'community' && communityFrameReadyRef.current) postCommunityLibrary();
@@ -2244,6 +2348,10 @@ export default function App() {
     setTimelineUndoStack([]);
     setTimelineRedoStack([]);
    }, [chart?.id]);
+  useEffect(() => {
+    setSimulatedInputUndoStack([]);
+    setSimulatedInputRedoStack([]);
+   }, [simulatedInputChart?.id]);
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (page !== 'record' || videoWorkbenchOpen || !(event.ctrlKey || event.metaKey)) return;
@@ -2264,15 +2372,15 @@ export default function App() {
   useEffect(() => {
     setEditorPlaying(false);
     setEditorPlaybackMs(0);
-   }, [chart?.id]);
+   }, [editorPlaybackChart?.id]);
 
   useEffect(() => {
     setEditorPlaybackMs((current) => clamp(current, 0, editorPlaybackDurationMs));
    }, [editorPlaybackDurationMs]);
 
   useEffect(() => {
-    if (page !== 'record' || videoWorkbenchOpen) setEditorPlaying(false);
-   }, [page, videoWorkbenchOpen]);
+    if (page !== 'record' && !simulatedInputEditorOpen || videoWorkbenchOpen) setEditorPlaying(false);
+   }, [page, simulatedInputEditorOpen, videoWorkbenchOpen]);
 
   useEffect(() => {
     if (!editorPlaying || editorPlaybackDurationMs <= 0) return;
@@ -2619,8 +2727,25 @@ export default function App() {
       }
       if (!globalInputEnabled) return;
       if (event.captureMode && event.captureMode !== globalInputMode) return;
-      if (inputMode === 'keyboard' ? isGamepadEvent(event) : !isGamepadEvent(event)) return;
-      acceptTrainerInput(event);
+      if (event.type === 'wheel') {
+        // Wheel input is a game-only control. Consume it here so it cannot
+        // reach recording, key mapping, timeline, or experimental modules.
+        if (inputMode !== 'keyboard' || document.hasFocus() || page !== 'practice' || (practicePreset !== 'lenient' && practicePreset !== 'simple')) return;
+        const direction = shortcutMatchesCode(event.code, false, shortcutSettings.practiceManualForward)
+          ? 1 as const
+          : shortcutMatchesCode(event.code, false, shortcutSettings.practiceManualBackward)
+            ? -1 as const
+            : null;
+        if (direction !== null && practiceRef.current) {
+          manualPracticeStep(direction, event.time);
+        }
+        return;
+      }
+      // The wheel branch above is terminal; the remaining desktop events
+      // share the input contract used by the editor and practice modules.
+      const trainerEvent = event as TrainerLikeInputEvent;
+      if (inputMode === 'keyboard' ? isGamepadEvent(trainerEvent) : !isGamepadEvent(trainerEvent)) return;
+      acceptTrainerInput(trainerEvent);
      });
     return () => {
       window.removeEventListener('keydown', handleKey, true);
@@ -2630,7 +2755,7 @@ export default function App() {
       disposeGlobal?.();
       clearBasicAttackHoldState();
      };
-   }, [page, experimentPage, desktop, holdBindings, globalInputEnabled, globalInputMode, inputMode, realtimeVisionSettingsOpen, simulationInputActive, practiceChart, activeRuntimeBindings, simulatedInputSettings]);
+   }, [page, experimentPage, desktop, holdBindings, globalInputEnabled, globalInputMode, inputMode, practicePreset, realtimeVisionSettingsOpen, shortcutSettings, simulationInputActive, simulatedInputAvailable, simulatedInputChart, activeRuntimeBindings, simulatedInputSettings]);
 
   useEffect(() => {
     if (inputMode !== 'gamepad' || (desktop && globalInputEnabled)) return;
@@ -2687,6 +2812,17 @@ export default function App() {
   function acceptTrainerInput(event: TrainerLikeInputEvent) {
     const normalizedCode = normalizeInputCode(event.code);
     const source = event.source ?? (isGamepadEvent(event) ? 'gamepad' : 'dom');
+    if (source === 'desktop' && !document.hasFocus() && page === 'practice' && (practicePreset === 'lenient' || practicePreset === 'simple') && isPressEvent(event)) {
+      const direction = shortcutMatchesCode(normalizedCode, Boolean(event.shiftKey), shortcutSettings.practiceManualForward)
+        ? 1 as const
+        : shortcutMatchesCode(normalizedCode, Boolean(event.shiftKey), shortcutSettings.practiceManualBackward)
+          ? -1 as const
+          : null;
+      if (direction !== null && practiceRef.current) {
+        manualPracticeStep(direction, event.time);
+        return;
+      }
+    }
     const transitionKey = `${event.type}:${normalizedCode}`;
     const receivedAt = performance.now();
     const previousTransition = recentInputTransitionsRef.current.get(transitionKey);
@@ -2713,13 +2849,14 @@ export default function App() {
       && source === 'desktop'
       && isPressEvent(event)
       && practiceRef.current?.snapshot().status === 'idle'
-      && practiceChart
-      && bindingCodesForMove(activeRuntimeBindings, practiceChart.startTriggerMoveId).includes(normalizedCode);
+      && simulatedInputChart
+      && bindingCodesForMove(activeRuntimeBindings, simulatedInputChart.startTriggerMoveId).includes(normalizedCode);
     const practiceStopTriggered = page === 'practice'
       && simulationInputActive
       && source === 'desktop'
       && isPressEvent(event)
-      && bindingCodesForMove(activeRuntimeBindings, practiceChart?.stopTriggerMoveId ?? 'stop_recording').includes(normalizedCode);
+      && simulatedInputChart
+      && bindingCodesForMove(activeRuntimeBindings, simulatedInputChart.stopTriggerMoveId ?? 'stop_recording').includes(normalizedCode);
     if (practiceStartTriggered) void startSimulatedInputRun();
     if (practiceStopTriggered) void stopSimulatedInputRun();
     if (page === 'record' && recorderRef.current.isRecording && isPressEvent(event) && bindingCodesForMove(runtimeBindings, 'stop_recording').includes(normalizedCode)) {
@@ -2883,9 +3020,9 @@ export default function App() {
    }
 
   async function startSimulatedInputRun() {
-    if (!__SIMULATED_INPUT_ENABLED__ || !simulationInputActive || page !== 'practice' || !practiceChart || inputMode === 'gamepad' || !desktop?.startSimulatedInput) return;
+    if (!simulatedInputAvailable || !simulationInputActive || page !== 'practice' || !simulatedInputChart || inputMode === 'gamepad' || !desktop?.startSimulatedInput) return;
     const { buildSimulatedInputEvents } = await import('./simulatedInput');
-    const { events, skipped } = buildSimulatedInputEvents(practiceChart, activeRuntimeBindings, simulatedInputSettings);
+    const { events, skipped } = buildSimulatedInputEvents(simulatedInputChart, activeRuntimeBindings, simulatedInputSettings);
     if (!events.length) {
       showToast(text('当前连段没有可模拟的键鼠绑定。', 'This combo has no keyboard or mouse bindings to simulate.'));
       return;
@@ -2899,16 +3036,16 @@ export default function App() {
         return;
       }
       const skippedMessage = skipped ? text(`，跳过 ${skipped} 个未绑定招式`, `; skipped ${skipped} unbound actions`) : '';
-      showToast(text(`已按开始键启动自动模拟${skippedMessage}。`, `Automatic simulation started by the practice start key${skippedMessage}.`));
+      showToast(text(`已按开始键启动模拟演示${skippedMessage}。`, `Simulation demo started by the practice start key${skippedMessage}.`));
     } catch (error) {
       if (simulationInputRequestRef.current !== requestId) return;
       const message = error instanceof Error ? error.message : String(error);
-      showToast(text(`模拟输入启动失败：${message}`, `Could not start simulated input: ${message}`));
+      showToast(text(`模拟演示启动失败：${message}`, `Could not start the simulation demo: ${message}`));
     }
   }
 
   async function toggleSimulatedInput() {
-    if (!__SIMULATED_INPUT_ENABLED__) return;
+    if (!simulatedInputAvailable) return;
     if (simulationInputActive) {
       setSimulationInputActive(false);
       await stopSimulatedInputRun();
@@ -2918,16 +3055,16 @@ export default function App() {
       showToast(text('当前版本暂不支持模拟手柄输出，请使用键鼠模式。', 'Gamepad output simulation is not available yet. Switch to keyboard and mouse mode.'));
       return;
     }
-    if (!practiceChart) {
+    if (!simulatedInputChart) {
       showToast(text('当前没有可模拟的连段。', 'There is no combo available to simulate.'));
       return;
     }
     if (!desktop?.startSimulatedInput) {
-      showToast(text('当前运行环境不支持模拟输入。', 'This runtime does not support simulated input.'));
+      showToast(text('当前运行环境不支持模拟演示。', 'This runtime does not support the simulation demo.'));
       return;
     }
     setSimulationInputActive(true);
-    showToast(text('自动模拟已待命，按开始键后同步执行。', 'Automatic simulation is armed and will run with the practice start key.'));
+    showToast(text('模拟演示已待命，按开始键后同步执行。', 'The simulation demo is armed and will run with the practice start key.'));
   }
 
   function tickPractice() {
@@ -3200,7 +3337,7 @@ export default function App() {
       createdAt: chart?.createdAt ?? reconciledResult.chart.createdAt,
       updatedAt: Date.now(),
       steps: reconciledResult.chart.steps.map(normalizeStep),
-      periods: constrainAxisPeriods(reconciledResult.chart.periods ?? []),
+      periods: chart ? constrainAxisPeriods(reconciledResult.chart.periods ?? []) : ensureNewChartAxisPeriods(reconciledResult.chart.periods),
       contentLabels: reconciledResult.contentLabels
      });
     setChart(nextChart);
@@ -3248,11 +3385,18 @@ export default function App() {
     const slotMap = characterPositionMap(practiceRoleOrder, nextOrder, activeCharacterSlots);
     if (!slotMap || activeCharacterSlots.every((slot) => slotMap[slot] === slot)) return;
     const updatedAt = Date.now();
-    const chartsForLabels = chart ? [chart] : [];
-    setChart((current) => current ? chartWithContentLabels(
-      remapChartSwitchTargets(current, slotMap, updatedAt),
-      remapSwitchContentLabels(contentLabelsForChart(current, comboImageStyleRef.current.contentLabels), chartsForLabels, slotMap)
-    ) : current);
+    // The order is global. Remap every stored chart from the old key position
+    // to the new one so the selected chart and future practice loads cannot
+    // disagree about which switch key targets each character.
+    const chartsForLabels = [...new Map(
+      [ ...(chart ? [chart] : []), ...library ].map((item) => [item.id, item])
+    ).values()];
+    const remapChart = (source: ComboChart) => chartWithContentLabels(
+      remapChartSwitchTargets(source, slotMap, updatedAt),
+      remapSwitchContentLabels(contentLabelsForChart(source, comboImageStyleRef.current.contentLabels), [source], slotMap)
+    );
+    setChart((current) => current ? remapChart(current) : current);
+    setLibrary((current) => current.map((item) => remapChart(item)));
     const remappedLabels = remapSwitchContentLabels(comboImageStyleRef.current.contentLabels, chartsForLabels, slotMap);
     setComboImageStyle((current) => normalizeComboImageStyle({ ...current, contentLabels: remappedLabels }));
     setVerticalComboImageStyle((current) => normalizeComboImageStyle({ ...current, contentLabels: remappedLabels }));
@@ -3356,6 +3500,108 @@ export default function App() {
     setSimulatedInputSettings((current) => normalizeSimulatedInputSettings({ ...current, ...patch  }));
    }
 
+  function updateSimulatedInputChartData(updater: (current: ComboChart) => ComboChart) {
+    if (simulatedInputChartId) {
+      setLibrary((current) => current.map((item) => item.id === simulatedInputChartId ? updater(item) : item));
+      return;
+    }
+    setChart((current) => current ? updater(current) : current);
+   }
+
+  function updateSimulatedInputStep(stepId: string, patch: Partial<ComboStep>) {
+    updateSimulatedInputChartData((current) => {
+      const steps = stepId === '__insert__'
+        ? [...current.steps, normalizeStep(patch as ComboStep)]
+        : current.steps.map((step) => step.id === stepId ? normalizeStep({ ...step, ...patch }) : step);
+      return applyFreeFirePeriods({ ...current, updatedAt: Date.now(), steps });
+    });
+   }
+
+  function insertSimulatedInputSteps(steps: ComboStep[]) {
+    if (!steps.length) return;
+    updateSimulatedInputChartData((current) => applyFreeFirePeriods({
+      ...current,
+      updatedAt: Date.now(),
+      steps: [...current.steps, ...steps.map(normalizeStep)]
+    }));
+   }
+
+  function deleteSimulatedInputSteps(stepIds: string[]) {
+    if (!stepIds.length) return;
+    const ids = new Set(stepIds);
+    updateSimulatedInputChartData((current) => applyFreeFirePeriods({
+      ...current,
+      updatedAt: Date.now(),
+      steps: current.steps.filter((step) => !ids.has(step.id))
+    }));
+   }
+
+  function updateSimulatedInputPeriods(periods: ComboPeriod[]) {
+    updateSimulatedInputChartData((current) => applyFreeFirePeriods({
+      ...current,
+      updatedAt: Date.now(),
+      periods: constrainAxisPeriods(periods)
+    }));
+   }
+
+  function updateSimulatedInputContent(patch: Partial<ComboImageStyle>) {
+    if (!Object.prototype.hasOwnProperty.call(patch, 'contentLabels')) return;
+    if (!simulatedInputChartId) {
+      updateComboImageStyle(patch);
+      return;
+    }
+    const contentLabels = patch.contentLabels ?? {};
+    updateSimulatedInputChartData((current) => chartWithContentLabels({ ...current, updatedAt: Date.now() }, contentLabels));
+   }
+
+  function currentSimulatedInputHistorySnapshot(): TimelineHistorySnapshot {
+    return { chart: cloneTimelineChart(simulatedInputChart), contentLabels: { ...simulatedInputTimelineStyle.contentLabels } };
+   }
+
+  function restoreSimulatedInputHistorySnapshot(snapshot: TimelineHistorySnapshot) {
+    if (!snapshot.chart) return;
+    if (!simulatedInputChartId) {
+      restoreTimelineHistorySnapshot(snapshot);
+      return;
+    }
+    const restored = chartWithContentLabels(cloneTimelineChart(snapshot.chart)!, snapshot.contentLabels);
+    updateSimulatedInputChartData(() => restored);
+   }
+
+  function captureSimulatedInputHistory() {
+    const snapshot = currentSimulatedInputHistorySnapshot();
+    setSimulatedInputUndoStack((current) => [...current.slice(-MAX_TIMELINE_HISTORY + 1), snapshot]);
+    setSimulatedInputRedoStack([]);
+   }
+
+  function undoSimulatedInputTimeline() {
+    setSimulatedInputUndoStack((current) => {
+      const previous = current[current.length - 1];
+      if (!previous) return current;
+      setSimulatedInputRedoStack((redo) => [...redo.slice(-MAX_TIMELINE_HISTORY + 1), currentSimulatedInputHistorySnapshot()]);
+      restoreSimulatedInputHistorySnapshot(previous);
+      return current.slice(0, -1);
+    });
+   }
+
+  function redoSimulatedInputTimeline() {
+    setSimulatedInputRedoStack((current) => {
+      const next = current[current.length - 1];
+      if (!next) return current;
+      setSimulatedInputUndoStack((undo) => [...undo.slice(-MAX_TIMELINE_HISTORY + 1), currentSimulatedInputHistorySnapshot()]);
+      restoreSimulatedInputHistorySnapshot(next);
+      return current.slice(0, -1);
+    });
+   }
+
+  function saveSimulatedInputChart() {
+    if (simulatedInputChartId) {
+      showToast(text('模拟演示时间轴已自动保存。', 'The simulation-demo timeline is saved automatically.'));
+      return;
+    }
+    saveCurrentChart();
+   }
+
   function updateRoleStyle(slot: CharacterSlot, patch: Partial<ComboImageStyle['roleStyles'][CharacterSlot]>) {
     setComboImageStyle((current) => normalizeComboImageStyle({ ...current, roleStyles: { ...current.roleStyles, [slot]: { ...current.roleStyles[slot], ...patch  }  }  }));
    }
@@ -3435,13 +3681,23 @@ export default function App() {
    }
 
   function applyQuickInput(values: string[]) {
-    if (!practiceChart) return;
-    setQuickInputMemory(values);
-    const labels = { ...comboImageStyle.contentLabels  };
-    practiceChart.steps.forEach((step, index) => {
+    const targetChart = quickInputTarget === 'simulated' ? simulatedInputChart : practiceChart;
+    if (!targetChart) return;
+    if (quickInputTarget === 'simulated') setSimulatedInputQuickInputMemory(values);
+    else setQuickInputMemory(values);
+    const targetStyle = quickInputTarget === 'simulated' ? simulatedInputTimelineStyle : comboImageStyle;
+    const labels = { ...targetStyle.contentLabels  };
+    targetChart.steps.forEach((step, index) => {
       if (values[index] !== undefined) labels[step.id] = values[index];
      });
-    updateComboImageStyle({ contentLabels: labels  });
+    if (quickInputTarget === 'simulated') updateSimulatedInputContent({ contentLabels: labels });
+    else updateComboImageStyle({ contentLabels: labels  });
+   }
+
+  function openQuickInput(stepId: string | null, target: 'main' | 'simulated' = 'main') {
+    setQuickInputTarget(target);
+    setQuickInputStartStepId(stepId);
+    setQuickInputOpen(true);
    }
 
 
@@ -3908,7 +4164,7 @@ export default function App() {
       setPage('practice');
       return;
      }
-    if (experimentPage === 'keymap' || experimentPage === 'realtime-vision') {
+    if (experimentPage === 'keymap' || experimentPage === 'realtime-vision' || experimentPage === 'simulated-input') {
       setPage('settings');
       return;
      }
@@ -3953,10 +4209,19 @@ export default function App() {
   }
 
   function openSimulatedInputSettings() {
-    if (!__SIMULATED_INPUT_ENABLED__) return;
-    setSettingsView('settings');
-    navigateToPage('settings');
-  }
+    if (!simulatedInputAvailable) return;
+    setExperimentPage('simulated-input');
+    navigateToPage('experiment');
+    window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'instant' }));
+   }
+
+  function updateSimulatedInputChart(chartId: string | null) {
+    if (simulationInputActive) {
+      setSimulationInputActive(false);
+      void stopSimulatedInputRun();
+    }
+    setSimulatedInputChartId(chartId);
+   }
 
   function navigateToPage(nextPage: Page) {
     const shouldPromptForHelp = page === 'home' && nextPage !== 'home' && !firstRunHelpPromptedRef.current;
@@ -3975,10 +4240,34 @@ export default function App() {
   const sidebarDestination: HomeDestination | null = page === 'experiment'
     ? experimentPage === 'axis' || experimentPage === 'export-axis'
       ? 'practice'
-      : experimentPage === 'keymap' || experimentPage === 'realtime-vision'
+      : experimentPage === 'keymap' || experimentPage === 'realtime-vision' || experimentPage === 'simulated-input'
         ? 'settings'
         : 'experiment'
     : page === 'home' ? null : page;
+  const simulatedInputTimelineEditor = simulatedInputAvailable && simulatedInputChart ? <TimelineEditor
+    key={`simulated-input-timeline-${simulatedInputChart.id}`}
+    chart={simulatedInputChart}
+    moves={moves}
+    bindings={activeRuntimeBindings}
+    shortcutSettings={shortcutSettings}
+    inputSignal={timelinePlacementInputSignal}
+    comboImageStyle={simulatedInputTimelineStyle}
+    clipboardControl={{ value: timelineClipboard, onChange: setTimelineClipboard }}
+    mode={editorTab}
+    onModeChange={setEditorTab}
+    zoom={editorZoom}
+    onZoomChange={setEditorZoom}
+    playheadControl={{ playbackMs: editorPlaybackMs, onSeek: setEditorPlaybackMs, isPlaying: editorPlaying, onTogglePlaying: toggleEditorPlayback, playbackRate: editorPlaybackRate, onPlaybackRateChange: (rate) => setEditorPlaybackRate(rate as (typeof TIMELINE_PLAYBACK_RATES)[number]), autoFollow: editorAutoFollow, onAutoFollowChange: setEditorAutoFollow }}
+    onUpdate={updateSimulatedInputStep}
+    onInsert={insertSimulatedInputSteps}
+    onDelete={deleteSimulatedInputSteps}
+    onPeriodsChange={updateSimulatedInputPeriods}
+    onContentChange={updateSimulatedInputContent}
+    onQuickInput={(stepId) => openQuickInput(stepId, 'simulated')}
+    onSave={saveSimulatedInputChart}
+    historyControl={{ canUndo: simulatedInputUndoStack.length > 0, canRedo: simulatedInputRedoStack.length > 0, onCaptureHistory: captureSimulatedInputHistory, onUndo: undoSimulatedInputTimeline, onRedo: redoSimulatedInputTimeline }}
+    keyboardShortcutsEnabled={page === 'experiment' && experimentPage === 'simulated-input'}
+  /> : null;
 
   return (
     <div className={`app-shell ${appearanceMode === 'night' ? 'theme-night' : '' } ${appearanceMode === 'day' || appearanceMode === 'coast' ? 'theme-day' : '' } ${appearanceMode === 'night2' ? 'theme-night2' : '' } ${appearanceMode === 'coast' ? 'theme-coast' : '' } ${page === 'experiment' && experimentPage === 'axis' ? 'axis-game-open' : '' } ${page === 'community' || (page === 'experiment' && experimentPage === 'afyg-dps') ? 'browser-page-open' : '' }` }>
@@ -3996,7 +4285,7 @@ export default function App() {
           <div className="app-download-options">{updateDownloadLinks.map((channel) => channel.url ? <button key={channel.key} type="button" className="app-download-option" onClick={() => void openUpdateChannel(channel.url)}><Download size={18 } /><span><strong>{channel.label}</strong><small>{text('点击打开下载地址', 'Open download link')}</small></span><ExternalLink size={16 } /></button> : <div key={channel.key} className="app-download-option unavailable"><Download size={18 } /><span><strong>{channel.label}</strong><small>{text('维护端尚未配置', 'Not configured')}</small></span></div>)}</div>
         </section>
       </div>}
-        <aside className="sidebar" data-trainer-capture-suspend="true">
+        <aside className={`sidebar ${page !== 'home' ? 'sidebar-editor-safe' : ''}`} data-trainer-capture-suspend="true">
           <button className={`brand ${page === 'home' ? 'home-active' : '' }` } type="button" aria-label={text('返回主界面', 'Back to Home') } title={text('返回主界面', 'Back to Home') } onClick={() => setPage('home') }><div className="brand-mark"><img src="/app-icon-avatar.png" alt="" /></div><div><h1>{text('鸣潮训练场', 'Wuthering Waves Trainer') }</h1><span>Combo Trainer</span></div></button>
           <nav>
           <button className={sidebarDestination === 'record' ? 'active' : '' } onClick={() => navigateToPage('record') }><Activity size={18 } /><span>{language === 'zh-CN' ? <ruby className="sidebar-nav-ruby">记录<rt>Record</rt></ruby> : text('记录', 'Record') }</span></button>
@@ -4012,7 +4301,7 @@ export default function App() {
               <i className={globalInputEnabled ? 'is-active' : ''} />
               <i className={keyMappingVisible ? 'is-active' : ''} />
               {__BUFF_TIMER_ENABLED__ && <i className={realtimeVisionActive ? 'is-active' : ''} />}
-              {__SIMULATED_INPUT_ENABLED__ && <i className={simulationInputActive ? 'is-active' : ''} />}
+              {simulatedInputAvailable && <i className={simulationInputActive ? 'is-active' : ''} />}
             </span>
           </button>
           <div className="sidebar-quick-actions" role="group" aria-label={text('快捷工具', 'Quick Tools')}>
@@ -4028,9 +4317,9 @@ export default function App() {
               <button className="sidebar-quick-settings" type="button" aria-label={text('打开按键 Buff 计时设置', 'Open Key-triggered Buff Timer Settings')} title={text('按键 Buff 计时设置', 'Key-triggered Buff Timer Settings')} onClick={openRealtimeVisionSettings}><Settings size={14} /></button>
               <button className={`sidebar-quick-action ${realtimeVisionActive ? 'active' : ''} ${realtimeVisionSettingsOpen ? 'configuring' : ''}`} type="button" aria-pressed={realtimeVisionActive} aria-label={text('按键 Buff 计时', 'Key-triggered Buff Timer')} title={realtimeVisionActive ? text('关闭按键 Buff 计时', 'Stop Key-triggered Buff Timer') : text('开启按键 Buff 计时', 'Start Key-triggered Buff Timer')} onClick={toggleRealtimeVisionQuickTool}><Clock3 size={18} /></button>
             </div>}
-            {__SIMULATED_INPUT_ENABLED__ && <div className="sidebar-quick-action-item">
-              <button className="sidebar-quick-settings" type="button" aria-label={text('打开模拟输入设置', 'Open Simulated Input Settings')} title={text('模拟输入设置', 'Simulated Input Settings')} onClick={openSimulatedInputSettings}><Settings size={14} /></button>
-              <button className={`sidebar-quick-action ${simulationInputActive ? 'active' : ''}`} type="button" aria-pressed={simulationInputActive} disabled={!practiceChart} aria-label={text('模拟输入', 'Simulated Input')} title={!practiceChart ? text('当前没有可用连段', 'No combo is available') : simulationInputActive ? text('关闭自动模拟输入', 'Disable automatic simulated input') : text('开启自动模拟输入', 'Enable automatic simulated input')} onClick={() => void toggleSimulatedInput()}><RadioTower size={18} /></button>
+            {simulatedInputAvailable && <div className="sidebar-quick-action-item">
+              <button className="sidebar-quick-settings" type="button" aria-label={text('打开模拟演示设置', 'Open Simulation Demo Settings')} title={text('模拟演示设置', 'Simulation Demo Settings')} onClick={openSimulatedInputSettings}><Settings size={14} /></button>
+              <button className={`sidebar-quick-action ${simulationInputActive ? 'active' : ''}`} type="button" aria-pressed={simulationInputActive} disabled={!simulatedInputChart} aria-label={text('模拟演示', 'Simulation Demo')} title={!simulatedInputChart ? text('当前没有可用连段', 'No combo is available') : simulationInputActive ? text('关闭模拟演示', 'Disable simulation demo') : text('开启模拟演示', 'Enable simulation demo')} onClick={() => void toggleSimulatedInput()}><RadioTower size={18} /></button>
             </div>}
           </div>
         </div>
@@ -4074,7 +4363,7 @@ export default function App() {
 
               </div>
               {chart && <div className="editor-combo-preview"><ComboImagePreview chart={chart } practice={editorPreviewPractice } style={activeOverlayComboImageStyle } layout="horizontal" bounds={overlaySettings } mergedHighlightMode="input" /></div> }
-              {chart && <TimelineEditor chart={chart } moves={moves } bindings={activeRuntimeBindings } shortcutSettings={shortcutSettings } inputSignal={timelinePlacementInputSignal } comboImageStyle={comboImageStyle } clipboardControl={{ value: timelineClipboard, onChange: setTimelineClipboard  }} mode={editorTab } onModeChange={setEditorTab } zoom={editorZoom } onZoomChange={setEditorZoom } playheadControl={{ playbackMs: editorPlaybackMs, onSeek: setEditorPlaybackMs, isPlaying: editorPlaying, onTogglePlaying: toggleEditorPlayback, playbackRate: editorPlaybackRate, onPlaybackRateChange: (rate) => setEditorPlaybackRate(rate as (typeof TIMELINE_PLAYBACK_RATES)[number]), autoFollow: editorAutoFollow, onAutoFollowChange: setEditorAutoFollow  }} onUpdate={updateStep } onInsert={insertSteps } onDelete={deleteSteps } onPeriodsChange={updatePeriods } onContentChange={updateComboImageStyle } onQuickInput={(stepId) => { setQuickInputStartStepId(stepId); setQuickInputOpen(true);  } } onSave={saveCurrentChart } historyControl={{ canUndo: timelineUndoStack.length > 0, canRedo: timelineRedoStack.length > 0, onCaptureHistory: captureTimelineHistory, onUndo: undoTimeline, onRedo: redoTimeline  }} keyboardShortcutsEnabled={!videoWorkbenchOpen } /> }
+              {chart && <TimelineEditor chart={chart } moves={moves } bindings={activeRuntimeBindings } shortcutSettings={shortcutSettings } inputSignal={timelinePlacementInputSignal } comboImageStyle={comboImageStyle } clipboardControl={{ value: timelineClipboard, onChange: setTimelineClipboard  }} mode={editorTab } onModeChange={setEditorTab } zoom={editorZoom } onZoomChange={setEditorZoom } playheadControl={{ playbackMs: editorPlaybackMs, onSeek: setEditorPlaybackMs, isPlaying: editorPlaying, onTogglePlaying: toggleEditorPlayback, playbackRate: editorPlaybackRate, onPlaybackRateChange: (rate) => setEditorPlaybackRate(rate as (typeof TIMELINE_PLAYBACK_RATES)[number]), autoFollow: editorAutoFollow, onAutoFollowChange: setEditorAutoFollow  }} onUpdate={updateStep } onInsert={insertSteps } onDelete={deleteSteps } onPeriodsChange={updatePeriods } onContentChange={updateComboImageStyle } onQuickInput={(stepId) => openQuickInput(stepId)} onSave={saveCurrentChart } historyControl={{ canUndo: timelineUndoStack.length > 0, canRedo: timelineRedoStack.length > 0, onCaptureHistory: captureTimelineHistory, onUndo: undoTimeline, onRedo: redoTimeline  }} keyboardShortcutsEnabled={!videoWorkbenchOpen } /> }
               {!chart && <EmptyState text={text('暂无连段谱。先录制一遍并点击覆盖，或导入 JSON。', 'No combo chart yet. Record and replace one, or import a JSON file.') } /> }
             </div>
           </section>
@@ -4105,7 +4394,7 @@ export default function App() {
           </section>
         ) }
 
-        {page === 'experiment' && experimentPage !== 'realtime-vision' && experimentPage !== 'keymap' && (
+        {page === 'experiment' && experimentPage !== 'realtime-vision' && experimentPage !== 'keymap' && experimentPage !== 'simulated-input' && (
           <section className="experiment-page-layout">
             {experimentPage === 'axis' && (
               <div className="experiment-axis-page">
@@ -4116,7 +4405,7 @@ export default function App() {
               <Suspense fallback={moduleLoadingFallback }><FullChartExportLab chart={chart } library={library } style={exportAxisOpenedFromPractice ? activeRenderComboImageStyle : displayComboImageStyle } basePresets={defaultBasePresets } initialPreset={exportAxisOpenedFromPractice ? 'practice-axis' : undefined } initialContentWidth={exportAxisPracticeWidth } onSelectChart={(id) => selectComboChart(library.find((item) => item.id === id) ?? chart) } onExit={exitExperimentSubpage } onExport={exportAxisImage } /></Suspense>
             ) }
             {experimentPage === 'afyg-dps' && (
-              <Suspense fallback={workshopLoadingFallback }><AfygDpsLab chart={chart } library={library } style={comboImageStyle } appearanceMode={appearanceMode } playheadControl={{ playbackMs: editorPlaybackMs, onSeek: setEditorPlaybackMs, autoFollow: true }} timelineEditor={chart ? <TimelineEditor chart={chart } moves={moves } bindings={activeRuntimeBindings } shortcutSettings={shortcutSettings } inputSignal={timelinePlacementInputSignal } comboImageStyle={comboImageStyle } clipboardControl={{ value: timelineClipboard, onChange: setTimelineClipboard  }} mode={editorTab } onModeChange={setEditorTab } zoom={editorZoom } onZoomChange={setEditorZoom } onUpdate={updateStep } onInsert={insertSteps } onDelete={deleteSteps } onPeriodsChange={updatePeriods } onContentChange={updateComboImageStyle } onQuickInput={(stepId) => { setQuickInputStartStepId(stepId); setQuickInputOpen(true);  } } onSave={saveCurrentChart } historyControl={{ canUndo: timelineUndoStack.length > 0, canRedo: timelineRedoStack.length > 0, onCaptureHistory: captureTimelineHistory, onUndo: undoTimeline, onRedo: redoTimeline  }} auxiliaryLane={{ label: text('效应', 'Effects') }} /> : null } onTimingChange={updateAfygTiming } onSelectChart={(id) => selectComboChart(library.find((item) => item.id === id) ?? chart) } onExport={exportAfygProject } onOpenTool={(url) => void openExternalUrl(url || AFYG_TOOL_URL) } onExit={exitExperimentSubpage } /></Suspense>
+              <Suspense fallback={workshopLoadingFallback }><AfygDpsLab chart={chart } library={library } style={comboImageStyle } appearanceMode={appearanceMode } playheadControl={{ playbackMs: editorPlaybackMs, onSeek: setEditorPlaybackMs, autoFollow: true }} timelineEditor={chart ? <TimelineEditor chart={chart } moves={moves } bindings={activeRuntimeBindings } shortcutSettings={shortcutSettings } inputSignal={timelinePlacementInputSignal } comboImageStyle={comboImageStyle } clipboardControl={{ value: timelineClipboard, onChange: setTimelineClipboard  }} mode={editorTab } onModeChange={setEditorTab } zoom={editorZoom } onZoomChange={setEditorZoom } onUpdate={updateStep } onInsert={insertSteps } onDelete={deleteSteps } onPeriodsChange={updatePeriods } onContentChange={updateComboImageStyle } onQuickInput={(stepId) => openQuickInput(stepId)} onSave={saveCurrentChart } historyControl={{ canUndo: timelineUndoStack.length > 0, canRedo: timelineRedoStack.length > 0, onCaptureHistory: captureTimelineHistory, onUndo: undoTimeline, onRedo: redoTimeline  }} auxiliaryLane={{ label: text('效应', 'Effects') }} /> : null } onTimingChange={updateAfygTiming } onSelectChart={(id) => selectComboChart(library.find((item) => item.id === id) ?? chart) } onExport={exportAfygProject } onOpenTool={(url) => void openExternalUrl(url || AFYG_TOOL_URL) } onExit={exitExperimentSubpage } /></Suspense>
             ) }
           </section>
         ) }
@@ -4125,6 +4414,10 @@ export default function App() {
           <div className="panel-title experiment-subtitle"><div><h2>{text('按键映射', 'Key Mapping') }</h2><p>{text('按下键位时显示对应图片。', 'Show the mapped image when a key is pressed.') }</p></div><button className="icon-button experiment-back-button" onClick={exitExperimentSubpage } title={text('返回', 'Back') }><ArrowLeft size={18 } /></button></div>
           <KeyMappingLab inputSignal={keyMappingInputSignal } inputMode={inputMode } bindings={activeBindings } onBindingChange={inputMode === 'gamepad' ? updateGamepadBinding : updateBinding } visible={keyMappingVisible } onVisibleChange={setKeyMappingVisible } onRequestGlobalInput={startGlobalInput } settingsRequestToken={keyMappingSettingsRequestToken } />
         </div>
+
+        {simulatedInputAvailable && page === 'experiment' && experimentPage === 'simulated-input' && <section className="experiment-simulated-input-page" data-trainer-capture-suspend="true">
+          <SimulatedInputSettingsPanel settings={simulatedInputSettings } selectedChart={simulatedInputChart } selectedChartId={simulatedInputChartId } currentChart={chart } library={library } timelineEditor={simulatedInputTimelineEditor } onSettingsChange={updateSimulatedInputSettings } onChartChange={updateSimulatedInputChart } onExit={exitExperimentSubpage } />
+        </section>}
 
         {RealtimeVisionLab && (realtimeVisionSettingsOpen || realtimeVisionActive) && <Suspense fallback={moduleLoadingFallback }><RealtimeVisionLab
           desktop={desktop }
@@ -4152,12 +4445,9 @@ export default function App() {
               onLoad={() => {
                 communityFrameReadyRef.current = true;
                 setCommunityFrameStatus('ready');
-                if (communityFrameTimeoutRef.current !== null) {
-                  window.clearTimeout(communityFrameTimeoutRef.current);
-                  communityFrameTimeoutRef.current = null;
-                }
                 postCommunityLibrary();
                 postCommunityInputSettings();
+                communityFrameRef.current?.contentWindow?.postMessage({ type: 'wwcombo:community-account-session-request', version: 1 }, COMMUNITY_SITE_ORIGIN);
                } }
                onError={() => {
                 communityFrameReadyRef.current = false;
@@ -4173,14 +4463,14 @@ export default function App() {
           </section>
         ) }
 
-        {page === 'settings' && <SettingsPanel view={settingsView } helpTab={helpTab } moves={moves } bindings={bindings } gamepadBindings={gamepadBindings } inputMode={inputMode } gamepadIconSet={gamepadIconSet } shortcutSettings={shortcutSettings } customIconSources={customIconSources } appearanceMode={appearanceMode } compatibilityMode={compatibilityMode } live2dEnabled={live2dEnabled } homeSpineId={homeSpineId } homeSpineTransforms={homeSpineTransforms } dlcStatus={dlcStatus } dlcStatusLoading={dlcStatusLoading } exportDirectory={exportDirectory } recordingIndicatorEnabled={recordingIndicatorEnabled } recordingIndicatorCorner={recordingIndicatorCorner } recordingRecognitionSettings={recordingRecognitionSettings } simulatedInputSettings={simulatedInputSettings } canChooseExportDirectory={Boolean(desktop?.pickExportDirectory) } onViewChange={setSettingsView } onHelpTabChange={setHelpTab } onInputModeChange={setInputMode } onGamepadIconSetChange={setGamepadIconSet } onShortcutSettingsChange={setShortcutSettings } onCustomIconSourcesChange={setCustomIconSources } onAppearanceModeChange={setAppearanceMode } onCompatibilityModeChange={setCompatibilityMode } onLive2dEnabledChange={setLive2dEnabled } onHomeSpineIdChange={setHomeSpineId } onHomeSpineTransformChange={(id, transform) => setHomeSpineTransforms((current) => ({ ...current, [id]: transform })) } onOpenDlcFolder={() => { void desktop?.openDlcFolder?.().catch(() => undefined); } } onRefreshDlc={() => { void refreshDlcStatus(); } } onChooseExportDirectory={() => { void chooseExportDirectory();  } } onExportInputSettings={() => { void exportInputSettings();  } } onImportInputSettings={(file) => { void importInputSettings(file);  } } onResetInputBindings={resetInputBindings } onRecordingIndicatorEnabledChange={setRecordingIndicatorEnabled } onRecordingIndicatorCornerChange={setRecordingIndicatorCorner } onRecordingRecognitionSettingsChange={updateRecordingRecognitionSettings } onSimulatedInputSettingsChange={updateSimulatedInputSettings } onOpenRealtimeVisionSettings={openRealtimeVisionSettings } onMoveChange={updateMove } onBindingChange={updateBinding } onGamepadBindingChange={updateGamepadBinding } /> }
+        {page === 'settings' && <SettingsPanel view={settingsView } helpTab={helpTab } moves={moves } bindings={bindings } gamepadBindings={gamepadBindings } inputMode={inputMode } gamepadIconSet={gamepadIconSet } shortcutSettings={shortcutSettings } customIconSources={customIconSources } appearanceMode={appearanceMode } compatibilityMode={compatibilityMode } live2dEnabled={live2dEnabled } homeSpineId={homeSpineId } homeSpineTransforms={homeSpineTransforms } dlcStatus={dlcStatus } dlcStatusLoading={dlcStatusLoading } exportDirectory={exportDirectory } recordingIndicatorEnabled={recordingIndicatorEnabled } recordingIndicatorCorner={recordingIndicatorCorner } recordingRecognitionSettings={recordingRecognitionSettings } canChooseExportDirectory={Boolean(desktop?.pickExportDirectory) } onViewChange={setSettingsView } onHelpTabChange={setHelpTab } onInputModeChange={setInputMode } onGamepadIconSetChange={setGamepadIconSet } onShortcutSettingsChange={setShortcutSettings } onCustomIconSourcesChange={setCustomIconSources } onAppearanceModeChange={setAppearanceMode } onCompatibilityModeChange={setCompatibilityMode } onLive2dEnabledChange={setLive2dEnabled } onHomeSpineIdChange={setHomeSpineId } onHomeSpineTransformChange={(id, transform) => setHomeSpineTransforms((current) => ({ ...current, [id]: transform })) } onOpenDlcFolder={() => { void desktop?.openDlcFolder?.().catch(() => undefined); } } onRefreshDlc={() => { void refreshDlcStatus(); } } onChooseExportDirectory={() => { void chooseExportDirectory();  } } onExportInputSettings={() => { void exportInputSettings();  } } onImportInputSettings={(file) => { void importInputSettings(file);  } } onResetInputBindings={resetInputBindings } onRecordingIndicatorEnabledChange={setRecordingIndicatorEnabled } onRecordingIndicatorCornerChange={setRecordingIndicatorCorner } onRecordingRecognitionSettingsChange={updateRecordingRecognitionSettings } onOpenRealtimeVisionSettings={openRealtimeVisionSettings } onMoveChange={updateMove } onBindingChange={updateBinding } onGamepadBindingChange={updateGamepadBinding } /> }
       </main>
-      {quickInputOpen && practiceChart && <QuickInputDialog chart={practiceChart  } style={comboImageStyle } initialValues={quickInputMemory } startStepId={quickInputStartStepId } onApply={applyQuickInput } onClose={() => setQuickInputOpen(false) } /> }
+      {quickInputOpen && (quickInputTarget === 'simulated' ? simulatedInputChart : practiceChart) && <QuickInputDialog chart={(quickInputTarget === 'simulated' ? simulatedInputChart : practiceChart)! } style={quickInputTarget === 'simulated' ? simulatedInputTimelineStyle : comboImageStyle } initialValues={quickInputTarget === 'simulated' ? simulatedInputQuickInputMemory : quickInputMemory } startStepId={quickInputStartStepId } onApply={applyQuickInput } onClose={() => setQuickInputOpen(false) } /> }
       {!desktop && <InlineOverlayNotesFallback chart={overlayPracticeChart } practice={practice } visible={overlayVisible } moveMode={overlayNoteMoveMode } showNotesSeparately={activeOverlayComboImageStyle.showNotesSeparately } noteStyle={activeOverlayComboImageStyle } bounds={activeOverlayNoteBounds } visibleStepIds={overlayVisibleNoteStepIds } onBoundsChange={(next) => setOverlayNoteLayoutBounds((current) => ({ ...current, [overlaySettings.layout]: normalizeOverlayNoteBounds(next, current[overlaySettings.layout]) })) } />}
       <TeamSelectionDialog open={quickTeamSelectionOpen} avatarPresets={defaultAvatars} customAvatarPresets={comboImageStyle.avatarPresets} onClose={() => setQuickTeamSelectionOpen(false)} onApply={applyQuickTeamSelection} onSave={saveQuickTeamPreset} />
       {shareDraft && chart && <CommunityShareDialog draft={shareDraft } onChange={setShareDraft } onExport={() => void exportSharedChart(shareDraft) } onUploadCommunity={() => uploadSharedChartToCommunity(shareDraft) } onClose={() => { setSharePreflightWarning(null); setShareDraft(null);  } } /> }
       {shareDraft && sharePreflightWarning && <SharePreflightWarningDialog warning={sharePreflightWarning } onEdit={() => { const needsPeriods = sharePreflightWarning.missingStartup || sharePreflightWarning.missingLoop; setSharePreflightWarning(null); setShareDraft(null); setPage('record'); setEditorTab(needsPeriods ? 'timeline' : 'content');  } } onContinue={() => setSharePreflightWarning(null) } /> }
-      {videoWorkbenchMounted && chart && <Suspense fallback={moduleLoadingFallback }><VideoAxisWorkbench open={videoWorkbenchOpen } desktop={desktop } chart={chart } moves={moves } startingCharacterSlot={startingCharacterSlot } recognitionBasedOnTextAxis={recognitionBasedOnTextAxis } comboImageStyle={activeRenderComboImageStyle } timelineContentLabels={comboImageStyle.contentLabels } overlaySettings={overlaySettings } rhythmUiSettings={rhythmUiSettings } shortcutSettings={shortcutSettings } exportDirectory={exportDirectory } ensureExportDirectory={ensureExportDirectory } timelineEditor={<TimelineEditor chart={chart } moves={moves } bindings={activeRuntimeBindings } shortcutSettings={shortcutSettings } inputSignal={timelinePlacementInputSignal } comboImageStyle={comboImageStyle } clipboardControl={{ value: timelineClipboard, onChange: setTimelineClipboard  }} mode={editorTab } onModeChange={setEditorTab } zoom={editorZoom } onZoomChange={setEditorZoom } onUpdate={updateStep } onInsert={insertSteps } onDelete={deleteSteps } onPeriodsChange={updatePeriods } onContentChange={updateComboImageStyle } onQuickInput={(stepId) => { setQuickInputStartStepId(stepId); setQuickInputOpen(true);  } } onSave={saveCurrentChart } historyControl={{ canUndo: timelineUndoStack.length > 0, canRedo: timelineRedoStack.length > 0, onCaptureHistory: captureTimelineHistory, onUndo: undoTimeline, onRedo: redoTimeline  }} /> } onApplyChart={applyVideoWorkbenchChart } onApplyContentLabels={(contentLabels) => updateComboImageStyle({ contentLabels }) } onClose={() => { setVideoWorkbenchOpen(false); setVideoWorkbenchMounted(false);  } } onSave={saveCurrentChart } getDisplaySize={getDisplaySize } /></Suspense> }
+      {videoWorkbenchMounted && chart && <Suspense fallback={moduleLoadingFallback }><VideoAxisWorkbench open={videoWorkbenchOpen } desktop={desktop } chart={chart } moves={moves } startingCharacterSlot={startingCharacterSlot } recognitionBasedOnTextAxis={recognitionBasedOnTextAxis } comboImageStyle={activeRenderComboImageStyle } timelineContentLabels={comboImageStyle.contentLabels } overlaySettings={overlaySettings } rhythmUiSettings={rhythmUiSettings } shortcutSettings={shortcutSettings } exportDirectory={exportDirectory } ensureExportDirectory={ensureExportDirectory } timelineEditor={<TimelineEditor chart={chart } moves={moves } bindings={activeRuntimeBindings } shortcutSettings={shortcutSettings } inputSignal={timelinePlacementInputSignal } comboImageStyle={comboImageStyle } clipboardControl={{ value: timelineClipboard, onChange: setTimelineClipboard  }} mode={editorTab } onModeChange={setEditorTab } zoom={editorZoom } onZoomChange={setEditorZoom } onUpdate={updateStep } onInsert={insertSteps } onDelete={deleteSteps } onPeriodsChange={updatePeriods } onContentChange={updateComboImageStyle } onQuickInput={(stepId) => openQuickInput(stepId)} onSave={saveCurrentChart } historyControl={{ canUndo: timelineUndoStack.length > 0, canRedo: timelineRedoStack.length > 0, onCaptureHistory: captureTimelineHistory, onUndo: undoTimeline, onRedo: redoTimeline  }} /> } onApplyChart={applyVideoWorkbenchChart } onApplyContentLabels={(contentLabels) => updateComboImageStyle({ contentLabels }) } onClose={() => { setVideoWorkbenchOpen(false); setVideoWorkbenchMounted(false);  } } onSave={saveCurrentChart } getDisplaySize={getDisplaySize } /></Suspense> }
       {textAxisImportOpen && <TextAxisImportDialog moves={moves } characters={CHARACTER_SLOTS.map((slot) => ({ slot, names: [localizeDefaultCharacterName(comboImageStyle.roleStyles[slot].name, slot, language), comboImageStyle.roleStyles[slot].name, localizeCharacterName(comboImageStyle.roleStyles[slot].name, 'zh-CN')]  })) } chart={chart } contentLabels={comboImageStyle.contentLabels } startingCharacterSlot={startingCharacterSlot } title={chartTitle || chart?.title || text('文字轴', 'Text Axis') } recognitionBasedOnTextAxis={recognitionBasedOnTextAxis } onRecognitionBasedOnTextAxisChange={setRecognitionBasedOnTextAxis } onApply={applyTextAxisImport } onClose={() => setTextAxisImportOpen(false) } /> }
       {firstRunHelpPromptOpen && <div className="first-run-help-backdrop" role="presentation"><div className="first-run-help-dialog" role="alertdialog" aria-modal="true" aria-labelledby="first-run-help-title"><BookOpen size={28 } /><h3 id="first-run-help-title">{helpContent.firstRunTitle}</h3><p>{helpContent.firstRunDescription}</p><strong className="first-run-free-warning">{helpContent.firstRunFreeWarning}</strong><div><button type="button" onClick={() => setFirstRunHelpPromptOpen(false) }>{helpContent.continueWithoutHelp}</button><button type="button" onClick={() => { setFirstRunHelpPromptOpen(false); setSettingsView('help'); setHelpTab('learner'); setPage('settings');  } }>{helpContent.openHelp}</button><button className="primary first-run-video-link" type="button" onClick={() => void openExternalUrl(TUTORIAL_VIDEO_URL)}><img src="/bilibili.png" alt="" />{helpContent.tutorialVideoLabel}</button></div></div></div> }
     </div>
@@ -5341,6 +5631,9 @@ function TimelineEditor({ chart, moves, bindings, shortcutSettings, inputSignal,
   const [selectedId, setSelectedId] = useState(chart.steps[0]?.id ?? '');
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const continuousDeleteTimersRef = useRef(new Map<string, number>());
+  const lastContinuousDeletePointerRef = useRef<{ stepId: string; time: number } | null>(null);
+  const continuousDeleteModeRef = useRef(false);
 
   useEffect(() => {
     onSelectionChange?.(selectedIds);
@@ -5348,11 +5641,15 @@ function TimelineEditor({ chart, moves, bindings, shortcutSettings, inputSignal,
   const [selectionBox, setSelectionBox] = useState<SelectionBox | null>(null);
   const [selectedPeriodId, setSelectedPeriodId] = useState('');
   const [pending, setPending] = useState<PendingPlacement | null>(null);
+  continuousDeleteModeRef.current = pending?.kind === 'delete';
   const [lastPlacementMoveId, setLastPlacementMoveId] = useState<string | null>(null);
   const [lastPlacementAdaptiveSwitch, setLastPlacementAdaptiveSwitch] = useState(false);
   const [lastPlacementContentLabel, setLastPlacementContentLabel] = useState<string | null>(null);
   const [lastPlacementContentSuffix, setLastPlacementContentSuffix] = useState<string | null>(null);
   const [compactAddMenuOpen, setCompactAddMenuOpen] = useState(false);
+  const [timelineToolbarGroup, setTimelineToolbarGroup] = useState<TimelineToolbarGroup>(null);
+  const [timelineToolbarPressMode, setTimelineToolbarPressMode] = useState<TimelineToolbarPressMode>('tap');
+  const [timelineToolbarEditMode, setTimelineToolbarEditMode] = useState<TimelineToolbarEditMode>(null);
   const [playbackMenuOpen, setPlaybackMenuOpen] = useState(false);
   const [pendingPoint, setPendingPoint] = useState<TimelinePlacementPoint | null>(null);
   const copiedSelection = clipboardControl.value;
@@ -5402,9 +5699,11 @@ function TimelineEditor({ chart, moves, bindings, shortcutSettings, inputSignal,
   } as CSSProperties : undefined;
   const activeHistoryControl = historyControl;
   const timelineReadOnly = readOnly === true;
+  const nestedTimelineToolbarEnabled = !videoCompactMode || Boolean(videoLayerTransformControl);
   const actionMoves = moves.filter((move) => move.id !== 'start_challenge' && move.id !== 'stop_recording');
   const contextChangeMoves = actionMoves.filter((move) => !['switch_2', 'switch_3', 'switch_4'].includes(move.id));
   const placeableMoves = actionMoves;
+  const timelineToolbarMoveTools = TIMELINE_TOOLBAR_MOVE_TOOLS[timelineToolbarPressMode].filter((tool) => placeableMoves.some((move) => move.id === tool.moveId));
   const activePlacedMove = pending?.kind === 'move' ? placeableMoves.find((move) => move.id === pending.moveId) ?? placeableMoves[0] ?? null : null;
   useEffect(() => {
     if (pending && timingKeyframeControl?.active) timingKeyframeControl.onToggle();
@@ -5649,13 +5948,35 @@ function TimelineEditor({ chart, moves, bindings, shortcutSettings, inputSignal,
    }, [pending?.kind, pending?.kind === 'move' ? pending.moveId : null]);
 
   useEffect(() => {
+    if (pending?.kind === 'delete') return;
+    continuousDeleteTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+    continuousDeleteTimersRef.current.clear();
+    lastContinuousDeletePointerRef.current = null;
+   }, [pending?.kind]);
+
+  useEffect(() => () => {
+    continuousDeleteTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+    continuousDeleteTimersRef.current.clear();
+   }, []);
+
+  useEffect(() => {
     if (!timelineReadOnly) return;
     setPending(null);
     setPendingPoint(null);
     setCompactAddMenuOpen(false);
+    setTimelineToolbarGroup(null);
+    setTimelineToolbarEditMode(null);
     setContext(null);
     setActiveContextSubmenu(null);
    }, [timelineReadOnly]);
+
+  useEffect(() => {
+    setPending(null);
+    setPendingPoint(null);
+    setTimelineToolbarGroup(null);
+    setTimelineToolbarPressMode('tap');
+    setTimelineToolbarEditMode(null);
+   }, [chart.id]);
 
   useEffect(() => {
     if (!pending) return;
@@ -5680,6 +6001,7 @@ function TimelineEditor({ chart, moves, bindings, shortcutSettings, inputSignal,
       setLastPlacementAdaptiveSwitch(true);
       setLastPlacementContentLabel(null);
       setLastPlacementContentSuffix('b');
+      showTimelineAddToolbarForMove(switchMove.id);
       return true;
     }
     if (shortcutMatchesCode(code, shiftKey, shortcutSettings.timelineAdaptiveSwitch)) {
@@ -5690,6 +6012,7 @@ function TimelineEditor({ chart, moves, bindings, shortcutSettings, inputSignal,
       setLastPlacementAdaptiveSwitch(true);
       setLastPlacementContentLabel(null);
       setLastPlacementContentSuffix(null);
+      showTimelineAddToolbarForMove(switchMove.id);
       return true;
     }
     const shortcutMove = TIMELINE_PLACEMENT_SHORTCUT_MOVES.find(([action]) => shortcutMatchesCode(code, shiftKey, shortcutSettings[action]));
@@ -5704,11 +6027,16 @@ function TimelineEditor({ chart, moves, bindings, shortcutSettings, inputSignal,
     setLastPlacementAdaptiveSwitch(false);
     setLastPlacementContentLabel(shortcutContentLabel ?? null);
     setLastPlacementContentSuffix(null);
+    showTimelineAddToolbarForMove(move.id);
     return true;
    }
 
   function togglePendingPeriodPlacement(): boolean {
     if (pending?.kind !== 'move' && pending?.kind !== 'period') return false;
+    if (nestedTimelineToolbarEnabled) {
+      setTimelineToolbarGroup('add');
+      setTimelineToolbarEditMode(null);
+    }
     if (pending.kind === 'period') {
       const moveId = lastPlacementMoveId ?? placeableMoves[0]?.id;
       if (moveId) setPending({ kind: 'move', moveId, adaptiveSwitch: lastPlacementAdaptiveSwitch || undefined, contentLabel: lastPlacementContentLabel ?? undefined, contentSuffix: lastPlacementContentSuffix ?? undefined  });
@@ -5870,11 +6198,15 @@ function TimelineEditor({ chart, moves, bindings, shortcutSettings, inputSignal,
         const pointerMs = lastTimelinePointerMsRef.current;
         if (selectedIds.length && pointerMs !== null && splitSelectedStepsAtPointer(pointerMs)) return;
         if (pending?.kind === 'cut') endSpecialPlacement();
-        else {
-          setPending({ kind: 'cut' });
-          setPendingPoint(null);
-          setCompactAddMenuOpen(false);
-        }
+         else {
+           setPending({ kind: 'cut' });
+           setPendingPoint(null);
+           setCompactAddMenuOpen(false);
+           if (nestedTimelineToolbarEnabled) {
+             setTimelineToolbarGroup('edit');
+             setTimelineToolbarEditMode(null);
+           }
+         }
         return;
       }
       if (shortcutMatches(event, shortcutSettings.timelineMerge)) {
@@ -5910,10 +6242,11 @@ function TimelineEditor({ chart, moves, bindings, shortcutSettings, inputSignal,
         setLastPlacementMoveId(move.id);
         setLastPlacementAdaptiveSwitch(false);
         setLastPlacementContentLabel(null);
-        setLastPlacementContentSuffix(null);
-        setPendingPoint(null);
-        setCompactAddMenuOpen(false);
-        return;
+         setLastPlacementContentSuffix(null);
+         setPendingPoint(null);
+         setCompactAddMenuOpen(false);
+         showTimelineAddToolbarForMove(move.id);
+         return;
       }
       if (pending?.kind !== 'move' && pending?.kind !== 'period') return;
       if (pending?.kind !== 'move') return;
@@ -5957,6 +6290,7 @@ function TimelineEditor({ chart, moves, bindings, shortcutSettings, inputSignal,
       setLastPlacementContentSuffix(null);
       setPendingPoint(null);
       setCompactAddMenuOpen(false);
+      showTimelineAddToolbarForMove(move.id);
       return;
     }
     if (pending.kind === 'move') switchPendingMoveByInput(inputSignal.code, Boolean(inputSignal.shiftKey));
@@ -6216,6 +6550,201 @@ function TimelineEditor({ chart, moves, bindings, shortcutSettings, inputSignal,
     setSelectedPeriodId('');
    }
 
+  function timelineToolbarSelectedStepIds(): string[] {
+    return selectedIds.filter((stepId) => chart.steps.some((step) => step.id === stepId));
+   }
+
+  function timelineToolbarMoveToolLabel(tool: TimelineToolbarMoveTool): string {
+    if (tool.contentLabel === 'f') return text('处决', 'Tunebreak');
+    if (tool.adaptiveSwitch) return text('自适应切人', 'Adaptive Switch');
+    const move = placeableMoves.find((candidate) => candidate.id === tool.moveId);
+    return move ? localizedMoveDefinitionLabel(move, language) : tool.moveId;
+   }
+
+  function timelineToolbarMoveToolTitle(tool: TimelineToolbarMoveTool): string {
+    const shortcut = tool.shortcutAction ? shortcutDisplayLabel(shortcutSettings[tool.shortcutAction]) : '';
+    const label = timelineToolbarMoveToolLabel(tool);
+    return shortcut ? `${label } (${shortcut })` : label;
+   }
+
+  function showTimelineAddToolbarForMove(moveId: string) {
+    if (!nestedTimelineToolbarEnabled) return;
+    const inTapTools = TIMELINE_TOOLBAR_MOVE_TOOLS.tap.some((tool) => tool.moveId === moveId);
+    const inHoldTools = TIMELINE_TOOLBAR_MOVE_TOOLS.hold.some((tool) => tool.moveId === moveId);
+    setTimelineToolbarGroup('add');
+    setTimelineToolbarEditMode(null);
+    if (inHoldTools && !inTapTools) setTimelineToolbarPressMode('hold');
+    if (inTapTools && !inHoldTools) setTimelineToolbarPressMode('tap');
+   }
+
+  function startTimelineMovePlacement(tool: TimelineToolbarMoveTool) {
+    if (timelineReadOnly) return;
+    const move = placeableMoves.find((candidate) => candidate.id === tool.moveId);
+    if (!move) return;
+    setPending({ kind: 'move', moveId: move.id, adaptiveSwitch: tool.adaptiveSwitch || undefined, contentLabel: tool.contentLabel  });
+    setLastPlacementMoveId(move.id);
+    setLastPlacementAdaptiveSwitch(Boolean(tool.adaptiveSwitch));
+    setLastPlacementContentLabel(tool.contentLabel ?? null);
+    setLastPlacementContentSuffix(null);
+    setPendingPoint(null);
+    setCompactAddMenuOpen(false);
+    showTimelineAddToolbarForMove(move.id);
+   }
+
+  function startTimelinePeriodPlacement() {
+    if (timelineReadOnly) return;
+    if (pending?.kind === 'move') {
+      setLastPlacementMoveId(pending.moveId);
+      setLastPlacementAdaptiveSwitch(Boolean(pending.adaptiveSwitch));
+      setLastPlacementContentLabel(pending.contentLabel ?? null);
+      setLastPlacementContentSuffix(pending.contentSuffix ?? null);
+    }
+    setPending({ kind: 'period' });
+    setPendingPoint(null);
+    setCompactAddMenuOpen(false);
+    setTimelineToolbarGroup('add');
+    setTimelineToolbarEditMode(null);
+   }
+
+  function toggleTimelineToolbarGroup(group: Exclude<TimelineToolbarGroup, null>) {
+    if (timelineReadOnly) return;
+    if (timelineToolbarGroup === group) {
+      endSpecialPlacement();
+      return;
+    }
+    setPending(null);
+    setPendingPoint(null);
+    setCompactAddMenuOpen(false);
+    setTimelineToolbarGroup(group);
+    setTimelineToolbarEditMode(null);
+    if (group === 'modify') {
+      setTimelineToolbarPressMode('tap');
+      return;
+    }
+    if (group !== 'add') return;
+    setTimelineToolbarPressMode('tap');
+    const defaultTool = TIMELINE_TOOLBAR_MOVE_TOOLS.tap.find((tool) => placeableMoves.some((move) => move.id === tool.moveId));
+    if (!defaultTool) return;
+    setPending({ kind: 'move', moveId: defaultTool.moveId, adaptiveSwitch: defaultTool.adaptiveSwitch || undefined, contentLabel: defaultTool.contentLabel  });
+    setLastPlacementMoveId(defaultTool.moveId);
+    setLastPlacementAdaptiveSwitch(Boolean(defaultTool.adaptiveSwitch));
+    setLastPlacementContentLabel(defaultTool.contentLabel ?? null);
+    setLastPlacementContentSuffix(null);
+   }
+
+  function toggleTimelineToolbarPressMode() {
+    const nextMode: TimelineToolbarPressMode = timelineToolbarPressMode === 'tap' ? 'hold' : 'tap';
+    setTimelineToolbarPressMode(nextMode);
+    if (timelineToolbarGroup !== 'add') return;
+    const nextTool = TIMELINE_TOOLBAR_MOVE_TOOLS[nextMode].find((tool) => placeableMoves.some((move) => move.id === tool.moveId));
+    if (nextTool) startTimelineMovePlacement(nextTool);
+   }
+
+  function applyTimelineToolbarMoveTool(tool: TimelineToolbarMoveTool) {
+    const stepIds = timelineToolbarSelectedStepIds();
+    if (!stepIds.length) return;
+    const move = placeableMoves.find((candidate) => candidate.id === tool.moveId);
+    if (!move) return;
+    applyMoveToSteps(stepIds, move, Boolean(tool.adaptiveSwitch));
+    if (tool.contentLabel) {
+      const contentLabels = { ...comboImageStyle.contentLabels  };
+      stepIds.forEach((stepId) => {
+        contentLabels[stepId] = maybeConvertTextToIconLabel(tool.contentLabel!, comboImageStyle.convertIcons);
+       });
+      onContentChange({ contentLabels  });
+    }
+   }
+
+  function appendTimelineToolbarContent(suffix: 'b' | 'y') {
+    if (timelineReadOnly) return;
+    const stepIds = timelineToolbarSelectedStepIds();
+    if (!stepIds.length) return;
+    activeHistoryControl?.onCaptureHistory();
+    const contentLabels = { ...comboImageStyle.contentLabels  };
+    chart.steps.filter((step) => stepIds.includes(step.id)).forEach((step) => {
+      const currentContent = contentLabels[step.id]?.trim() || defaultComboContentLabelForMoveId(step.moveId) || '';
+      contentLabels[step.id] = maybeConvertTextToIconLabel(`${currentContent }${suffix }`, comboImageStyle.convertIcons);
+     });
+    onContentChange({ contentLabels  });
+   }
+
+  function copyTimelineToolbarSelection() {
+    const selection = copiedSelectionFromActiveSelection();
+    if (!selection) return;
+    setCopiedSelection(selection);
+    setContext(null);
+   }
+
+  function cutTimelineToolbarSelection() {
+    if (timelineReadOnly) return;
+    const selection = copiedSelectionFromActiveSelection();
+    if (!selection) return;
+    activeHistoryControl?.onCaptureHistory();
+    setCopiedSelection(selection);
+    if (selectedPeriodId) {
+      const copiedStepIds = selection.steps.map((step) => step.id);
+      if (copiedStepIds.length) onDelete(copiedStepIds);
+      onPeriodsChange(periods.filter((period) => period.id !== selectedPeriodId));
+      setSelectedPeriodId('');
+      setSelectedIds((current) => current.filter((stepId) => !copiedStepIds.includes(stepId)));
+    } else {
+      const stepIds = selection.steps.map((step) => step.id);
+      onDelete(stepIds);
+      setSelectedIds([]);
+      setSelectedId(chart.steps.find((step) => !stepIds.includes(step.id))?.id ?? '');
+    }
+    setContext(null);
+   }
+
+  function deleteTimelineToolbarSelection() {
+    if (timelineReadOnly) return;
+    const stepIds = timelineToolbarSelectedStepIds();
+    if (selectedPeriodId && periods.some((period) => period.id === selectedPeriodId)) {
+      activeHistoryControl?.onCaptureHistory();
+      onPeriodsChange(periods.filter((period) => period.id !== selectedPeriodId));
+      setSelectedPeriodId('');
+      setContext(null);
+      return;
+    }
+    if (stepIds.length) {
+      activeHistoryControl?.onCaptureHistory();
+      onDelete(stepIds);
+      setSelectedIds([]);
+      setSelectedId(chart.steps.find((step) => !stepIds.includes(step.id))?.id ?? '');
+      setContext(null);
+      return;
+    }
+    toggleContinuousDelete();
+   }
+
+  function toggleTimelineToolbarSplit() {
+    if (timelineReadOnly) return;
+    const pointerMs = lastTimelinePointerMsRef.current;
+    if (timelineToolbarSelectedStepIds().length && pointerMs !== null && splitSelectedStepsAtPointer(pointerMs)) return;
+    if (pending?.kind === 'cut') {
+      setPending(null);
+      setPendingPoint(null);
+      return;
+    }
+    setPending({ kind: 'cut' });
+    setPendingPoint(null);
+    setCompactAddMenuOpen(false);
+    setTimelineToolbarGroup('edit');
+    setTimelineToolbarEditMode(null);
+   }
+
+  function toggleTimelineToolbarMultiSelect() {
+    const leavingMultiSelect = timelineToolbarEditMode === 'multi';
+    setPending(null);
+    setPendingPoint(null);
+    setTimelineToolbarEditMode(leavingMultiSelect ? null : 'multi');
+    if (leavingMultiSelect) {
+      setSelectedIds([]);
+      setSelectedId('');
+      setSelectedPeriodId('');
+    }
+   }
+
   function setPeriodKind(periodId: string, kind: ComboPeriodKind) {
     if (timelineReadOnly) return;
     const loopIndex = periods.filter((period) => period.kind === 'loop_axis').length + 1;
@@ -6257,17 +6786,27 @@ function TimelineEditor({ chart, moves, bindings, shortcutSettings, inputSignal,
     setPending(null);
     setPendingPoint(null);
     setCompactAddMenuOpen(false);
+    if (nestedTimelineToolbarEnabled) {
+      setTimelineToolbarGroup(null);
+      setTimelineToolbarEditMode(null);
+    }
    }
 
   function toggleContinuousDelete() {
     if (timelineReadOnly) return;
     if (pending?.kind === 'delete') {
-      endSpecialPlacement();
+      setPending(null);
+      setPendingPoint(null);
+      setTimelineToolbarEditMode(null);
       return;
     }
     setPending({ kind: 'delete' });
     setPendingPoint(null);
     setCompactAddMenuOpen(false);
+    if (nestedTimelineToolbarEnabled) {
+      setTimelineToolbarGroup('edit');
+      setTimelineToolbarEditMode('delete');
+    }
    }
 
   function copiedSelectionFromContext(scope: 'steps' | 'periods' | 'all' = 'all'): CopiedTimelineSelection | null {
@@ -6852,13 +7391,29 @@ function TimelineEditor({ chart, moves, bindings, shortcutSettings, inputSignal,
 
   function deleteStepInContinuousMode(event: ReactPointerEvent<HTMLDivElement>, stepId: string) {
     if (timelineReadOnly) return;
-    if (pending?.kind !== 'delete' || event.button !== 0) return;
+    if (!continuousDeleteModeRef.current || event.button !== 0) return;
     event.preventDefault();
     event.stopPropagation();
-    activeHistoryControl?.onCaptureHistory();
-    onDelete([stepId]);
-    setSelectedIds((current) => current.filter((id) => id !== stepId));
-    if (selectedId === stepId) setSelectedId(chart.steps.find((step) => step.id !== stepId)?.id ?? '');
+    event.nativeEvent.stopImmediatePropagation();
+    const now = performance.now();
+    const previous = lastContinuousDeletePointerRef.current;
+    const timer = continuousDeleteTimersRef.current.get(stepId);
+    const isDoubleClick = event.detail >= 2 || Boolean(previous && previous.stepId === stepId && now - previous.time < 500);
+    if (timer !== undefined) {
+      window.clearTimeout(timer);
+      continuousDeleteTimersRef.current.delete(stepId);
+    }
+    lastContinuousDeletePointerRef.current = isDoubleClick ? null : { stepId, time: now };
+    if (isDoubleClick) return;
+    const deleteTimer = window.setTimeout(() => {
+      continuousDeleteTimersRef.current.delete(stepId);
+      if (!continuousDeleteModeRef.current || !chart.steps.some((step) => step.id === stepId)) return;
+      activeHistoryControl?.onCaptureHistory();
+      onDelete([stepId]);
+      setSelectedIds((current) => current.filter((id) => id !== stepId));
+      if (selectedId === stepId) setSelectedId(chart.steps.find((step) => step.id !== stepId)?.id ?? '');
+    }, 500);
+    continuousDeleteTimersRef.current.set(stepId, deleteTimer);
    }
 
   function beginBoxSelect(event: ReactPointerEvent<HTMLDivElement>) {
@@ -6873,7 +7428,7 @@ function TimelineEditor({ chart, moves, bindings, shortcutSettings, inputSignal,
     const startY = clamp(event.clientY - initialBodyRect.top, 0, initialBodyRect.height);
     const startClientX = event.clientX;
     const startClientY = event.clientY;
-    const additive = event.ctrlKey;
+    const additive = event.ctrlKey || timelineToolbarEditMode === 'multi';
     let selecting = false;
     let lastClientX = event.clientX;
     let lastClientY = event.clientY;
@@ -7001,6 +7556,10 @@ function TimelineEditor({ chart, moves, bindings, shortcutSettings, inputSignal,
     setPendingPoint(lastTimelinePlacementPointRef.current);
     setContext(null);
     setCompactAddMenuOpen(false);
+    if (nestedTimelineToolbarEnabled) {
+      setTimelineToolbarGroup('edit');
+      setTimelineToolbarEditMode(null);
+    }
    }
 
   function copyContextStepsAndStartPlacement() {
@@ -7236,42 +7795,101 @@ function TimelineEditor({ chart, moves, bindings, shortcutSettings, inputSignal,
     {timelinePanelControl.collapsed ? <PanelBottomOpen size={16} /> : <PanelBottomClose size={16} />}<HoldDragFeedback vertical wheel />
   </button>;
   const toolbarNode = videoCompactMode ? (
-    <div className="timeline-editor-video-tools" onPointerDown={(event) => event.stopPropagation()}>
+    <div className={`timeline-editor-video-tools ${nestedTimelineToolbarEnabled ? 'video-timeline-nested-toolbar' : ''}`} onPointerDown={(event) => event.stopPropagation()}>
       {timelinePanelControl?.collapsed ? <>{timelineReadOnly && <span className="timeline-lock-status" role="status"><Lock size={14 } />{text('已锁定', 'Locked') }</span>}{timelinePanelToggle}</> : <>
         {timelineReadOnly && <span className="timeline-lock-status" role="status"><Lock size={14 } />{text('已锁定', 'Locked') }</span>}
+        {nestedTimelineToolbarEnabled ? <>
+          {timelineToolbarGroup === 'add' ? <>
+            <button type="button" className="timeline-toolbar-group-trigger active" title={text('退出添加模式', 'Exit Add mode')} aria-label={text('退出添加模式', 'Exit Add mode')} onClick={() => toggleTimelineToolbarGroup('add')}><Plus size={18 } /></button>
+            <button type="button" className={`timeline-toolbar-press-mode ${timelineToolbarPressMode === 'hold' ? 'active' : ''}`} title={timelineToolbarPressMode === 'tap' ? text('切换为长按招式', 'Switch to hold actions') : text('切换为点按招式', 'Switch to tap actions')} onClick={toggleTimelineToolbarPressMode}><b>{timelineToolbarPressMode === 'tap' ? text('点', 'Tap') : text('长', 'Hold') }</b></button>
+            {timelineToolbarMoveTools.map((tool) => {
+              const active = pending?.kind === 'move' && pending.moveId === tool.moveId && Boolean(pending.adaptiveSwitch) === Boolean(tool.adaptiveSwitch) && (pending.contentLabel ?? null) === (tool.contentLabel ?? null);
+              return <button type="button" key={`${timelineToolbarPressMode }-${tool.moveId }-${tool.contentLabel ?? '' }-${tool.adaptiveSwitch ? 'adaptive' : ''}`} className={`icon-button timeline-toolbar-move-tool ${active ? 'active' : ''}`} title={timelineToolbarMoveToolTitle(tool)} aria-label={timelineToolbarMoveToolLabel(tool)} onClick={() => startTimelineMovePlacement(tool)}>{tool.adaptiveSwitch ? <Users size={18 } /> : <b>{tool.code }</b>}</button>;
+             })}
+            <span className="timeline-toolbar-divider" aria-hidden="true" />
+            <button type="button" className={`icon-button ${pending?.kind === 'period' ? 'active' : ''}`} title={text('添加时段；X 可在招式和时段间切换', 'Add a period; X switches between actions and periods')} aria-label={text('添加时段', 'Add Period')} onClick={startTimelinePeriodPlacement}><Clock3 size={17 } /></button>
+          </> : timelineToolbarGroup === 'modify' ? <>
+            <button type="button" className="timeline-toolbar-group-trigger active" title={text('退出调整工具', 'Exit Adjust tools')} aria-label={text('退出调整工具', 'Exit Adjust tools')} onClick={() => toggleTimelineToolbarGroup('modify')}><Wrench size={18 } /></button>
+            <button type="button" className={`timeline-toolbar-press-mode ${timelineToolbarPressMode === 'hold' ? 'active' : ''}`} title={timelineToolbarPressMode === 'tap' ? text('切换为长按招式', 'Switch to hold actions') : text('切换为点按招式', 'Switch to tap actions')} onClick={toggleTimelineToolbarPressMode}><b>{timelineToolbarPressMode === 'tap' ? text('点', 'Tap') : text('长', 'Hold') }</b></button>
+            {timelineToolbarMoveTools.map((tool) => <button type="button" key={`${timelineToolbarPressMode }-${tool.moveId }-${tool.contentLabel ?? '' }-${tool.adaptiveSwitch ? 'adaptive' : ''}`} className="icon-button timeline-toolbar-move-tool" disabled={!timelineToolbarSelectedStepIds().length} title={timelineToolbarMoveToolTitle(tool)} aria-label={timelineToolbarMoveToolLabel(tool)} onClick={() => applyTimelineToolbarMoveTool(tool)}>{tool.adaptiveSwitch ? <Users size={18 } /> : <b>{tool.code }</b>}</button>)}
+            <span className="timeline-toolbar-divider" aria-hidden="true" />
+            <button type="button" className="icon-button timeline-toolbar-move-tool" disabled={!timelineToolbarSelectedStepIds().length} title={text('在选中招式内容中追加变奏代码', 'Append the Intro code to selected actions')} aria-label={text('追加变奏', 'Append Intro')} onClick={() => appendTimelineToolbarContent('b')}><b>b</b></button>
+            <button type="button" className="icon-button timeline-toolbar-move-tool" disabled={!timelineToolbarSelectedStepIds().length} title={text('在选中招式内容中追加延奏代码', 'Append the Outro code to selected actions')} aria-label={text('追加延奏', 'Append Outro')} onClick={() => appendTimelineToolbarContent('y')}><b>y</b></button>
+          </> : timelineToolbarGroup === 'edit' ? <>
+            <button type="button" className="timeline-toolbar-group-trigger active" title={text('退出编辑工具', 'Exit Edit tools')} aria-label={text('退出编辑工具', 'Exit Edit tools')} onClick={() => toggleTimelineToolbarGroup('edit')}><Settings size={18 } /></button>
+            <button type="button" className={`icon-button ${timelineToolbarEditMode === 'multi' ? 'active' : ''}`} title={text('多选；普通点击或框选会追加选择', 'Multi-select; regular clicks and box selection add to the selection')} aria-label={text('多选', 'Multi-select')} aria-pressed={timelineToolbarEditMode === 'multi'} onClick={toggleTimelineToolbarMultiSelect}><Layers size={17 } /></button>
+            <button type="button" className="icon-button" disabled={!selectedPeriodId && !timelineToolbarSelectedStepIds().length} title={text('复制选中内容', 'Copy selection')} aria-label={text('复制', 'Copy')} onClick={copyTimelineToolbarSelection}><Copy size={17 } /></button>
+            <button type="button" className="icon-button" disabled={!selectedPeriodId && !timelineToolbarSelectedStepIds().length} title={text('剪切选中内容', 'Cut selection')} aria-label={text('剪切', 'Cut')} onClick={cutTimelineToolbarSelection}><Scissors size={17 } /></button>
+            <button type="button" className={`icon-button ${pending?.kind === 'copy' ? 'active' : ''}`} disabled={!copiedSelection} title={text('粘贴；移动到目标位置后点击放置', 'Paste; move to the target position and click to place')} aria-label={text('粘贴', 'Paste')} onClick={() => startCopyPlacement()}><Clipboard size={17 } /></button>
+            <button type="button" className={`icon-button ${pending?.kind === 'delete' ? 'active' : ''}`} title={text('删除选中内容；没有选中时进入连续删除', 'Delete selection; with no selection, enter continuous delete mode')} aria-label={text('删除', 'Delete')} onClick={deleteTimelineToolbarSelection}><Trash2 size={17 } /></button>
+            <button type="button" className={`icon-button ${pending?.kind === 'cut' ? 'active' : ''}`} title={text('在鼠标位置分割选中块；没有可分割内容时进入连续分割', 'Split selected blocks at the pointer; otherwise enter continuous split mode')} aria-label={text('分割', 'Split')} onClick={toggleTimelineToolbarSplit}><Split size={17 } /></button>
+            <button type="button" className="icon-button" disabled={mergeableStepsFromIds(timelineToolbarSelectedStepIds()).length < 2} title={text('合并选中的同招式、同角色、同轨道块', 'Merge selected blocks with the same action, character, and lane')} aria-label={text('合并', 'Merge')} onClick={() => mergeSteps(mergeableStepsFromIds(timelineToolbarSelectedStepIds()))}><Combine size={17 } /></button>
+          </> : <>
+            {onModeChange && <button type="button" className={`icon-button video-timeline-mode-toggle ${mode === 'content' ? 'active' : ''}`} title={mode === 'timeline' ? text('切换到备注', 'Switch to Notes') : text('切换到时间', 'Switch to Timing')} aria-label={mode === 'timeline' ? text('切换到备注', 'Switch to Notes') : text('切换到时间', 'Switch to Timing')} onClick={() => onModeChange(mode === 'timeline' ? 'content' : 'timeline')}><NotebookPen size={16} /></button>}
+            <button type="button" className="timeline-toolbar-group-trigger" disabled={timelineReadOnly} title={text('添加', 'Add')} aria-label={text('添加', 'Add')} onClick={() => toggleTimelineToolbarGroup('add')}><Plus size={18 } /></button>
+            <button type="button" className="timeline-toolbar-group-trigger" disabled={timelineReadOnly} title={text('调整', 'Adjust')} aria-label={text('调整', 'Adjust')} onClick={() => toggleTimelineToolbarGroup('modify')}><Wrench size={18 } /></button>
+            <button type="button" className="timeline-toolbar-group-trigger" disabled={timelineReadOnly} title={text('编辑', 'Edit')} aria-label={text('编辑', 'Edit')} onClick={() => toggleTimelineToolbarGroup('edit')}><Settings size={18 } /></button>
+          </>}
+        </> : <>
         {onModeChange && <button type="button" className={`icon-button video-timeline-mode-toggle ${mode === 'content' ? 'active' : ''}`} title={mode === 'timeline' ? text('切换到备注', 'Switch to Notes') : text('切换到时间', 'Switch to Timing')} aria-label={mode === 'timeline' ? text('切换到备注', 'Switch to Notes') : text('切换到时间', 'Switch to Timing')} onClick={() => onModeChange(mode === 'timeline' ? 'content' : 'timeline')}><NotebookPen size={16} /></button>}
        {workshopImportControl && <button type="button" className="icon-button afyg-combo-import-tool" title={text('从连段谱导入', 'Import from Combo Charts')} aria-label={text('从连段谱导入', 'Import from Combo Charts')} disabled={workshopImportControl.disabled} onClick={workshopImportControl.onOpen}><FileInput size={16} /></button>}
        {timingKeyframeControl && <button type="button" className={`icon-button afyg-keyframe-tool ${timingKeyframeControl.active ? 'active' : ''}`} title={timingKeyframeControl.active ? text('退出关键帧连续放置', 'Exit continuous keyframe placement') : text('连续放置时间关键帧', 'Continuously place timing keyframes')} aria-label={text('时间关键帧', 'Timing Keyframes')} aria-pressed={timingKeyframeControl.active} disabled={timingKeyframeControl.disabled || timelineReadOnly} onClick={() => { if (!timingKeyframeControl.active && pending) endSpecialPlacement(); timingKeyframeControl.onToggle(); }}><Diamond size={16} /></button>}
        {referenceTimingControl && <button type="button" className="icon-button afyg-reference-timing-tool" title={referenceTimingControl.disabled ? text('AFYG 时间记点配置当前不可用', 'AFYG timing markers are currently unavailable') : text('打开 AFYG 时间记点配置', 'Open AFYG timing marker settings')} aria-label={text('AFYG 时间记点配置', 'AFYG timing marker settings')} disabled={referenceTimingControl.disabled || referenceTimingControl.busy} onClick={referenceTimingControl.onOpen}>{referenceTimingControl.busy ? <RefreshCw className="spin" size={16} /> : <Clock3 size={16} />}</button>}
        <button className={`icon-button ${pending?.kind === 'delete' ? 'active' : ''}`} disabled={timelineReadOnly } title={text('连续删除招式块；右键退出', 'Continuously delete action blocks; right-click to exit') } onClick={toggleContinuousDelete}><Trash2 size={16} /></button>
        <button className={`icon-button ${pending?.kind === 'cut' ? 'active' : ''}`} disabled={timelineReadOnly } title={text('裁剪招式块', 'Split Action Block') } onClick={() => { if (pending?.kind === 'cut') endSpecialPlacement(); else { setPending({ kind: 'cut' }); setPendingPoint(null); setCompactAddMenuOpen(false); } }}><Scissors size={16} /></button>
-       {videoLayerTransformControl && <button className={`icon-button hold-drag-control ${videoLayerTransformControl.active ? 'active' : ''}`} title={text('点击移动连段图；左右拖动缩放；长按3秒复位', 'Click to move the combo layer; drag horizontally to scale; hold 3 seconds to reset') } aria-label={text('移动缩放连段图', 'Move or scale combo layer')} onClick={videoLayerTransformControl.onToggle} onPointerDown={videoLayerTransformControl.onScalePointerDown} onPointerMove={videoLayerTransformControl.onScalePointerMove} onPointerUp={videoLayerTransformControl.onScalePointerUp} onPointerCancel={videoLayerTransformControl.onScalePointerUp}><Move size={16} /><HoldDragFeedback /></button>}
-       {videoNoteTransformControl && <button className={`icon-button video-note-move-trigger hold-drag-control ${videoNoteTransformControl.active ? 'active' : ''}`} title={text('点击移动提示区；左右拖动缩放；长按3秒复位', 'Click to move the note area; drag horizontally to scale; hold 3 seconds to reset')} aria-label={text('移动缩放视频提示区', 'Move or scale video note area')} onClick={videoNoteTransformControl.onToggle} onPointerDown={videoNoteTransformControl.onScalePointerDown} onPointerMove={videoNoteTransformControl.onScalePointerMove} onPointerUp={videoNoteTransformControl.onScalePointerUp} onPointerCancel={videoNoteTransformControl.onScalePointerUp} disabled={videoNoteTransformControl.disabled}><Move size={16} /><HoldDragFeedback /></button>}
       <button className={`icon-button ${pending?.kind === 'move' || pending?.kind === 'period' ? 'active' : ''}`} disabled={timelineReadOnly } title={activePlacementLabel ? text(`添加：${activePlacementLabel}；按 X 切时段`, `Add: ${activePlacementLabel}; press X for periods`) : text('添加', 'Add')} onClick={() => { if (pending?.kind === 'move' || pending?.kind === 'period') endSpecialPlacement(); else if (placeableMoves[0]) { setPending({ kind: 'move', moveId: placeableMoves[0].id }); setLastPlacementMoveId(placeableMoves[0].id); setLastPlacementAdaptiveSwitch(false); setLastPlacementContentLabel(null); setLastPlacementContentSuffix(null); setPendingPoint(null); setCompactAddMenuOpen(false); } }}><Plus size={16} /></button>
        {timelinePanelToggle}
+       </>}
       </>}
      </div>
   ) : (
-    <div className="timeline-editor-toolbar"><div className="timeline-editor-add">
-       {timelineReadOnly && <span className="timeline-lock-status" role="status"><Lock size={14 } />{text('已锁定', 'Locked') }</span>}
-       {onModeChange && <div className="segmented timeline-mode-switch-inline"><button className={mode === 'timeline' ? 'active' : '' } onClick={() => onModeChange('timeline') }>{text('时间', 'Timing') }</button><button className={mode === 'content' ? 'active' : '' } onClick={() => onModeChange('content') }>{text('备注', 'Notes') }</button></div>}
-       {activePlayheadControl?.onTogglePlaying && <>
-         <button className={`icon-button timeline-editor-play ${activePlayheadControl.isPlaying ? 'active' : '' }`} type="button" title={activePlayheadControl.isPlaying ? text('暂停', 'Pause') : text('播放', 'Play') } aria-label={activePlayheadControl.isPlaying ? text('暂停', 'Pause') : text('播放', 'Play') } onClick={activePlayheadControl.onTogglePlaying} disabled={activePlayheadControl.disabled }>{activePlayheadControl.isPlaying ? <Pause size={16 } /> : <Play size={16 } /> }</button>
-         <div className="timeline-playback-menu" ref={playbackMenuRef }>
-           <button className={`timeline-playback-rate ${activePlaybackRate < 1 ? 'active' : '' }`} type="button" title={text(`播放速度：${activePlaybackRate} 倍`, `Playback speed: ${activePlaybackRate}x`) } onClick={() => setPlaybackMenuOpen((open) => !open) } disabled={activePlayheadControl.disabled }>{activePlaybackRate }×</button>
-           {playbackMenuOpen && <div className="timeline-playback-menu-panel">
-             {TIMELINE_PLAYBACK_RATES.map((rate) => <button key={rate } className={activePlaybackRate === rate ? 'active' : '' } type="button" onClick={() => { activePlayheadControl.onPlaybackRateChange?.(rate); setPlaybackMenuOpen(false);  } }>{rate === 1 ? text('正常 1×', 'Normal 1x') : rate === 0.5 ? text('慢放 0.5×', 'Slow 0.5x') : text('慢放 0.2×', 'Slow 0.2x') }</button>) }
-             {activePlayheadControl.onAutoFollowChange && <button className={`timeline-auto-follow-option ${activeTimelineAutoFollow ? 'active' : '' }`} type="button" aria-pressed={activeTimelineAutoFollow } onClick={() => activePlayheadControl.onAutoFollowChange?.(!activeTimelineAutoFollow) }><Check size={13 } />{text('自动跟随', 'Auto Follow') }</button> }
-           </div> }
-         </div>
-       </> }
-        <button className={`timeline-continuous-place icon-button ${pending?.kind === 'move' || pending?.kind === 'period' ? 'active' : ''}`} disabled={timelineReadOnly } aria-label={text('添加', 'Add')} title={activePlacementLabel ? text(`添加：${activePlacementLabel}；按 X 切时段`, `Add: ${activePlacementLabel}; press X for periods`) : text('添加', 'Add')} onClick={() => { if (pending?.kind === 'move' || pending?.kind === 'period') endSpecialPlacement(); else if (placeableMoves[0]) { setPending({ kind: 'move', moveId: placeableMoves[0].id }); setLastPlacementMoveId(placeableMoves[0].id); setLastPlacementAdaptiveSwitch(false); setLastPlacementContentLabel(null); setLastPlacementContentSuffix(null); setPendingPoint(null); setCompactAddMenuOpen(false); } }}><Plus size={16} /></button>
-       <button className={`icon-button ${pending?.kind === 'delete' ? 'active' : ''}`} disabled={timelineReadOnly } title={text('连续删除招式块；右键退出', 'Continuously delete action blocks; right-click to exit') } onClick={toggleContinuousDelete}><Trash2 size={16} /></button>
-       <button className={`icon-button ${pending?.kind === 'cut' ? 'active' : ''}`} disabled={timelineReadOnly } title={text('裁剪招式块', 'Split Action Block') } onClick={() => { if (pending?.kind === 'cut') endSpecialPlacement(); else { setPending({ kind: 'cut' }); setPendingPoint(null); } }}><Scissors size={16} /></button>
-       <label className="timeline-zoom-control">{text('缩放', 'Zoom') }<input type="range" min="0.05" max="1.6" step="0.01" value={zoom} onChange={(event) => onZoomChange(Number(event.target.value))} /></label>
-       <button className="primary" disabled={timelineReadOnly } onClick={onSave}><Save size={18} />{text('保存连段谱', 'Save Combo Chart') }</button>
-       {pending && <button onClick={endSpecialPlacement}>{text('取消放置', 'Cancel Placement') }</button>}
-       {pending && <span className="timeline-hint">{text('点击轨道放置，右键退出放置状态', 'Click a lane to place; right-click to exit placement mode') }</span>}
+    <div className="timeline-editor-toolbar desktop-timeline-toolbar"><div className={`timeline-editor-add ${timelineToolbarGroup ? 'timeline-toolbar-secondary' : 'timeline-toolbar-primary'}`}>
+      {timelineReadOnly && <span className="timeline-lock-status" role="status"><Lock size={14 } />{text('已锁定', 'Locked') }</span>}
+      {timelineToolbarGroup === 'add' ? <>
+        <button type="button" className="timeline-toolbar-group-trigger active" title={text('退出添加模式', 'Exit Add mode')} aria-label={text('退出添加模式', 'Exit Add mode')} onClick={() => toggleTimelineToolbarGroup('add')}><Plus size={18 } /></button>
+        <button type="button" className={`timeline-toolbar-press-mode ${timelineToolbarPressMode === 'hold' ? 'active' : ''}`} title={timelineToolbarPressMode === 'tap' ? text('切换为长按招式', 'Switch to hold actions') : text('切换为点按招式', 'Switch to tap actions')} onClick={toggleTimelineToolbarPressMode}><b>{timelineToolbarPressMode === 'tap' ? text('点', 'Tap') : text('长', 'Hold') }</b></button>
+        {timelineToolbarMoveTools.map((tool) => {
+          const active = pending?.kind === 'move' && pending.moveId === tool.moveId && Boolean(pending.adaptiveSwitch) === Boolean(tool.adaptiveSwitch) && (pending.contentLabel ?? null) === (tool.contentLabel ?? null);
+          return <button type="button" key={`${timelineToolbarPressMode }-${tool.moveId }-${tool.contentLabel ?? '' }-${tool.adaptiveSwitch ? 'adaptive' : ''}`} className={`icon-button timeline-toolbar-move-tool ${active ? 'active' : ''}`} title={timelineToolbarMoveToolTitle(tool)} aria-label={timelineToolbarMoveToolLabel(tool)} onClick={() => startTimelineMovePlacement(tool)}>{tool.adaptiveSwitch ? <Users size={18 } /> : <b>{tool.code }</b>}</button>;
+         })}
+        <span className="timeline-toolbar-divider" aria-hidden="true" />
+        <button type="button" className={`icon-button ${pending?.kind === 'period' ? 'active' : ''}`} title={text('添加时段；X 可在招式和时段间切换', 'Add a period; X switches between actions and periods')} aria-label={text('添加时段', 'Add Period')} onClick={startTimelinePeriodPlacement}><Clock3 size={17 } /></button>
+      </> : timelineToolbarGroup === 'modify' ? <>
+        <button type="button" className="timeline-toolbar-group-trigger active" title={text('退出调整工具', 'Exit Adjust tools')} aria-label={text('退出调整工具', 'Exit Adjust tools')} onClick={() => toggleTimelineToolbarGroup('modify')}><Wrench size={18 } /></button>
+        <button type="button" className={`timeline-toolbar-press-mode ${timelineToolbarPressMode === 'hold' ? 'active' : ''}`} title={timelineToolbarPressMode === 'tap' ? text('切换为长按招式', 'Switch to hold actions') : text('切换为点按招式', 'Switch to tap actions')} onClick={toggleTimelineToolbarPressMode}><b>{timelineToolbarPressMode === 'tap' ? text('点', 'Tap') : text('长', 'Hold') }</b></button>
+        {timelineToolbarMoveTools.map((tool) => <button type="button" key={`${timelineToolbarPressMode }-${tool.moveId }-${tool.contentLabel ?? '' }-${tool.adaptiveSwitch ? 'adaptive' : ''}`} className="icon-button timeline-toolbar-move-tool" disabled={!timelineToolbarSelectedStepIds().length} title={timelineToolbarMoveToolTitle(tool)} aria-label={timelineToolbarMoveToolLabel(tool)} onClick={() => applyTimelineToolbarMoveTool(tool)}>{tool.adaptiveSwitch ? <Users size={18 } /> : <b>{tool.code }</b>}</button>)}
+        <span className="timeline-toolbar-divider" aria-hidden="true" />
+        <button type="button" className="icon-button timeline-toolbar-move-tool" disabled={!timelineToolbarSelectedStepIds().length} title={text('在选中招式内容中追加变奏代码', 'Append the Intro code to selected actions')} aria-label={text('追加变奏', 'Append Intro')} onClick={() => appendTimelineToolbarContent('b')}><b>b</b></button>
+        <button type="button" className="icon-button timeline-toolbar-move-tool" disabled={!timelineToolbarSelectedStepIds().length} title={text('在选中招式内容中追加延奏代码', 'Append the Outro code to selected actions')} aria-label={text('追加延奏', 'Append Outro')} onClick={() => appendTimelineToolbarContent('y')}><b>y</b></button>
+      </> : timelineToolbarGroup === 'edit' ? <>
+        <button type="button" className="timeline-toolbar-group-trigger active" title={text('退出编辑工具', 'Exit Edit tools')} aria-label={text('退出编辑工具', 'Exit Edit tools')} onClick={() => toggleTimelineToolbarGroup('edit')}><Settings size={18 } /></button>
+        <button type="button" className={`icon-button ${timelineToolbarEditMode === 'multi' ? 'active' : ''}`} title={text('多选；普通点击或框选会追加选择', 'Multi-select; regular clicks and box selection add to the selection')} aria-label={text('多选', 'Multi-select')} aria-pressed={timelineToolbarEditMode === 'multi'} onClick={toggleTimelineToolbarMultiSelect}><Layers size={17 } /></button>
+        <button type="button" className="icon-button" disabled={!selectedPeriodId && !timelineToolbarSelectedStepIds().length} title={text('复制选中内容', 'Copy selection')} aria-label={text('复制', 'Copy')} onClick={copyTimelineToolbarSelection}><Copy size={17 } /></button>
+        <button type="button" className="icon-button" disabled={!selectedPeriodId && !timelineToolbarSelectedStepIds().length} title={text('剪切选中内容', 'Cut selection')} aria-label={text('剪切', 'Cut')} onClick={cutTimelineToolbarSelection}><Scissors size={17 } /></button>
+        <button type="button" className={`icon-button ${pending?.kind === 'copy' ? 'active' : ''}`} disabled={!copiedSelection} title={text('粘贴；移动到目标位置后点击放置', 'Paste; move to the target position and click to place')} aria-label={text('粘贴', 'Paste')} onClick={() => startCopyPlacement()}><Clipboard size={17 } /></button>
+        <button type="button" className={`icon-button ${pending?.kind === 'delete' ? 'active' : ''}`} title={text('删除选中内容；没有选中时进入连续删除', 'Delete selection; with no selection, enter continuous delete mode')} aria-label={text('删除', 'Delete')} onClick={deleteTimelineToolbarSelection}><Trash2 size={17 } /></button>
+        <button type="button" className={`icon-button ${pending?.kind === 'cut' ? 'active' : ''}`} title={text('在鼠标位置分割选中块；没有可分割内容时进入连续分割', 'Split selected blocks at the pointer; otherwise enter continuous split mode')} aria-label={text('分割', 'Split')} onClick={toggleTimelineToolbarSplit}><Split size={17 } /></button>
+        <button type="button" className="icon-button" disabled={mergeableStepsFromIds(timelineToolbarSelectedStepIds()).length < 2} title={text('合并选中的同招式、同角色、同轨道块', 'Merge selected blocks with the same action, character, and lane')} aria-label={text('合并', 'Merge')} onClick={() => mergeSteps(mergeableStepsFromIds(timelineToolbarSelectedStepIds()))}><Combine size={17 } /></button>
+      </> : <>
+        {onModeChange && <div className="segmented timeline-mode-switch-inline"><button type="button" className={mode === 'timeline' ? 'active' : '' } onClick={() => onModeChange('timeline') }>{text('时间', 'Timing') }</button><button type="button" className={mode === 'content' ? 'active' : '' } onClick={() => onModeChange('content') }>{text('备注', 'Notes') }</button></div>}
+        {activePlayheadControl?.onTogglePlaying && <>
+          <button className={`icon-button timeline-editor-play ${activePlayheadControl.isPlaying ? 'active' : '' }`} type="button" title={activePlayheadControl.isPlaying ? text('暂停', 'Pause') : text('播放', 'Play') } aria-label={activePlayheadControl.isPlaying ? text('暂停', 'Pause') : text('播放', 'Play') } onClick={activePlayheadControl.onTogglePlaying} disabled={activePlayheadControl.disabled }>{activePlayheadControl.isPlaying ? <Pause size={16 } /> : <Play size={16 } /> }</button>
+          <div className="timeline-playback-menu" ref={playbackMenuRef }>
+            <button className={`timeline-playback-rate ${activePlaybackRate < 1 ? 'active' : '' }`} type="button" title={text(`播放速度：${activePlaybackRate} 倍`, `Playback speed: ${activePlaybackRate}x`) } onClick={() => setPlaybackMenuOpen((open) => !open) } disabled={activePlayheadControl.disabled }>{activePlaybackRate }×</button>
+            {playbackMenuOpen && <div className="timeline-playback-menu-panel">
+              {TIMELINE_PLAYBACK_RATES.map((rate) => <button key={rate } className={activePlaybackRate === rate ? 'active' : '' } type="button" onClick={() => { activePlayheadControl.onPlaybackRateChange?.(rate); setPlaybackMenuOpen(false);  } }>{rate === 1 ? text('正常 1×', 'Normal 1x') : rate === 0.5 ? text('慢放 0.5×', 'Slow 0.5x') : text('慢放 0.2×', 'Slow 0.2x') }</button>) }
+              {activePlayheadControl.onAutoFollowChange && <button className={`timeline-auto-follow-option ${activeTimelineAutoFollow ? 'active' : '' }`} type="button" aria-pressed={activeTimelineAutoFollow } onClick={() => activePlayheadControl.onAutoFollowChange?.(!activeTimelineAutoFollow) }><Check size={13 } />{text('自动跟随', 'Auto Follow') }</button> }
+            </div> }
+          </div>
+        </> }
+        <button type="button" className="timeline-toolbar-group-trigger" disabled={timelineReadOnly} title={text('添加', 'Add')} aria-label={text('添加', 'Add')} onClick={() => toggleTimelineToolbarGroup('add')}><Plus size={18 } /></button>
+        <button type="button" className="timeline-toolbar-group-trigger" disabled={timelineReadOnly} title={text('调整', 'Adjust')} aria-label={text('调整', 'Adjust')} onClick={() => toggleTimelineToolbarGroup('modify')}><Wrench size={18 } /></button>
+        <button type="button" className="timeline-toolbar-group-trigger" disabled={timelineReadOnly} title={text('编辑', 'Edit')} aria-label={text('编辑', 'Edit')} onClick={() => toggleTimelineToolbarGroup('edit')}><Settings size={18 } /></button>
+        <button type="button" className="icon-button" disabled={timelineReadOnly || !activeHistoryControl?.canUndo} title={text('撤销', 'Undo')} aria-label={text('撤销', 'Undo')} onClick={activeHistoryControl?.onUndo}><Undo2 size={17 } /></button>
+        <button type="button" className="icon-button" disabled={timelineReadOnly || !activeHistoryControl?.canRedo} title={text('重做', 'Redo')} aria-label={text('重做', 'Redo')} onClick={activeHistoryControl?.onRedo}><Redo2 size={17 } /></button>
+        <label className="timeline-zoom-control">{text('缩放', 'Zoom') }<input type="range" min="0.05" max="1.6" step="0.01" value={zoom} onChange={(event) => onZoomChange(Number(event.target.value))} /></label>
+        <button type="button" className="primary timeline-save-button" disabled={timelineReadOnly } onClick={onSave}><Save size={18} />{text('保存连段谱', 'Save Combo Chart') }</button>
+      </>}
     </div></div>
   );
   const renderedToolbarNode = videoCompactMode && toolbarPortalTarget ? createPortal(toolbarNode, toolbarPortalTarget) : toolbarNode;
@@ -7346,7 +7964,16 @@ function TimelineEditor({ chart, moves, bindings, shortcutSettings, inputSignal,
                   const recoveryPercent = clamp(((step.recoveryMs ?? 0) / step.durationMax) * 100, 0, 88 - preheatPercent);
                   const isDraft = step.moveId === DRAFT_MOVE_ID;
                   const nearbyStartIndex = [...laneSteps].filter((candidate) => Math.abs(candidate.startMin - step.startMin) * zoom < 30).sort((left, right) => left.startMin - right.startMin || left.id.localeCompare(right.id)).findIndex((candidate) => candidate.id === step.id);
-                  return <div key={step.id } data-step-id={step.id } className={`timeline-editor-block ${step.free ? 'free' : '' } ${isDraft ? 'draft' : '' } ${highlightedStepIds?.has(step.id) ? 'damage-bound' : ''} ${selectedIds.includes(step.id) ? 'selected' : '' } ${raisedStepId === step.id ? 'raised' : '' } ${pending?.kind === 'delete' ? 'delete-ready' : '' }`  } style={{ left: `${(step.startMin / renderTotal) * 100 }%`, width: `${Math.max(0.01, (step.durationMax / renderTotal) * 100) }%`, '--move-color': step.color, '--drag-tab-offset': `${Math.max(0, nearbyStartIndex) * 24 }px`, zIndex: pending?.kind === 'cut' || pending?.kind === 'delete' ? 120 : raisedStepId === step.id ? 8 : selectedIds.includes(step.id) ? 5 : 2  } as CSSProperties } onPointerDownCapture={(event) => deleteStepInContinuousMode(event, step.id) } onPointerDown={(event) => { if (pending?.kind === 'cut') { cutStepAtPointer(event, step); return;  } if (pending) return; if (event.ctrlKey) { event.preventDefault(); event.stopPropagation(); toggleStepSelection(step.id, true); return;  } beginDrag(event, step.id, 'move');  } } onDoubleClick={(event) => { if (selectedIds.length <= 1 || !selectedIds.includes(step.id)) return; event.preventDefault(); event.stopPropagation(); setSelectedId(step.id); setSelectedIds([step.id]); setRaisedStepId(step.id);  } } onContextMenu={(event) => handleSpecialContextMenu(event, () => openStepContext(event, step, laneSteps)) }><span className="timeline-block-drag-tab" title={text('拖动招式块', 'Drag Action Block') } onPointerDown={(event) => { event.stopPropagation(); setRaisedStepId(step.id); beginDrag(event, step.id, 'move');  } } /><div className="resize-handle left" onPointerDown={(event) => { event.stopPropagation(); beginDrag(event, step.id, event.altKey ? 'preheat' : 'start');  } } /><div className="warmup-zone left" style={{ width: `${preheatPercent }%`  } } /><div className="warmup-zone right" style={{ width: `${recoveryPercent }%`  } } /><div className="warmup-divider preheat" style={{ left: `${preheatPercent }%`  } } onPointerDown={(event) => { if (event.altKey) { event.stopPropagation(); beginDrag(event, step.id, 'preheat-divider');  }  } } /><div className="warmup-divider recovery" style={{ right: `${recoveryPercent }%`  } } onPointerDown={(event) => { if (event.altKey) { event.stopPropagation(); beginDrag(event, step.id, 'recovery-divider');  }  } } />{renderStepLabel(step) }{step.free && <em>{text('自由', 'Free') }</em> }{mode === 'content' && <div className="timeline-block-meta"><span className="move-type">{displayMoveLabel(step) }</span><span className="duration">{(step.durationMax / 1000).toFixed(2) }s</span></div> }<div className="resize-handle right" onPointerDown={(event) => { event.stopPropagation(); beginDrag(event, step.id, event.altKey ? 'recovery' : 'end');  } } /></div>;
+                  return <div key={step.id } data-step-id={step.id } className={`timeline-editor-block ${step.free ? 'free' : '' } ${isDraft ? 'draft' : '' } ${highlightedStepIds?.has(step.id) ? 'damage-bound' : ''} ${selectedIds.includes(step.id) ? 'selected' : '' } ${raisedStepId === step.id ? 'raised' : '' } ${pending?.kind === 'delete' ? 'delete-ready' : '' }`  } style={{ left: `${(step.startMin / renderTotal) * 100 }%`, width: `${Math.max(0.01, (step.durationMax / renderTotal) * 100) }%`, '--move-color': step.color, '--drag-tab-offset': `${Math.max(0, nearbyStartIndex) * 24 }px`, zIndex: pending?.kind === 'cut' || pending?.kind === 'delete' ? 120 : raisedStepId === step.id ? 8 : selectedIds.includes(step.id) ? 5 : 2  } as CSSProperties } onPointerDownCapture={(event) => {
+                    if (event.button === 0 && (event.ctrlKey || event.metaKey || timelineToolbarEditMode === 'multi')) {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      event.nativeEvent.stopImmediatePropagation();
+                      toggleStepSelection(step.id, true);
+                      return;
+                    }
+                    deleteStepInContinuousMode(event, step.id);
+                  } } onPointerDown={(event) => { if (pending?.kind === 'cut') { cutStepAtPointer(event, step); return;  } if (pending) return; if (event.ctrlKey || event.metaKey || timelineToolbarEditMode === 'multi') { event.preventDefault(); event.stopPropagation(); toggleStepSelection(step.id, true); return;  } beginDrag(event, step.id, 'move');  } } onDoubleClick={(event) => { if (selectedIds.length <= 1 || !selectedIds.includes(step.id)) return; event.preventDefault(); event.stopPropagation(); setSelectedId(step.id); setSelectedIds([step.id]); setRaisedStepId(step.id); setTimelineToolbarEditMode(null);  } } onContextMenu={(event) => handleSpecialContextMenu(event, () => openStepContext(event, step, laneSteps)) }><span className="timeline-block-drag-tab" title={text('拖动招式块', 'Drag Action Block') } onPointerDown={(event) => { event.stopPropagation(); setRaisedStepId(step.id); beginDrag(event, step.id, 'move');  } } /><div className="resize-handle left" onPointerDown={(event) => { event.stopPropagation(); beginDrag(event, step.id, event.altKey ? 'preheat' : 'start');  } } /><div className="warmup-zone left" style={{ width: `${preheatPercent }%`  } } /><div className="warmup-zone right" style={{ width: `${recoveryPercent }%`  } } /><div className="warmup-divider preheat" style={{ left: `${preheatPercent }%`  } } onPointerDown={(event) => { if (event.altKey) { event.stopPropagation(); beginDrag(event, step.id, 'preheat-divider');  }  } } /><div className="warmup-divider recovery" style={{ right: `${recoveryPercent }%`  } } onPointerDown={(event) => { if (event.altKey) { event.stopPropagation(); beginDrag(event, step.id, 'recovery-divider');  }  } } />{renderStepLabel(step) }{step.free && <em>{text('自由', 'Free') }</em> }{mode === 'content' && <div className="timeline-block-meta"><span className="move-type">{displayMoveLabel(step) }</span><span className="duration">{(step.durationMax / 1000).toFixed(2) }s</span></div> }<div className="resize-handle right" onPointerDown={(event) => { event.stopPropagation(); beginDrag(event, step.id, event.altKey ? 'recovery' : 'end');  } } /></div>;
                  }) }
                 {pending && pending.kind !== 'copy' && pending.kind !== 'cut' && pending.kind !== 'delete' && pendingPoint && pendingPoint.slot === lane.slot && Boolean(pendingPoint.auxiliary) === Boolean(lane.auxiliary) && pendingPoint.lane === lane.lane && <div className={`timeline-placement-ghost ${pending.kind } ${pending.kind === 'period' && pendingPeriodPreview ? pendingPeriodPreview.kind : ''}`  } style={{ left: `${(pendingPoint.startMs / renderTotal) * 100 }%`, width: pending.kind === 'period' ? `${Math.max(1.8, (DEFAULT_FREE_FIRE_DURATION / renderTotal) * 100) }%` : pending.kind === 'move' ? `${Math.max(0.01, (500 / renderTotal) * 100) }%` : `${Math.max(1.8, (300 / renderTotal) * 100) }%`, ...(pending.kind === 'move' && activePlacedMove ? { '--move-color': activePlacedMove.color  } : { })  } as CSSProperties }>{pending.kind === 'move' && activePlacementLabel ? <strong>{activePlacementLabel }</strong> : pending.kind === 'period' && pendingPeriodPreview ? timelinePeriodLabel(pendingPeriodPreview) : pending.kind === 'step' ? text('待设置指令', 'Unassigned Action') : text('待设置时段', 'Unassigned Period') }</div> }
                 {copiedGhost && copiedGhostPoint && copiedGhost.periods.filter((period) => {
@@ -8089,7 +8716,61 @@ function CapsuleImageVisualEditor({ style, onChange  }: { style: ComboImageStyle
   );
  }
 
-function SettingsPanel({ view, helpTab, moves, bindings, gamepadBindings, inputMode, gamepadIconSet, shortcutSettings, customIconSources, appearanceMode, compatibilityMode, live2dEnabled, homeSpineId, homeSpineTransforms, dlcStatus, dlcStatusLoading, exportDirectory, recordingIndicatorEnabled, recordingIndicatorCorner, recordingRecognitionSettings, simulatedInputSettings, canChooseExportDirectory, onViewChange, onHelpTabChange, onInputModeChange, onGamepadIconSetChange, onShortcutSettingsChange, onCustomIconSourcesChange, onAppearanceModeChange, onCompatibilityModeChange, onLive2dEnabledChange, onHomeSpineIdChange, onHomeSpineTransformChange, onOpenDlcFolder, onRefreshDlc, onChooseExportDirectory, onExportInputSettings, onImportInputSettings, onResetInputBindings, onRecordingIndicatorEnabledChange, onRecordingIndicatorCornerChange, onRecordingRecognitionSettingsChange, onSimulatedInputSettingsChange, onOpenRealtimeVisionSettings, onMoveChange, onBindingChange, onGamepadBindingChange  }: {
+function SimulatedInputSettingsPanel({ settings, selectedChart, selectedChartId, currentChart, library, timelineEditor, onSettingsChange, onChartChange, onExit }: {
+  settings: SimulatedInputSettings;
+  selectedChart: ComboChart | null;
+  selectedChartId: string | null;
+  currentChart: ComboChart | null;
+  library: ComboChart[];
+  timelineEditor: ReactNode;
+  onSettingsChange: (patch: Partial<SimulatedInputSettings>) => void;
+  onChartChange: (chartId: string | null) => void;
+  onExit: () => void;
+}) {
+  const { language, text } = useI18n();
+  const activeChart = selectedChart ?? currentChart;
+  const durationMs = activeChart
+    ? Math.max(0, activeChart.timelineDurationMs ?? 0, ...activeChart.steps.map((step) => step.startMin + step.durationMax), ...(activeChart.periods ?? []).map((period) => period.endMs))
+    : 0;
+  const chartSummary = activeChart
+    ? text(`${activeChart.steps.length} 个招式块 · ${activeChart.periods?.length ?? 0} 个时段 · ${(durationMs / 1000).toFixed(2)} 秒`, `${activeChart.steps.length} actions · ${activeChart.periods?.length ?? 0} periods · ${(durationMs / 1000).toFixed(2)}s`)
+    : text('还没有可用连段', 'No combo is available yet');
+
+  return <div className="simulated-input-settings-page">
+    <div className="panel-title experiment-subtitle"><div><h2>{text('模拟演示', 'Simulation Demo')}</h2><p>{text('让模拟演示使用独立的连段时间轴和输入参数。时间轴修改会直接作用于演示。', 'Run the simulation demo with its own combo timeline and input parameters. Timeline edits apply directly to the demo.')}</p></div><button className="icon-button experiment-back-button" type="button" onClick={onExit} title={text('返回', 'Back')}><ArrowLeft size={18} /></button></div>
+    <div className="simulated-input-settings-card">
+      <div className="simulated-input-settings-card-head"><div><strong>{text('输入参数', 'Input Parameters')}</strong><span>{text('按开始键后，模拟演示会按这里的设置执行。', 'After the practice start key, the simulation demo follows these settings.')}</span></div></div>
+      <div className="settings-simulated-input-grid">
+        <NumberDraftInput label={text('开始延迟 ms', 'Start Delay ms')} value={settings.startDelayMs} min={0} max={30_000} integer={true} onCommit={(value) => onSettingsChange({ startDelayMs: value })} />
+        <NumberDraftInput label={text('全局延迟 ms', 'Per Action Delay ms')} value={settings.globalDelayMs} min={0} max={5_000} integer={true} onCommit={(value) => onSettingsChange({ globalDelayMs: value })} />
+        <NumberDraftInput label={text('鼠标偏移 px', 'Mouse Offset px')} value={settings.mouseOffsetPx} min={0} max={30} integer={true} onCommit={(value) => onSettingsChange({ mouseOffsetPx: value })} />
+        <NumberDraftInput label={text('按键频率（间隔 ms）', 'Key Frequency (Interval ms)')} value={settings.keyFrequencyMs} min={50} max={5_000} integer={true} onCommit={(value) => onSettingsChange({ keyFrequencyMs: value })} />
+        <NumberDraftInput label={text('长按时间 ms', 'Hold Duration ms')} value={settings.holdDurationMs} min={0} max={10_000} integer={true} onCommit={(value) => onSettingsChange({ holdDurationMs: value })} />
+      </div>
+      <small>{text('普通招式按设定间隔持续点按，同招式保持节拍并延长；切人会断开此前输入。切人键至少保持 2 秒，只有切换其他角色会提前结束。长按时间为 0 时沿用记录。', 'Normal actions repeat at the configured interval and matching actions extend without resetting cadence. Switching ends earlier inputs. A switch key stays down for at least 2 seconds, and only switching to another character ends it early. A hold duration of 0 keeps the recorded duration.')}</small>
+    </div>
+    <div className="simulated-input-settings-card simulated-input-chart-picker">
+      <div className="simulated-input-settings-card-head"><div><strong>{text('模拟演示连段', 'Simulation Combo')}</strong><span>{text('选择后，下面的时间轴和模拟演示都会使用这条连段。', 'The timeline below and the simulation demo will use the selected combo.')}</span></div><strong className="simulated-input-chart-summary">{chartSummary}</strong></div>
+      <div className="simulated-input-chart-list">
+        <button type="button" className={`simulated-input-chart-option ${selectedChartId === null ? 'active' : ''}`} onClick={() => onChartChange(null)}>
+          <strong>{text('跟随当前练习连段', 'Follow Current Practice Combo')}</strong>
+          <span>{currentChart?.title || text('当前未选择连段', 'No current combo selected')}</span>
+        </button>
+        {library.map((item) => <button type="button" key={item.id} className={`simulated-input-chart-option ${selectedChartId === item.id ? 'active' : ''}`} onClick={() => onChartChange(item.id)}>
+          <strong>{item.title}</strong>
+          <span>{text(`${item.steps.length} 个招式块 · 更新于 ${new Date(item.updatedAt).toLocaleString(language)}`, `${item.steps.length} actions · Updated ${new Date(item.updatedAt).toLocaleString(language)}`)}</span>
+        </button>)}
+        {!library.length && <span className="simulated-input-chart-empty">{text('本地还没有保存的连段，将使用当前练习连段。', 'No saved local combos yet. The current practice combo will be used.')}</span>}
+      </div>
+    </div>
+    <div className="simulated-input-settings-card simulated-input-timeline-card">
+      <div className="simulated-input-settings-card-head"><div><strong>{text('模拟演示时间轴', 'Simulation Timeline')}</strong><span>{text('这里的时间轴就是模拟演示的输入来源，操作块起点、持续时间和时段会实时同步。', 'This timeline is the input source for the simulation demo. Action starts, durations, and periods stay synchronized.')}</span></div></div>
+      {timelineEditor || <div className="simulated-input-chart-empty">{text('先创建或导入一条连段，再编辑模拟输入时间轴。', 'Create or import a combo before editing the simulation timeline.')}</div>}
+    </div>
+  </div>;
+}
+
+function SettingsPanel({ view, helpTab, moves, bindings, gamepadBindings, inputMode, gamepadIconSet, shortcutSettings, customIconSources, appearanceMode, compatibilityMode, live2dEnabled, homeSpineId, homeSpineTransforms, dlcStatus, dlcStatusLoading, exportDirectory, recordingIndicatorEnabled, recordingIndicatorCorner, recordingRecognitionSettings, canChooseExportDirectory, onViewChange, onHelpTabChange, onInputModeChange, onGamepadIconSetChange, onShortcutSettingsChange, onCustomIconSourcesChange, onAppearanceModeChange, onCompatibilityModeChange, onLive2dEnabledChange, onHomeSpineIdChange, onHomeSpineTransformChange, onOpenDlcFolder, onRefreshDlc, onChooseExportDirectory, onExportInputSettings, onImportInputSettings, onResetInputBindings, onRecordingIndicatorEnabledChange, onRecordingIndicatorCornerChange, onRecordingRecognitionSettingsChange, onOpenRealtimeVisionSettings, onMoveChange, onBindingChange, onGamepadBindingChange  }: {
   view: SettingsView;
   helpTab: HelpTab;
   moves: MoveDefinition[];
@@ -8110,7 +8791,6 @@ function SettingsPanel({ view, helpTab, moves, bindings, gamepadBindings, inputM
   recordingIndicatorEnabled: boolean;
   recordingIndicatorCorner: RecordingIndicatorCorner;
   recordingRecognitionSettings: RecordingRecognitionSettings;
-  simulatedInputSettings: SimulatedInputSettings;
   canChooseExportDirectory: boolean;
   onViewChange: (value: SettingsView) => void;
   onHelpTabChange: (value: HelpTab) => void;
@@ -8132,7 +8812,6 @@ function SettingsPanel({ view, helpTab, moves, bindings, gamepadBindings, inputM
   onRecordingIndicatorEnabledChange: (value: boolean) => void;
   onRecordingIndicatorCornerChange: (value: RecordingIndicatorCorner) => void;
   onRecordingRecognitionSettingsChange: (patch: Partial<RecordingRecognitionSettings>) => void;
-  onSimulatedInputSettingsChange: (patch: Partial<SimulatedInputSettings>) => void;
   onOpenRealtimeVisionSettings: () => void;
   onMoveChange: (moveId: string, patch: Partial<MoveDefinition>) => void;
   onBindingChange: (moveId: string, value: string) => void;
@@ -8321,6 +9000,7 @@ function SettingsPanel({ view, helpTab, moves, bindings, gamepadBindings, inputM
         <div className="settings-dlc-controls">
           <div className="settings-dlc-statuses">
             <span className={dlcStatus.ffmpegInstalled ? 'installed' : 'missing' }>{dlcStatus.ffmpegInstalled ? <Check size={15 } /> : <X size={15 } /> }{text('视频扩展', 'Video extension') }</span>
+            <span className={dlcStatus.simulatedInputInstalled ? 'installed' : 'missing' }>{dlcStatus.simulatedInputInstalled ? <Check size={15 } /> : <X size={15 } /> }{text('模拟演示', 'Simulation Demo') }</span>
             <span className={dlcStatus.live2dAssets.length ? 'installed' : 'missing' }>{dlcStatus.live2dAssets.length ? <Check size={15 } /> : <X size={15 } /> }Live2D {dlcStatus.live2dAssets.length ? `(${dlcStatus.live2dAssets.length })` : ''}</span>
           </div>
           <div className="settings-dlc-actions">
@@ -8377,19 +9057,6 @@ function SettingsPanel({ view, helpTab, moves, bindings, gamepadBindings, inputM
           <small>{text('点按间隔不超过合并窗口会合并为同一招式块；长按达到对应阈值后转换为长按招式块。', 'Taps within the merge window stay in one action block; reaching the matching hold threshold converts it to a hold action.') }</small>
         </div>
       </div>
-      {__SIMULATED_INPUT_ENABLED__ && <div className="settings-preference-row settings-simulated-input" id="simulated-input-settings">
-        <span className="settings-preference-label"><RadioTower size={18 } />{text('模拟输入', 'Simulated Input') }</span>
-        <div className="settings-simulated-input-controls">
-          <div className="settings-simulated-input-grid">
-            <NumberDraftInput label={text('开始延迟 ms', 'Start Delay ms') } value={simulatedInputSettings.startDelayMs } min={0 } max={30_000 } integer={true } onCommit={(value) => onSimulatedInputSettingsChange({ startDelayMs: value }) } />
-            <NumberDraftInput label={text('全局延迟 ms', 'Per Action Delay ms') } value={simulatedInputSettings.globalDelayMs } min={0 } max={5_000 } integer={true } onCommit={(value) => onSimulatedInputSettingsChange({ globalDelayMs: value }) } />
-            <NumberDraftInput label={text('鼠标偏移 px', 'Mouse Offset px') } value={simulatedInputSettings.mouseOffsetPx } min={0 } max={30 } integer={true } onCommit={(value) => onSimulatedInputSettingsChange({ mouseOffsetPx: value }) } />
-            <NumberDraftInput label={text('按键频率（间隔 ms）', 'Key Frequency (Interval ms)') } value={simulatedInputSettings.keyFrequencyMs } min={50 } max={5_000 } integer={true } onCommit={(value) => onSimulatedInputSettingsChange({ keyFrequencyMs: value }) } />
-            <NumberDraftInput label={text('长按时间 ms', 'Hold Duration ms') } value={simulatedInputSettings.holdDurationMs } min={0 } max={10_000 } integer={true } onCommit={(value) => onSimulatedInputSettingsChange({ holdDurationMs: value }) } />
-          </div>
-          <small>{text('普通招式按设定间隔持续点按，同招式保持节拍并延长；切人会断开此前输入。切人键至少保持 2 秒，只有切换其他角色会提前结束。长按时间为 0 时沿用记录。', 'Normal actions repeat at the configured interval and matching actions extend without resetting cadence. Switching ends earlier inputs. A switch key stays down for at least 2 seconds and only switching to another character ends it early. A hold duration of 0 keeps the recorded duration.') }</small>
-        </div>
-      </div>}
       <div className="settings-preference-row">
         <span className="settings-preference-label">{text('兼容模式', 'Compatibility Mode')}</span>
         <label className="checkline"><input type="checkbox" checked={compatibilityMode} onChange={(event) => onCompatibilityModeChange(event.target.checked) } />{text('最多 4 个角色；允许自定义角色名称', 'Use up to 4 characters and editable character names')}</label>
@@ -8483,21 +9150,13 @@ function ShortcutSettingsPanel({ settings, onChange  }: { settings: ShortcutSett
   const groups = [
     { id: 'timeline' as const, chinese: '时间轴工具', english: 'Timeline Tools'  },
     { id: 'placement' as const, chinese: '添加模式招式', english: 'Add Mode Actions'  },
+    { id: 'practice' as const, chinese: '推进模式', english: 'Advance Mode'  },
     { id: 'video' as const, chinese: '视频辅助', english: 'Video Tools'  }
   ];
 
   useEffect(() => {
     if (!capturing) return;
-    const captureShortcut = (event: KeyboardEvent) => {
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation();
-      if (event.repeat) return;
-      const chord = shortcutChordFromKeyboardEvent(event);
-      if (!chord) {
-        setFeedback(text('Ctrl 和 Alt 起手的组合键保持固定，不能在这里修改。', 'Shortcuts beginning with Ctrl or Alt remain fixed and cannot be changed here.'));
-        return;
-      }
+    const commitShortcut = (chord: string) => {
       const conflict = SHORTCUT_DEFINITIONS.find((definition) => definition.id !== capturing
         && settings[definition.id] === chord
         && !shortcutActionsCanShareChord(capturing, definition.id));
@@ -8509,16 +9168,38 @@ function ShortcutSettingsPanel({ settings, onChange  }: { settings: ShortcutSett
       setCapturing(null);
       setFeedback('');
      };
-    const suppressKeyUp = (event: KeyboardEvent) => {
+    const captureShortcut = (event: KeyboardEvent) => {
       event.preventDefault();
       event.stopPropagation();
       event.stopImmediatePropagation();
+      if (event.repeat) return;
+      const chord = shortcutChordFromKeyboardEvent(event);
+      if (!chord) {
+        setFeedback(text('Ctrl 和 Alt 起手的组合键保持固定，不能在这里修改。', 'Shortcuts beginning with Ctrl or Alt remain fixed and cannot be changed here.'));
+        return;
+      }
+      commitShortcut(chord);
+     };
+    const suppressKeyUp = (event: KeyboardEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+     event.stopImmediatePropagation();
+     };
+    const captureWheel = (event: WheelEvent) => {
+      const chord = shortcutChordFromWheelDelta(event.deltaY);
+      if (!chord) return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      commitShortcut(chord);
      };
     window.addEventListener('keydown', captureShortcut, true);
     window.addEventListener('keyup', suppressKeyUp, true);
+    window.addEventListener('wheel', captureWheel, true);
     return () => {
       window.removeEventListener('keydown', captureShortcut, true);
       window.removeEventListener('keyup', suppressKeyUp, true);
+      window.removeEventListener('wheel', captureWheel, true);
      };
    }, [capturing, onChange, settings, text]);
 

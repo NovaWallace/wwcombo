@@ -31,7 +31,7 @@ import type { RealtimeVisionInputSignal } from './realtimeVisionInput';
 import './RealtimeVisionLab.css';
 
 const STORAGE_KEY = 'wwcombo-realtime-vision-v1';
-const SETTINGS_SCHEMA_VERSION = 10;
+const SETTINGS_SCHEMA_VERSION = 11;
 const ANALYSIS_MAX_WIDTH = 1280;
 const DEFAULT_REALTIME_VISION_OVERLAY_BOUNDS: RealtimeVisionOverlayBounds = {
   x: 40,
@@ -648,7 +648,8 @@ export function RealtimeVisionLab({
           : null;
         const timer = timerImage ? {
           image: workerImage(timerImage),
-          luminanceThreshold: currentSettings.timerLuminanceThreshold
+          luminanceThreshold: currentSettings.timerLuminanceThreshold,
+          colorMode: currentSettings.timerColorMode
         } : null;
         requestId += 1;
         pendingRequestId = requestId;
@@ -1032,7 +1033,8 @@ export function RealtimeVisionLab({
         <section className="realtime-vision-control-section selected">
           <div className="realtime-vision-section-heading"><div><Crosshair size={17} /><strong>{text('游戏计时器区域', 'Game Timer Region')}</strong></div><label className="realtime-vision-switch"><input type="checkbox" checked={settings.timerEnabled} onChange={(event) => setSettings((previous) => ({ ...previous, timerEnabled: event.target.checked }))} /><span /></label></div>
           <div className="realtime-vision-field-grid">
-            <label>{text('白色门槛', 'White Gate')}<input type="number" min={110} max={245} value={settings.timerLuminanceThreshold} onChange={(event) => setSettings((previous) => ({ ...previous, timerLuminanceThreshold: boundedNumber(event.target.value, 110, 245, previous.timerLuminanceThreshold) }))} /></label>
+            <div className="realtime-vision-color-mode-field"><span>{text('计时器颜色', 'Timer Color')}</span><div className="segmented" role="group" aria-label={text('计时器颜色', 'Timer Color')}><button type="button" className={settings.timerColorMode === 'white' ? 'active' : ''} onClick={() => setSettings((previous) => ({ ...previous, timerColorMode: 'white' }))}>{text('白色', 'White')}</button><button type="button" className={settings.timerColorMode === 'blue' ? 'active' : ''} onClick={() => setSettings((previous) => ({ ...previous, timerColorMode: 'blue' }))}>{text('蓝色', 'Blue')}</button><button type="button" className={settings.timerColorMode === 'auto' ? 'active' : ''} onClick={() => setSettings((previous) => ({ ...previous, timerColorMode: 'auto' }))}>{text('自动', 'Auto')}</button></div></div>
+            <label>{text('亮度门槛', 'Brightness Gate')}<input type="number" min={110} max={245} value={settings.timerLuminanceThreshold} onChange={(event) => setSettings((previous) => ({ ...previous, timerLuminanceThreshold: boundedNumber(event.target.value, 110, 245, previous.timerLuminanceThreshold) }))} /></label>
             <label>{text('当前结果', 'Current Result')}<output>{displayedTimerText ?? '--:--'}</output></label>
           </div>
           <button type="button" onClick={() => setSettings((previous) => ({ ...previous, timerRoi: { ...UPSTREAM_TIMER_ROI } }))}><RotateCcw size={16} />{text('恢复默认计时器区域', 'Reset Timer Region')}</button>

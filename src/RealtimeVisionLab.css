@@ -502,6 +502,26 @@
   font-weight: 850;
 }
 
+.realtime-vision-color-mode-field {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 850;
+}
+
+.realtime-vision-color-mode-field .segmented {
+  min-width: 0;
+  width: 100%;
+}
+
+.realtime-vision-color-mode-field .segmented button {
+  flex: 1 1 0;
+  min-width: 0;
+  padding-inline: 6px;
+}
+
 .realtime-vision-field-grid input,
 .realtime-vision-field-grid select,
 .realtime-vision-name-field input,

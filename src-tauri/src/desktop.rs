@@ -3,12 +3,14 @@ use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fs;
+#[cfg(feature = "release-core")]
+use std::io::Write;
 use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 #[cfg(not(feature = "release-core"))]
 use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{
     AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, PhysicalSize, Size, WebviewUrl,
@@ -28,6 +30,9 @@ static VIDEO_RECOGNITION_CANCELLED: AtomicBool = AtomicBool::new(false);
 static VIDEO_RECOGNITION_RUNNING: AtomicBool = AtomicBool::new(false);
 #[cfg(not(feature = "release-core"))]
 static SIMULATION_RUN_ID: AtomicU64 = AtomicU64::new(0);
+#[cfg(feature = "release-core")]
+static SIMULATED_INPUT_PROCESS: Lazy<Mutex<Option<std::process::Child>>> =
+    Lazy::new(|| Mutex::new(None));
 static INPUT_HOOK_STATUS: Lazy<Mutex<String>> = Lazy::new(|| Mutex::new(String::from("idle")));
 static INPUT_EVENT_COUNT: Lazy<Mutex<u64>> = Lazy::new(|| Mutex::new(0));
 static INPUT_PRESSED_CODES: Lazy<Mutex<HashSet<String>>> = Lazy::new(|| Mutex::new(HashSet::new()));
@@ -137,9 +142,8 @@ struct ExportVideoResult {
     path: String,
 }
 
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-#[cfg(not(feature = "release-core"))]
 struct SimulatedInputEvent {
     at_ms: u64,
     #[serde(rename = "type")]
@@ -475,6 +479,7 @@ struct Live2dDlcAsset {
 struct DlcStatus {
     root_path: String,
     ffmpeg_installed: bool,
+    simulated_input_installed: bool,
     live2d_assets: Vec<Live2dDlcAsset>,
 }
 
@@ -654,6 +659,7 @@ fn get_dlc_status(app: AppHandle) -> DlcStatus {
     DlcStatus {
         root_path: preferred_dlc_root(&app).to_string_lossy().into_owned(),
         ffmpeg_installed: find_ffmpeg_in_dlc(&app).is_some(),
+        simulated_input_installed: find_simulated_input_dlc(&app).is_some(),
         live2d_assets: installed_live2d_assets(&app),
     }
 }
@@ -662,6 +668,8 @@ fn get_dlc_status(app: AppHandle) -> DlcStatus {
 fn open_dlc_folder(app: AppHandle) -> Result<String, String> {
     let root = preferred_dlc_root(&app);
     fs::create_dir_all(root.join("ffmpeg"))
+        .map_err(|error| format!("无法创建 DLC 目录：{error}"))?;
+    fs::create_dir_all(root.join("simulated-input"))
         .map_err(|error| format!("无法创建 DLC 目录：{error}"))?;
     fs::create_dir_all(root.join("live2d"))
         .map_err(|error| format!("无法创建 DLC 目录：{error}"))?;
@@ -1462,10 +1470,7 @@ async fn update_overlay(app: AppHandle, payload: serde_json::Value) -> Result<()
 }
 
 #[tauri::command]
-async fn update_overlay_visible_notes(
-    app: AppHandle,
-    step_ids: Vec<String>,
-) -> Result<(), String> {
+async fn update_overlay_visible_notes(app: AppHandle, step_ids: Vec<String>) -> Result<(), String> {
     let mut notes_payload = OVERLAY_NOTES_STATE.lock().clone();
     if let Some(record) = notes_payload.as_object_mut() {
         record.insert(
@@ -2301,7 +2306,8 @@ async fn start_simulated_input(
                             )
                             .is_ok()
                             {
-                                pressed_codes.insert(code, (1_u32, event.cursor_dx, event.cursor_dy));
+                                pressed_codes
+                                    .insert(code, (1_u32, event.cursor_dx, event.cursor_dy));
                             }
                             continue;
                         }
@@ -2320,13 +2326,8 @@ async fn start_simulated_input(
                             continue;
                         }
                         let (_, cursor_dx, cursor_dy) = pressed_codes.remove(&code).unwrap();
-                        if input_simulator::inject(
-                            &event.event_type,
-                            &code,
-                            cursor_dx,
-                            cursor_dy,
-                        )
-                        .is_err()
+                        if input_simulator::inject(&event.event_type, &code, cursor_dx, cursor_dy)
+                            .is_err()
                         {
                             pressed_codes.insert(code, (1, cursor_dx, cursor_dy));
                         }
@@ -2350,7 +2351,7 @@ async fn start_simulated_input(
             })
         })
         .await
-        .map_err(|error| error.to_string())?
+        .map_err(|error| error.to_string())?;
     }
 
     #[cfg(not(windows))]
@@ -2369,15 +2370,76 @@ fn stop_simulated_input() {
 #[cfg(feature = "release-core")]
 #[tauri::command]
 async fn start_simulated_input(
-    events: Vec<serde_json::Value>,
+    mut events: Vec<SimulatedInputEvent>,
+    app: AppHandle,
 ) -> Result<SimulatedInputLaunch, String> {
-    let _ = events;
-    Err(String::from("simulated input is not included in this build"))
+    if events.is_empty() {
+        return Err(String::from("没有可模拟的输入"));
+    }
+    if events.len() > 100_000 {
+        return Err(String::from("模拟输入事件数量过多"));
+    }
+    if events.iter().any(|event| {
+        !matches!(
+            event.event_type.as_str(),
+            "keydown" | "keyup" | "mousedown" | "mouseup"
+        ) || event.code.trim().is_empty()
+    }) {
+        return Err(String::from("模拟输入只支持键盘和鼠标事件"));
+    }
+
+    let executable = find_simulated_input_dlc(&app)
+        .ok_or_else(|| String::from("未安装模拟演示 DLC。请将 DLC 解压到 wwcombo.exe 同级的 wwcombo dlc/simulated-input 目录。"))?;
+    events.sort_by_key(|event| event.at_ms);
+    stop_simulated_input_process();
+
+    let payload = serde_json::to_vec(&events).map_err(|error| error.to_string())?;
+    let mut command = Command::new(executable);
+    command
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x08000000);
+    }
+    let mut child = command
+        .spawn()
+        .map_err(|error| format!("无法启动模拟演示 DLC：{error}"))?;
+    let write_result = child
+        .stdin
+        .take()
+        .ok_or_else(|| String::from("模拟演示 DLC 未打开输入通道"))
+        .and_then(|mut stdin| {
+            stdin
+                .write_all(&payload)
+                .and_then(|_| stdin.flush())
+                .map_err(|error| format!("无法发送模拟输入事件：{error}"))
+        });
+    if let Err(error) = write_result {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(error);
+    }
+    *SIMULATED_INPUT_PROCESS.lock() = Some(child);
+    Ok(SimulatedInputLaunch { starts_in_ms: 0 })
 }
 
 #[cfg(feature = "release-core")]
 #[tauri::command]
-fn stop_simulated_input() {}
+fn stop_simulated_input() {
+    stop_simulated_input_process();
+}
+
+#[cfg(feature = "release-core")]
+fn stop_simulated_input_process() {
+    let Some(mut child) = SIMULATED_INPUT_PROCESS.lock().take() else {
+        return;
+    };
+    let _ = child.kill();
+    let _ = child.wait();
+}
 
 #[cfg(all(windows, not(feature = "release-core")))]
 mod input_simulator {
@@ -2441,10 +2503,7 @@ mod input_simulator {
     }
 
     pub fn validate_event(event_type: &str, raw_code: &str) -> Result<(), String> {
-        if !matches!(
-            event_type,
-            "keydown" | "keyup" | "mousedown" | "mouseup"
-        ) {
+        if !matches!(event_type, "keydown" | "keyup" | "mousedown" | "mouseup") {
             return Err(format!("不支持的模拟输入事件：{event_type}"));
         }
         let code = raw_code.strip_suffix("Hold").unwrap_or(raw_code);
@@ -2567,11 +2626,46 @@ mod input_simulator {
 
     fn mouse_event(code: &str, pressed: bool) -> Option<(u32, u32)> {
         match code {
-            "MouseLeft" => Some((if pressed { MOUSEEVENTF_LEFTDOWN } else { MOUSEEVENTF_LEFTUP }, 0)),
-            "MouseRight" => Some((if pressed { MOUSEEVENTF_RIGHTDOWN } else { MOUSEEVENTF_RIGHTUP }, 0)),
-            "MouseMiddle" => Some((if pressed { MOUSEEVENTF_MIDDLEDOWN } else { MOUSEEVENTF_MIDDLEUP }, 0)),
-            "Mouse3" => Some((if pressed { MOUSEEVENTF_XDOWN } else { MOUSEEVENTF_XUP }, 1)),
-            "Mouse4" => Some((if pressed { MOUSEEVENTF_XDOWN } else { MOUSEEVENTF_XUP }, 2)),
+            "MouseLeft" => Some((
+                if pressed {
+                    MOUSEEVENTF_LEFTDOWN
+                } else {
+                    MOUSEEVENTF_LEFTUP
+                },
+                0,
+            )),
+            "MouseRight" => Some((
+                if pressed {
+                    MOUSEEVENTF_RIGHTDOWN
+                } else {
+                    MOUSEEVENTF_RIGHTUP
+                },
+                0,
+            )),
+            "MouseMiddle" => Some((
+                if pressed {
+                    MOUSEEVENTF_MIDDLEDOWN
+                } else {
+                    MOUSEEVENTF_MIDDLEUP
+                },
+                0,
+            )),
+            "Mouse3" => Some((
+                if pressed {
+                    MOUSEEVENTF_XDOWN
+                } else {
+                    MOUSEEVENTF_XUP
+                },
+                1,
+            )),
+            "Mouse4" => Some((
+                if pressed {
+                    MOUSEEVENTF_XDOWN
+                } else {
+                    MOUSEEVENTF_XUP
+                },
+                2,
+            )),
             _ => None,
         }
     }
@@ -3551,6 +3645,13 @@ fn find_ffmpeg_in_dlc(app: &AppHandle) -> Option<PathBuf> {
         .find(|candidate| candidate.is_file())
 }
 
+fn find_simulated_input_dlc(app: &AppHandle) -> Option<PathBuf> {
+    dlc_search_roots(app)
+        .into_iter()
+        .map(|root| root.join("simulated-input").join("simulated-input-dlc.exe"))
+        .find(|candidate| candidate.is_file())
+}
+
 fn find_ffmpeg(app: &AppHandle) -> Option<PathBuf> {
     if let Some(ffmpeg) = find_ffmpeg_in_dlc(app) {
         return Some(ffmpeg);
@@ -3594,7 +3695,10 @@ fn emit_input(event_type: &str, code: String, capture_mode: u8) {
     {
         return;
     }
-    let shift_key = {
+    let shift_key = if event_type == "wheel" {
+        let pressed_codes = INPUT_PRESSED_CODES.lock();
+        pressed_codes.contains("ShiftLeft") || pressed_codes.contains("ShiftRight")
+    } else {
         let mut pressed_codes = INPUT_PRESSED_CODES.lock();
         let Some(shift_key) = update_pressed_input_state(&mut pressed_codes, event_type, &code)
         else {
@@ -3730,13 +3834,13 @@ mod winhook {
         GLOBAL_INPUT_MODE_PLAYSTATION, GLOBAL_INPUT_MODE_XBOX, INPUT_HOOK_STARTED,
         INPUT_HOOK_STATUS,
     };
+    use hidapi::{HidApi, HidDevice};
     use std::collections::HashSet;
     use std::ffi::c_void;
     use std::io;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::OnceLock;
     use std::time::{Duration, Instant};
-    use hidapi::{HidApi, HidDevice};
     use windows::Gaming::Input::{
         GameControllerButtonLabel, GameControllerSwitchPosition, Gamepad, GamepadButtons,
         GamepadReading, RawGameController,
@@ -3768,6 +3872,7 @@ mod winhook {
     const WM_RBUTTONUP: u32 = 0x0205;
     const WM_MBUTTONDOWN: u32 = 0x0207;
     const WM_MBUTTONUP: u32 = 0x0208;
+    const WM_MOUSEWHEEL: u32 = 0x020A;
     const WM_XBUTTONDOWN: u32 = 0x020B;
     const WM_XBUTTONUP: u32 = 0x020C;
     const ERROR_SUCCESS: u32 = 0;
@@ -3945,9 +4050,12 @@ mod winhook {
     impl PlaystationGamepadPoller {
         fn new() -> Result<Self, String> {
             static WINDOWS_GAMING_INPUT_INITIALIZED: OnceLock<Result<(), String>> = OnceLock::new();
-            let wgi_available = WINDOWS_GAMING_INPUT_INITIALIZED.get_or_init(|| {
-                unsafe { RoInitialize(RO_INIT_MULTITHREADED) }.map_err(|error| error.to_string())
-            }).is_ok();
+            let wgi_available = WINDOWS_GAMING_INPUT_INITIALIZED
+                .get_or_init(|| {
+                    unsafe { RoInitialize(RO_INIT_MULTITHREADED) }
+                        .map_err(|error| error.to_string())
+                })
+                .is_ok();
             let mut poller = Self {
                 controllers: Vec::new(),
                 hid: PlaystationHidPoller::new().ok(),
@@ -3980,7 +4088,11 @@ mod winhook {
         }
 
         fn has_controller(&self) -> bool {
-            !self.controllers.is_empty() || self.hid.as_ref().is_some_and(PlaystationHidPoller::has_controller)
+            !self.controllers.is_empty()
+                || self
+                    .hid
+                    .as_ref()
+                    .is_some_and(PlaystationHidPoller::has_controller)
         }
 
         fn read_codes(&mut self) -> HashSet<&'static str> {
@@ -4330,10 +4442,7 @@ mod winhook {
         codes
     }
 
-    fn playstation_hid_report_codes(
-        product_id: u16,
-        report: &[u8],
-    ) -> HashSet<&'static str> {
+    fn playstation_hid_report_codes(product_id: u16, report: &[u8]) -> HashSet<&'static str> {
         let mut codes = HashSet::new();
         if report.len() < 10 {
             return codes;
@@ -4704,6 +4813,8 @@ mod winhook {
                     .map(|code| ("mousedown", code)),
                 WM_XBUTTONUP => xbutton_to_code((*(lparam as *const MsllHookStruct)).mouse_data)
                     .map(|code| ("mouseup", code)),
+                WM_MOUSEWHEEL => wheel_to_code((*(lparam as *const MsllHookStruct)).mouse_data)
+                    .map(|code| ("wheel", code)),
                 _ => None,
             };
 
@@ -4713,6 +4824,17 @@ mod winhook {
         }
 
         CallNextHookEx(0, code, wparam, lparam)
+    }
+
+    fn wheel_to_code(mouse_data: u32) -> Option<&'static str> {
+        let delta = ((mouse_data >> 16) & 0xFFFF) as i16;
+        if delta > 0 {
+            Some("MouseWheelUp")
+        } else if delta < 0 {
+            Some("MouseWheelDown")
+        } else {
+            None
+        }
     }
 
     fn vk_to_code(vk: u32) -> String {

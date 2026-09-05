@@ -1,5 +1,5 @@
 import type { CharacterSlot, ComboChart, ComboImageStyle, ComboStep, RectPercent, StretchPercent } from '../../combo-core';
-import { keyboardMouseIconSource, tideIconSourceForMappingId } from '../gamepadIcons';
+import { characterTideIconSourceForMappingId, keyboardMouseIconSource, tideIconSourceForMappingId } from '../gamepadIcons';
 
 export type ComboImageItem = {
   step: ComboStep;
@@ -907,15 +907,17 @@ export function normalizeComboIconMappings(value: unknown): ComboImageStyle['ico
 export function effectiveIconMappings(style: ComboImageStyle, role: CharacterSlot | RoleStyle | undefined): ComboImageStyle['iconMappings'] {
   const globalMappings = normalizeIconMappings(style.iconMappings);
   const roleStyle = typeof role === 'number' ? style.roleStyles[role] : role;
-  const applyIconSet = (mappings: ComboImageStyle['iconMappings']) => style.iconSet === 'tide'
+  const applyIconSet = (mappings: ComboImageStyle['iconMappings'], characterName?: string) => style.iconSet === 'tide'
     ? mappings.map((mapping) => {
-      const src = tideIconSourceForMappingId(mapping.id);
       const classicSource = DEFAULT_ICON_MAPPINGS.find((item) => item.id === mapping.id)?.src;
-      return src && mapping.src === classicSource ? { ...mapping, src } : mapping;
+      const genericSource = tideIconSourceForMappingId(mapping.id);
+      const src = characterTideIconSourceForMappingId(mapping.id, characterName) ?? genericSource;
+      const isBuiltInSource = mapping.src === classicSource || mapping.src === genericSource;
+      return src && isBuiltInSource ? { ...mapping, src } : mapping;
     })
     : mappings;
   const roleMappings = roleStyle?.iconMappings;
-  if (!roleMappings?.length) return applyIconSet(globalMappings);
+  if (!roleMappings?.length) return applyIconSet(globalMappings, roleStyle?.name);
 
   // Role snapshots are still needed for per-character custom icons, but they
   // must not erase newer global triggers (especially Intro/Outro aliases).
@@ -936,7 +938,7 @@ export function effectiveIconMappings(style: ComboImageStyle, role: CharacterSlo
     };
   });
   const globalIds = new Set(globalMappings.map((mapping) => mapping.id));
-  return applyIconSet([...merged, ...normalizedRoleMappings.filter((mapping) => !globalIds.has(mapping.id))]);
+  return applyIconSet([...merged, ...normalizedRoleMappings.filter((mapping) => !globalIds.has(mapping.id))], roleStyle?.name);
 }
 
 export function switchSlotForMove(moveId: string): CharacterSlot | null {

@@ -27,6 +27,8 @@ export type ShortcutAction =
   | 'timelinePlaceFinisher'
   | 'timelinePlaceEmpty'
   | 'timelinePlaceIntroSwitch'
+  | 'practiceManualBackward'
+  | 'practiceManualForward'
   | 'videoPlayPause'
   | 'videoSeekBackward'
   | 'videoSeekForward';
@@ -35,7 +37,7 @@ export type ShortcutSettings = Record<ShortcutAction, string>;
 
 export type ShortcutDefinition = {
   id: ShortcutAction;
-  group: 'timeline' | 'placement' | 'video';
+  group: 'timeline' | 'placement' | 'practice' | 'video';
   chinese: string;
   english: string;
 };
@@ -72,6 +74,8 @@ export const DEFAULT_SHORTCUT_SETTINGS: ShortcutSettings = {
   timelinePlaceFinisher: 'KeyF',
   timelinePlaceEmpty: 'KeyW',
   timelinePlaceIntroSwitch: 'KeyB',
+  practiceManualBackward: 'MouseWheelUp',
+  practiceManualForward: 'MouseWheelDown',
   videoPlayPause: 'Space',
   videoSeekBackward: 'ArrowLeft',
   videoSeekForward: 'ArrowRight'
@@ -104,6 +108,8 @@ export const SHORTCUT_DEFINITIONS: readonly ShortcutDefinition[] = [
   { id: 'timelinePlaceFinisher', group: 'placement', chinese: '处决', english: 'Tunebreak' },
   { id: 'timelinePlaceEmpty', group: 'placement', chinese: '空招式', english: 'Empty Action' },
   { id: 'timelinePlaceIntroSwitch', group: 'placement', chinese: '变奏切人', english: 'Intro Character Switch' },
+  { id: 'practiceManualBackward', group: 'practice', chinese: '演示 / 推进模式手动后退', english: 'Demo / Advance Mode Step Backward' },
+  { id: 'practiceManualForward', group: 'practice', chinese: '演示 / 推进模式手动前进', english: 'Demo / Advance Mode Step Forward' },
   { id: 'videoPlayPause', group: 'video', chinese: '播放 / 暂停视频', english: 'Play / Pause Video' },
   { id: 'videoSeekBackward', group: 'video', chinese: '后退 0.5 秒', english: 'Seek Backward 0.5s' },
   { id: 'videoSeekForward', group: 'video', chinese: '前进 0.5 秒', english: 'Seek Forward 0.5s' }
@@ -113,8 +119,13 @@ const SHORTCUT_ACTIONS = SHORTCUT_DEFINITIONS.map((definition) => definition.id)
 
 export function normalizeShortcutSettings(value: unknown): ShortcutSettings {
   const source = value && typeof value === 'object' ? value as Partial<Record<ShortcutAction, unknown>> : {};
+  const hasLegacyManualWheelDefaults = source.practiceManualBackward === 'MouseWheelDown'
+    && source.practiceManualForward === 'MouseWheelUp';
   return Object.fromEntries(SHORTCUT_ACTIONS.map((action) => {
     const chord = typeof source[action] === 'string' ? source[action]!.trim() : '';
+    if (hasLegacyManualWheelDefaults && (action === 'practiceManualBackward' || action === 'practiceManualForward')) {
+      return [action, DEFAULT_SHORTCUT_SETTINGS[action]];
+    }
     return [action, chord && !/^(Control|Alt|Meta)(Left|Right)?(?:\+|$)/.test(chord) ? chord : DEFAULT_SHORTCUT_SETTINGS[action]];
   })) as ShortcutSettings;
 }
@@ -123,6 +134,11 @@ export function shortcutChordFromCode(code: string, shiftKey = false): string {
   const normalized = normalizeInputCode(code);
   if (normalized === 'ShiftLeft' || normalized === 'ShiftRight') return 'Shift';
   return shiftKey ? `Shift+${normalized}` : normalized;
+}
+
+export function shortcutChordFromWheelDelta(deltaY: number): string | null {
+  if (!Number.isFinite(deltaY) || deltaY === 0) return null;
+  return deltaY < 0 ? 'MouseWheelUp' : 'MouseWheelDown';
 }
 
 export function shortcutChordFromKeyboardEvent(event: KeyboardEvent): string | null {
@@ -156,6 +172,8 @@ export function shortcutDisplayLabel(chord: string): string {
     if (part === 'ArrowRight') return 'Right';
     if (part === 'ArrowUp') return 'Up';
     if (part === 'ArrowDown') return 'Down';
+    if (part === 'MouseWheelUp') return 'Wheel Up';
+    if (part === 'MouseWheelDown') return 'Wheel Down';
     if (part.startsWith('Key')) return part.slice(3);
     if (part.startsWith('Digit')) return part.slice(5);
     return part;
