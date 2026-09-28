@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState  } from 'react';
 import type { CSSProperties, FocusEvent as ReactFocusEvent, InputHTMLAttributes, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactNode, WheelEvent as ReactWheelEvent  } from 'react';
 import { createPortal  } from 'react-dom';
-import { Activity, ArrowLeft, BookOpen, Bug, Calculator, Check, ChevronLeft, ChevronRight, Clipboard, Clock3, Combine, Copy, Diamond, Download, ExternalLink, Eye, EyeOff, FileInput, FileText, FileVideo, FolderOpen, Gamepad2, GraduationCap, GripVertical, History, Keyboard, Layers, Lock, Moon, Music2, Move, NotebookPen, Palette, Pause, Pencil, PanelBottomClose, PanelBottomOpen, Plus, Play, RadioTower, Redo2, RefreshCw, Repeat2, RotateCcw, Save, Scissors, Settings, Share2, Split, Square, Stamp, Sun, Target, Trash2, TriangleAlert, Undo2, Upload, Users, Waves, Wrench, X  } from 'lucide-react';
+import { Activity, ArrowLeft, BookOpen, Bug, Calculator, Check, ChevronLeft, ChevronRight, Clipboard, Clock3, Combine, Copy, Diamond, Download, ExternalLink, Eye, EyeOff, FileInput, FileText, FileVideo, FolderOpen, Gamepad2, GraduationCap, GripVertical, History, Keyboard, Layers, Lock, Megaphone, Maximize2, Moon, Music2, Move, NotebookPen, Palette, Pause, Pencil, PanelBottomClose, PanelBottomOpen, Plus, Play, RadioTower, Redo2, RefreshCw, Repeat2, RotateCcw, Save, Scissors, Settings, Share2, Split, Square, Stamp, Sun, Target, Trash2, TriangleAlert, Undo2, Upload, Users, Waves, Wrench, X  } from 'lucide-react';
 import {
   CharacterSlot,
   AfygTimingKeyframe,
@@ -59,7 +59,7 @@ import { defaultKeyboardMouseIconSource, gamepadCodeLabel, gamepadIconSource, ic
 import type { GamepadIconSet, KeyboardIconMode  } from './gamepadIcons';
 import { HomeSpineStage  } from './HomeSpineStage';
 import { HoldDragFeedback  } from './HoldDragFeedback';
-import { HOME_SPINE_OPTIONS, defaultHomeSpineTransform, homeSpineOption, normalizeHomeSpineId, normalizeHomeSpineTransforms  } from './homeSpineOptions';
+import { defaultHomeSpineTransform, homeSpineOption, normalizeHomeSpineId, normalizeHomeSpineTransforms  } from './homeSpineOptions';
 import type { HomeSpineId, HomeSpineTransform, HomeSpineTransforms  } from './homeSpineOptions';
 import { HELP_CONTENT  } from './helpContent';
 import type { HelpGuideGroup, HelpTab  } from './helpContent';
@@ -68,7 +68,7 @@ import { combineVideoRecognitionWithExistingChart  } from './videoKeyMappingReco
 import { localizeCharacterName, localizeDefaultCharacterName, localizeEnglish, setRemoteCharacterNames, useI18n  } from './i18n';
 import type { AppLanguage } from './i18n';
 import { localizedDefaultMoveLabel, localizedMovePrompt  } from './moveLabels';
-import { noteStepCompleted  } from './noteDisplay';
+import { noteNumberByStepId, noteStepCompleted  } from './noteDisplay';
 import { DecoratedNoteRow  } from './noteRowDecoration';
 import { EmbeddedBrowserExitControl } from './EmbeddedBrowserExitControl';
 import { NumericDraftInput  } from './NumericDraftInput';
@@ -101,6 +101,7 @@ type EditorTab = 'timeline' | 'content';
 type PracticePreset = 'strict' | 'lenient' | 'simple';
 type InputMode = 'keyboard' | 'gamepad';
 type GlobalInputMode = 'keyboard' | 'xbox' | 'playstation';
+type GamepadRecognitionMode = 'xbox' | 'playstation';
 type RecordingIndicatorCorner = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
 type AppearanceMode = 'night' | 'day' | 'night2' | 'coast';
 type SettingsView = 'settings' | 'keybindings' | 'shortcuts' | 'help';
@@ -112,6 +113,8 @@ type DlcStatus = {
   simulatedInputInstalled: boolean;
   live2dAssets: Array<{
     id: string;
+    displayName?: string;
+    names?: Partial<Record<AppLanguage, string>>;
     skeletonUrl: string;
     atlasUrl: string;
     textureUrl: string;
@@ -119,6 +122,13 @@ type DlcStatus = {
 };
 
 const EMPTY_DLC_STATUS: DlcStatus = { rootPath: '', ffmpegInstalled: false, simulatedInputInstalled: false, live2dAssets: [] };
+
+function homeSpineOptionForAsset(asset: DlcStatus['live2dAssets'][number]) {
+  const base = homeSpineOption(asset.id);
+  const names = { ...base.names, ...(asset.names ?? {}) };
+  if (asset.displayName?.trim()) names['zh-CN'] = asset.displayName.trim();
+  return { ...base, id: asset.id, names };
+}
 type DefaultAvatarEntry = { name: string; src: string; remote?: boolean  };
 type RemoteAvatarCacheRecord = { dataUrl: string; cachedAt: number  };
 type DefaultBasePresetEntry = ComboBasePreset;
@@ -126,7 +136,10 @@ type ProjectAssetCharacter = { id: string; names: Partial<Record<AppLanguage, st
 type ProjectAssetManifest = { schemaVersion: number; revision: number; updatedAt: string; characters: ProjectAssetCharacter[]  };
 type AppReleaseDownload = { url: string; fileName?: string; bytes?: number; sha256?: string  };
 type AppReleaseChannel = 'quark' | 'baidu' | 'cloud123' | 'github';
-type AppReleaseManifest = { schemaVersion: number; version: string; title: string; notes: string; publishedAt: string; download: AppReleaseDownload | null; downloadLinks: Record<AppReleaseChannel, string> & { china: string; global: string; lanzou?: string }  };
+type AppIncrementalUpdate = { fromVersion: string; url: string; fileName?: string; bytes?: number; sha256: string; targetSha256: string };
+type AppReleaseManifest = { schemaVersion: number; version: string; title: string; notes: string; publishedAt: string; download: AppReleaseDownload | null; incrementalUpdates: AppIncrementalUpdate[]; downloadLinks: Record<AppReleaseChannel, string> & { china: string; global: string; lanzou?: string }  };
+type ClientAnnouncement = { enabled: boolean; title: string; body: string; updatedAt: number };
+const EMPTY_CLIENT_ANNOUNCEMENT: ClientAnnouncement = { enabled: false, title: '', body: '', updatedAt: 0 };
 type CommunityImportMessage = { type: 'wwcombo:community-import'; version: 1; requestId: string; filename?: string; payload: unknown  };
 type CommunityLibraryRequestMessage = { type: 'wwcombo:community-library-request'; version: 1  };
 type CommunityLibraryItemRequestMessage = { type: 'wwcombo:community-library-item-request'; version: 1; requestId: string; chartId: string  };
@@ -179,7 +192,7 @@ type InputSettingsPackage = {
   gamepadBindings: KeyBinding[];
   shortcutSettings?: ShortcutSettings;
   customIconSources?: CustomIconSources;
-  preferences: { inputMode: InputMode; keyboardIconMode: KeyboardIconMode; gamepadIconSet: GamepadIconSet  };
+  preferences: { inputMode: InputMode; keyboardIconMode: KeyboardIconMode; gamepadIconSet: GamepadIconSet; gamepadRecognitionMode?: GamepadRecognitionMode  };
 };
 
 function localizedMessage(chinese: string, english: string): LocalizedMessage {
@@ -237,8 +250,16 @@ function parseInputSettingsPackage(value: unknown): InputSettingsPackage {
     gamepadBindings: parseBindings(record.gamepadBindings),
     shortcutSettings: record.shortcutSettings ? normalizeShortcutSettings(record.shortcutSettings) : undefined,
     customIconSources: record.schemaVersion === 3 ? normalizeCustomIconSources(record.customIconSources) : undefined,
-    preferences: { ...preferences, keyboardIconMode: 'actual'  }
-   };
+    preferences: {
+      ...preferences,
+      keyboardIconMode: 'actual',
+      gamepadRecognitionMode: preferences.gamepadRecognitionMode === 'playstation'
+        ? 'playstation'
+        : preferences.gamepadRecognitionMode === 'xbox'
+          ? 'xbox'
+          : preferences.gamepadIconSet
+    }
+  };
 }
 
 function normalizeCustomIconSources(value: unknown): CustomIconSources {
@@ -344,6 +365,8 @@ const DEFAULT_OVERLAY_NOTE_LAYOUT_BOUNDS: OverlayNoteLayoutBounds = {
 const DEFAULT_RHYTHM_UI: RhythmUiSettings = { width: 1739, height: 240, scale: 1, laneGap: 7, roleSpacing: 120, fallSpeed: 0.18, judgeLineOffset: 200, ringStartScale: 1.78, ringEndScale: 1.25, ringOffsetX: 0, ringOffsetY: -9, ringDurationMs: 420, feedbackX: 50, feedbackY: 64  };
 const COMMUNITY_SITE_URL = (import.meta.env.VITE_COMMUNITY_SITE_URL || 'https://nova.fb520.site/').trim();
 const COMMUNITY_SITE_ORIGIN = new URL(COMMUNITY_SITE_URL).origin;
+const COMMUNITY_VISITED_STORAGE_KEY = 'wwcombo-community-visited-v1';
+const CLIENT_ANNOUNCEMENT_API = new URL('/api/community/client-announcement', COMMUNITY_SITE_URL).toString();
 const COMMUNITY_ACCOUNT_TOKEN_STORAGE_KEY = 'wwcombo-community-account-token-v1';
 const COMMUNITY_IMPORT_MAX_BYTES = 2_000_000;
 const COMMUNITY_UPLOAD_MAX_BYTES = 1_048_576;
@@ -373,6 +396,7 @@ function InlineOverlayNotesFallback({ chart, practice, visible, moveMode, showNo
     .sort((left, right) => left.startMin - right.startMin || left.id.localeCompare(right.id));
     return noteStyle.noteOrder === 'oldest-top' ? sorted : sorted.reverse();
   }, [chart, moveMode, noteStyle.noteOrder, practice, visibleStepIds]);
+  const noteNumbers = useMemo(() => noteNumberByStepId(chart), [chart]);
 
   if (!showNotesSeparately || (!visible && !moveMode)) return null;
   const beginDrag = (event: ReactPointerEvent<HTMLElement>, edge = '') => {
@@ -415,7 +439,7 @@ function InlineOverlayNotesFallback({ chart, practice, visible, moveMode, showNo
         {['n', 'e', 's', 'w', 'ne', 'nw', 'se', 'sw'].map((edge) => <button type="button" aria-label={`Resize ${edge}`} key={edge} className={`inline-overlay-notes-handle ${edge}`} onPointerDown={(event) => beginDrag(event, edge)} />)}
       </div>}
       <div className="inline-overlay-notes-panel" style={{ textShadow: roundedTextOutlineShadow(noteStyle.noteTextStrokeEnabled, noteStyle.noteTextStrokeWidth, noteStyle.noteTextStrokeColor, ['0 2px 5px rgba(0,0,0,.95)', '0 0 2px rgba(0,0,0,.9)']) }}>
-        {notes.map((step) => <DecoratedNoteRow className="inline-overlay-notes-row" key={step.id} step={step} style={noteStyle} />)}
+        {notes.map((step) => <DecoratedNoteRow className="inline-overlay-notes-row" key={step.id} step={step} style={noteStyle} number={noteNumbers.get(step.id)} />)}
       </div>
     </div>, document.body
   );
@@ -1062,6 +1086,13 @@ function normalizeAppRelease(value: unknown): AppReleaseManifest | null {
   const baiduLink = channelValue(links.baidu);
   const cloud123Link = channelValue(links.cloud123 || links.lanzou);
   const githubLink = channelValue(links.github || links.global);
+  const incrementalUpdates: AppIncrementalUpdate[] = (Array.isArray(record.incrementalUpdates) ? record.incrementalUpdates : []).flatMap((item) => {
+    if (!item || typeof item !== 'object') return [];
+    const candidate = item as Partial<AppIncrementalUpdate>;
+    const url = channelValue(candidate.url);
+    if (!/^\d+\.\d+\.\d+$/.test(String(candidate.fromVersion || '')) || !/^https?:\/\//i.test(url) || !/^[a-f0-9]{64}$/i.test(String(candidate.sha256 || '')) || !/^[a-f0-9]{64}$/i.test(String(candidate.targetSha256 || ''))) return [];
+    return [{ fromVersion: String(candidate.fromVersion), url, fileName: typeof candidate.fileName === 'string' ? candidate.fileName : undefined, bytes: Math.max(0, Number(candidate.bytes) || 0), sha256: String(candidate.sha256).toLowerCase(), targetSha256: String(candidate.targetSha256).toLowerCase() }];
+  });
   return {
     schemaVersion: 1,
     version: record.version,
@@ -1069,6 +1100,7 @@ function normalizeAppRelease(value: unknown): AppReleaseManifest | null {
     notes: typeof record.notes === 'string' ? record.notes : '',
     publishedAt: typeof record.publishedAt === 'string' ? record.publishedAt : '',
     download,
+    incrementalUpdates,
     downloadLinks: {
       quark: /^https?:\/\//i.test(quarkLink) ? quarkLink : '',
       baidu: /^https?:\/\//i.test(baiduLink) ? baiduLink : '',
@@ -1225,7 +1257,7 @@ function createStepFromMove(move: MoveDefinition, startAt: number): ComboStep {
 
 function isReasonableChart(chart: ComboChart | null | undefined): chart is ComboChart {
   if (!chart || !Array.isArray(chart.steps)) return false;
-  return chart.steps.every((step) => [step.startMin, step.startMax, step.durationMin, step.durationMax].every((value) => Number.isFinite(value) && value >= 0 && value < 10 * 60 * 1000));
+  return chart.steps.every((step) => Boolean(step) && [step.startMin, step.startMax, step.durationMin, step.durationMax].every((value) => Number.isFinite(value) && value >= 0 && value < 10 * 60 * 1000));
  }
 
  function normalizeChart(chart: ComboChart): ComboChart {
@@ -1641,7 +1673,7 @@ function normalizeRecordingRecognitionSettings(value: unknown): RecordingRecogni
  }
 
 function loadSavedState() {
-  const fallback = { compatibilityMode: false, moves: DEFAULT_MOVES, bindings: DEFAULT_BINDINGS, gamepadBindings: DEFAULT_GAMEPAD_BINDINGS, inputMode: 'keyboard' as InputMode, gamepadIconSet: 'xbox' as GamepadIconSet, keyboardIconMode: 'actual' as KeyboardIconMode, shortcutSettings: DEFAULT_SHORTCUT_SETTINGS, customIconSources: { } as CustomIconSources, chart: null as ComboChart | null, library: [] as ComboChart[], startingCharacterSlot: 1 as CharacterSlot, practiceRoleOrder: [...CHARACTER_SLOTS], overlaySettings: DEFAULT_OVERLAY_SETTINGS, overlayLayoutBounds: DEFAULT_OVERLAY_LAYOUT_BOUNDS, overlayNoteLayoutBounds: DEFAULT_OVERLAY_NOTE_LAYOUT_BOUNDS, comboImageStyle: createDefaultComboImageStyle(), verticalComboImageStyle: createDefaultVerticalComboImageStyle(), waterfallComboImageStyle: createDefaultWaterfallComboImageStyle(), roleBaseFollowsAvatar: false, rhythmUiSettings: DEFAULT_RHYTHM_UI, axisGateEnabled: false, resetPracticeProgressOnStop: false, exportDirectory: DEFAULT_EXPORT_DIRECTORY, recordingIndicatorEnabled: true, recordingIndicatorCorner: 'bottom-left' as RecordingIndicatorCorner, recordingRecognitionSettings: DEFAULT_RECORDING_RECOGNITION_SETTINGS, simulatedInputSettings: DEFAULT_SIMULATED_INPUT_SETTINGS, simulatedInputChartId: null as string | null, live2dEnabled: true, homeSpineId: normalizeHomeSpineId(null), homeSpineTransforms: {} as HomeSpineTransforms, teamPresets: [] as TeamPresetEntry[]  };
+  const fallback = { compatibilityMode: false, moves: DEFAULT_MOVES, bindings: DEFAULT_BINDINGS, gamepadBindings: DEFAULT_GAMEPAD_BINDINGS, inputMode: 'keyboard' as InputMode, gamepadIconSet: 'xbox' as GamepadIconSet, gamepadRecognitionMode: 'xbox' as GamepadRecognitionMode, keyboardIconMode: 'actual' as KeyboardIconMode, shortcutSettings: DEFAULT_SHORTCUT_SETTINGS, customIconSources: { } as CustomIconSources, chart: null as ComboChart | null, library: [] as ComboChart[], startingCharacterSlot: 1 as CharacterSlot, practiceRoleOrder: [...CHARACTER_SLOTS], overlaySettings: DEFAULT_OVERLAY_SETTINGS, overlayLayoutBounds: DEFAULT_OVERLAY_LAYOUT_BOUNDS, overlayNoteLayoutBounds: DEFAULT_OVERLAY_NOTE_LAYOUT_BOUNDS, comboImageStyle: createDefaultComboImageStyle(), verticalComboImageStyle: createDefaultVerticalComboImageStyle(), waterfallComboImageStyle: createDefaultWaterfallComboImageStyle(), roleBaseFollowsAvatar: false, rhythmUiSettings: DEFAULT_RHYTHM_UI, axisGateEnabled: false, resetPracticeProgressOnStop: false, exportDirectory: DEFAULT_EXPORT_DIRECTORY, recordingIndicatorEnabled: true, recordingIndicatorCorner: 'bottom-left' as RecordingIndicatorCorner, recordingRecognitionSettings: DEFAULT_RECORDING_RECOGNITION_SETTINGS, simulatedInputSettings: DEFAULT_SIMULATED_INPUT_SETTINGS, simulatedInputChartId: null as string | null, live2dEnabled: true, homeSpineId: normalizeHomeSpineId(null), homeSpineTransforms: {} as HomeSpineTransforms, homeDirectControl: false, homeBackgroundSrc: '', teamPresets: [] as TeamPresetEntry[]  };
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return fallback;
@@ -1664,6 +1696,7 @@ function loadSavedState() {
       gamepadBindings: normalizeBindings(parsed.gamepadBindings?.length ? parsed.gamepadBindings : DEFAULT_GAMEPAD_BINDINGS, DEFAULT_GAMEPAD_BINDINGS),
       inputMode: parsed.inputMode === 'gamepad' ? 'gamepad' as InputMode : 'keyboard' as InputMode,
       gamepadIconSet: parsed.gamepadIconSet === 'playstation' ? 'playstation' as GamepadIconSet : 'xbox' as GamepadIconSet,
+      gamepadRecognitionMode: parsed.gamepadRecognitionMode === 'playstation' ? 'playstation' as GamepadRecognitionMode : parsed.gamepadRecognitionMode === 'xbox' ? 'xbox' as GamepadRecognitionMode : parsed.gamepadIconSet === 'playstation' ? 'playstation' as GamepadRecognitionMode : 'xbox' as GamepadRecognitionMode,
       keyboardIconMode: 'actual' as KeyboardIconMode,
       shortcutSettings: normalizeShortcutSettings(parsed.shortcutSettings),
       customIconSources: normalizeCustomIconSources(parsed.customIconSources),
@@ -1688,6 +1721,8 @@ function loadSavedState() {
       live2dEnabled: parsed.live2dEnabled !== false,
       homeSpineId: normalizeHomeSpineId(parsed.homeSpineId),
       homeSpineTransforms: normalizeHomeSpineTransforms(parsed.homeSpineTransforms),
+      homeDirectControl: parsed.homeDirectControl === true,
+      homeBackgroundSrc: typeof parsed.homeBackgroundSrc === 'string' && parsed.homeBackgroundSrc.startsWith('data:image/') ? parsed.homeBackgroundSrc : '',
       teamPresets: normalizeTeamPresets(parsed.teamPresets)
      };
    } catch {
@@ -1756,15 +1791,15 @@ function isPlayStationGamepad(pad: Gamepad): boolean {
     || id.includes('054c');
  }
 
-function matchingGamepads(iconSet: GamepadIconSet): Gamepad[] {
+function matchingGamepads(recognitionMode: GamepadRecognitionMode): Gamepad[] {
   const connected = Array.from(navigator.getGamepads?.() ?? []).filter((pad): pad is Gamepad => Boolean(pad));
-  const matching = connected.filter((pad) => (iconSet === 'playstation') === isPlayStationGamepad(pad));
-  return matching.length ? matching : iconSet === 'playstation' ? connected : [];
- }
+  const matching = connected.filter((pad) => (recognitionMode === 'playstation') === isPlayStationGamepad(pad));
+  return matching.length ? matching : recognitionMode === 'playstation' ? connected : [];
+}
 
-function readPressedGamepadCodes(iconSet: GamepadIconSet): Set<string> {
+function readPressedGamepadCodes(recognitionMode: GamepadRecognitionMode): Set<string> {
   const current = new Set<string>();
-  for (const pad of matchingGamepads(iconSet)) {
+  for (const pad of matchingGamepads(recognitionMode)) {
     pad.buttons.forEach((button, index) => {
       if (button.pressed) current.add(gamepadButtonCode(index));
      });
@@ -1841,6 +1876,28 @@ export default function App() {
   const getDisplaySize = useMemo(() => desktop?.getDisplaySize ? () => desktop.getDisplaySize!() : undefined, [desktop]);
   const [dlcStatus, setDlcStatus] = useState<DlcStatus>(EMPTY_DLC_STATUS);
   const [dlcStatusLoading, setDlcStatusLoading] = useState(false);
+  const [clientAnnouncement, setClientAnnouncement] = useState<ClientAnnouncement>(EMPTY_CLIENT_ANNOUNCEMENT);
+  useEffect(() => {
+    let active = true;
+    const loadAnnouncement = async () => {
+      try {
+        const response = await fetch(CLIENT_ANNOUNCEMENT_API, { cache: 'no-store' });
+        if (!response.ok) throw new Error(`Announcement request failed: ${response.status}`);
+        const value = await response.json() as Partial<ClientAnnouncement>;
+        const announcement: ClientAnnouncement = {
+          enabled: value.enabled === true,
+          title: typeof value.title === 'string' ? value.title.trim().slice(0, 120) : '',
+          body: typeof value.body === 'string' ? value.body.trim().slice(0, 4000) : '',
+          updatedAt: Number(value.updatedAt || 0) || 0
+        };
+        if (active) setClientAnnouncement(announcement);
+      } catch {
+        // The home screen remains usable when the community server is unavailable.
+      }
+    };
+    void loadAnnouncement();
+    return () => { active = false; };
+  }, []);
   const refreshDlcStatus = async () => {
     if (!desktop?.getDlcStatus) return;
     setDlcStatusLoading(true);
@@ -1879,7 +1936,8 @@ export default function App() {
   const [gamepadBindings, setGamepadBindings] = useState<KeyBinding[]>(saved.gamepadBindings ?? DEFAULT_GAMEPAD_BINDINGS);
   const [inputMode, setInputMode] = useState<InputMode>(saved.inputMode ?? 'keyboard');
   const [gamepadIconSet, setGamepadIconSet] = useState<GamepadIconSet>(saved.gamepadIconSet ?? 'xbox');
-  const globalInputMode: GlobalInputMode = inputMode === 'keyboard' ? 'keyboard' : gamepadIconSet;
+  const [gamepadRecognitionMode, setGamepadRecognitionMode] = useState<GamepadRecognitionMode>(saved.gamepadRecognitionMode ?? saved.gamepadIconSet ?? 'xbox');
+  const globalInputMode: GlobalInputMode = inputMode === 'keyboard' ? 'keyboard' : gamepadRecognitionMode;
   const keyboardIconMode: KeyboardIconMode = 'actual';
   const [shortcutSettings, setShortcutSettings] = useState<ShortcutSettings>(saved.shortcutSettings ?? DEFAULT_SHORTCUT_SETTINGS);
   const [customIconSources, setCustomIconSources] = useState<CustomIconSources>(saved.customIconSources ?? { });
@@ -1918,6 +1976,9 @@ export default function App() {
   const [live2dEnabled, setLive2dEnabled] = useState(saved.live2dEnabled);
   const [homeSpineId, setHomeSpineId] = useState<HomeSpineId>(saved.homeSpineId);
   const [homeSpineTransforms, setHomeSpineTransforms] = useState<HomeSpineTransforms>(saved.homeSpineTransforms);
+  const [homeDirectControl, setHomeDirectControl] = useState(saved.homeDirectControl);
+  const [homeBackgroundSrc, setHomeBackgroundSrc] = useState(saved.homeBackgroundSrc);
+  const [homeShowcaseActive, setHomeShowcaseActive] = useState(false);
   const [teamPresets, setTeamPresets] = useState<TeamPresetEntry[]>(saved.teamPresets);
   const [overlayVisible, setOverlayVisible] = useState(false);
   const [overlayMoveMode, setOverlayMoveMode] = useState(false);
@@ -1960,6 +2021,9 @@ export default function App() {
   const [simulatedInputRedoStack, setSimulatedInputRedoStack] = useState<TimelineHistorySnapshot[]>([]);
   const [communityFrameKey, setCommunityFrameKey] = useState(0);
   const [communityFrameStatus, setCommunityFrameStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [communityVisited, setCommunityVisited] = useState(() => {
+    try { return localStorage.getItem(COMMUNITY_VISITED_STORAGE_KEY) === '1'; } catch { return false; }
+  });
 
   const overlaySettingsRef = useRef(saved.overlaySettings);
   const overlayMoveModeRef = useRef(overlayMoveMode);
@@ -2053,7 +2117,34 @@ export default function App() {
     const activeIndex = Math.max(0, Math.min(practice.currentStepIndex, overlayPracticeChart.steps.length - 1));
     const activeStepId = overlayPracticeChart.steps[activeIndex]?.id;
     const activeDisplayIndex = comboImageDisplayIndexForStep(allItems, activeStepId);
-    const visibleItems = visibleComboImageItems(allItems, activeDisplayIndex, linearLayout, layoutBounds, normalizedStyle);
+    let cursor = 0;
+    const overlap = linearLayout === 'vertical' && normalizedStyle.blockMode === 'image'
+      ? Math.max(0, Math.round(normalizedStyle.capsuleHeight * 0.42))
+      : 0;
+    const gap = linearLayout === 'vertical'
+      ? Math.max(0, Math.round(normalizedStyle.capsuleGap * 0.08)) - overlap
+      : normalizedStyle.capsuleGap;
+    const metrics = allItems.map((item, index) => {
+      if (index > 0) cursor += gap;
+      const size = comboImageItemSizeForDisplayItem(normalizedStyle, item, normalizedStyle.roleStyles[item.characterSlot]);
+      const extent = linearLayout === 'vertical' ? size.height : size.width;
+      const metric = { start: cursor, extent };
+      cursor += extent;
+      return metric;
+    });
+    const activeMetric = metrics[activeDisplayIndex];
+    if (!activeMetric) return [];
+    const viewport = linearLayout === 'vertical' ? layoutBounds.height : layoutBounds.width;
+    let trackOffset = normalizedStyle.scrollAnchor === 'center'
+      ? viewport / 2 - (activeMetric.start + activeMetric.extent / 2)
+      : normalizedStyle.scrollStartOffsetPx - activeMetric.start;
+    if (linearLayout === 'vertical' && normalizedStyle.scrollAnchor === 'start') {
+      trackOffset += verticalComboTrackClipCompensation(normalizedStyle, allItems[activeDisplayIndex], activeMetric.start, trackOffset, 26);
+    }
+    const visibleItems = allItems.filter((item, index) => {
+      const metric = metrics[index];
+      return metric.start + trackOffset < viewport && metric.start + metric.extent + trackOffset > 0;
+    });
     return [...new Set(visibleItems.flatMap((item) => [item.step.id, ...(item.mergedStepIds ?? [])]))];
   }, [activeOverlayComboImageStyle, overlayPracticeChart, overlaySettings, practice.currentStepIndex]);
   const appearanceComboImageStyle = overlaySettings.layout === 'waterfall' ? waterfallComboImageStyle : overlaySettings.layout === 'vertical' ? verticalComboImageStyle : comboImageStyle;
@@ -2089,9 +2180,21 @@ export default function App() {
 
   useEffect(() => {
     const preventBrowserKeyboardAction = (event: KeyboardEvent) => {
+      if (homeShowcaseActive && event.key === 'Escape') {
+        event.preventDefault();
+        setHomeShowcaseActive(false);
+        if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
+        return;
+      }
       if (shouldPreventBrowserKeyDefault(event)) event.preventDefault();
      };
-    const preventNativeContextMenu = (event: MouseEvent) => event.preventDefault();
+    const preventNativeContextMenu = (event: MouseEvent) => {
+      event.preventDefault();
+      if (homeShowcaseActive) {
+        setHomeShowcaseActive(false);
+        if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
+      }
+    };
     const preventNativeDrag = (event: DragEvent) => event.preventDefault();
     const preventAuxiliaryMouseDefault = (event: MouseEvent) => {
        if (event.button === 1 || event.button === 3 || event.button === 4) event.preventDefault();
@@ -2115,7 +2218,15 @@ export default function App() {
       window.removeEventListener('auxclick', preventAuxiliaryMouseDefault, true);
       window.removeEventListener('wheel', preventBrowserZoom, true);
      };
-   }, []);
+   }, [homeShowcaseActive]);
+
+  useEffect(() => {
+    const onFullscreenChange = () => {
+      if (!document.fullscreenElement) setHomeShowcaseActive(false);
+    };
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', onFullscreenChange);
+  }, []);
 
   useEffect(() => {
     overlaySettingsRef.current = overlaySettings;
@@ -2222,9 +2333,9 @@ export default function App() {
    }, [page, Boolean(shareDraft)]);
 
   useEffect(() => {
-    const payload = JSON.stringify({ compatibilityMode, moves, bindings, gamepadBindings, inputMode, gamepadIconSet, keyboardIconMode, shortcutSettings, customIconSources, chart, library, startingCharacterSlot, practiceRoleOrder, overlaySettings, overlayLayoutBounds, overlayNoteLayoutBounds, comboImageStyle, verticalComboImageStyle, waterfallComboImageStyle, roleBaseFollowsAvatar, rhythmUiSettings, axisGateEnabled, resetPracticeProgressOnStop, exportDirectory, recordingIndicatorEnabled, recordingIndicatorCorner, recordingRecognitionSettings, simulatedInputSettings, simulatedInputChartId, live2dEnabled, homeSpineId, homeSpineTransforms, teamPresets  });
+    const payload = JSON.stringify({ compatibilityMode, moves, bindings, gamepadBindings, inputMode, gamepadIconSet, gamepadRecognitionMode, keyboardIconMode, shortcutSettings, customIconSources, chart, library, startingCharacterSlot, practiceRoleOrder, overlaySettings, overlayLayoutBounds, overlayNoteLayoutBounds, comboImageStyle, verticalComboImageStyle, waterfallComboImageStyle, roleBaseFollowsAvatar, rhythmUiSettings, axisGateEnabled, resetPracticeProgressOnStop, exportDirectory, recordingIndicatorEnabled, recordingIndicatorCorner, recordingRecognitionSettings, simulatedInputSettings, simulatedInputChartId, live2dEnabled, homeSpineId, homeSpineTransforms, homeDirectControl, homeBackgroundSrc, teamPresets  });
     if (payload.length < LOCAL_STORAGE_SOFT_LIMIT) localStorage.setItem(STORAGE_KEY, payload);
-  }, [compatibilityMode, moves, bindings, gamepadBindings, inputMode, gamepadIconSet, keyboardIconMode, shortcutSettings, customIconSources, chart, library, startingCharacterSlot, practiceRoleOrder, overlaySettings, overlayLayoutBounds, overlayNoteLayoutBounds, comboImageStyle, verticalComboImageStyle, waterfallComboImageStyle, roleBaseFollowsAvatar, rhythmUiSettings, axisGateEnabled, resetPracticeProgressOnStop, exportDirectory, recordingIndicatorEnabled, recordingIndicatorCorner, recordingRecognitionSettings, simulatedInputSettings, simulatedInputChartId, live2dEnabled, homeSpineId, homeSpineTransforms, teamPresets]);
+  }, [compatibilityMode, moves, bindings, gamepadBindings, inputMode, gamepadIconSet, gamepadRecognitionMode, keyboardIconMode, shortcutSettings, customIconSources, chart, library, startingCharacterSlot, practiceRoleOrder, overlaySettings, overlayLayoutBounds, overlayNoteLayoutBounds, comboImageStyle, verticalComboImageStyle, waterfallComboImageStyle, roleBaseFollowsAvatar, rhythmUiSettings, axisGateEnabled, resetPracticeProgressOnStop, exportDirectory, recordingIndicatorEnabled, recordingIndicatorCorner, recordingRecognitionSettings, simulatedInputSettings, simulatedInputChartId, live2dEnabled, homeSpineId, homeSpineTransforms, homeDirectControl, homeBackgroundSrc, teamPresets]);
 
   useEffect(() => setChartTitle(chart?.title ?? ''), [chart?.id]);
 
@@ -2238,7 +2349,7 @@ export default function App() {
       gamepadBindings,
       shortcutSettings,
       customIconSources,
-      preferences: { inputMode, keyboardIconMode, gamepadIconSet  }
+      preferences: { inputMode, keyboardIconMode, gamepadIconSet, gamepadRecognitionMode  }
      };
    }
 
@@ -2330,14 +2441,15 @@ export default function App() {
     return () => window.removeEventListener('message', onCommunityMessage);
    }, [bindings, comboImageStyle.contentLabels, customIconSources, defaultAvatars, defaultBasePresets, gamepadBindings, gamepadIconSet, inputMode, language, library, moves, roleBaseFollowsAvatar, shortcutSettings]);
   useEffect(() => {
-    if (page !== 'community') {
-      communityFrameReadyRef.current = false;
-      setCommunityFrameStatus('loading');
-      return;
+    if (page === 'community') {
+      setCommunityVisited(true);
+      try { localStorage.setItem(COMMUNITY_VISITED_STORAGE_KEY, '1'); } catch { /* cache marker is optional */ }
     }
+  }, [page]);
+  useEffect(() => {
     communityFrameReadyRef.current = false;
     setCommunityFrameStatus('loading');
-   }, [communityFrameKey, page]);
+  }, [communityFrameKey]);
   useEffect(() => {
     if (page === 'community' && communityFrameReadyRef.current) postCommunityLibrary();
    }, [library, page]);
@@ -2771,8 +2883,8 @@ export default function App() {
     const tick = () => {
       frame = 0;
       timer = 0;
-      const hasConnectedGamepad = matchingGamepads(gamepadIconSet).length > 0;
-      const current = hasConnectedGamepad ? readPressedGamepadCodes(gamepadIconSet) : new Set<string>();
+      const hasConnectedGamepad = matchingGamepads(gamepadRecognitionMode).length > 0;
+      const current = hasConnectedGamepad ? readPressedGamepadCodes(gamepadRecognitionMode) : new Set<string>();
       for (const code of current) {
         if (pressed.has(code)) continue;
         const comboCode = code !== GAMEPAD_COMBO_MODIFIER && current.has(GAMEPAD_COMBO_MODIFIER) ? `${GAMEPAD_COMBO_MODIFIER }+${code }` : code;
@@ -2807,7 +2919,7 @@ export default function App() {
       window.removeEventListener('gamepadconnected', wake);
       window.removeEventListener('gamepaddisconnected', wake);
      };
-   }, [desktop, experimentPage, gamepadIconSet, globalInputEnabled, holdBindings, inputMode, page]);
+   }, [desktop, experimentPage, gamepadRecognitionMode, globalInputEnabled, holdBindings, inputMode, page]);
 
   function acceptTrainerInput(event: TrainerLikeInputEvent) {
     const normalizedCode = normalizeInputCode(event.code);
@@ -3820,6 +3932,7 @@ export default function App() {
       setGamepadBindings(normalizeBindings(imported.gamepadBindings, DEFAULT_GAMEPAD_BINDINGS));
       setInputMode(imported.preferences.inputMode);
       setGamepadIconSet(imported.preferences.gamepadIconSet);
+      setGamepadRecognitionMode(imported.preferences.gamepadRecognitionMode ?? imported.preferences.gamepadIconSet);
       if (imported.shortcutSettings) setShortcutSettings(imported.shortcutSettings);
       if (imported.customIconSources) setCustomIconSources(imported.customIconSources);
       showToast(text(`已导入按键设置：${file.name }`, `Input settings imported: ${file.name }`));
@@ -3886,6 +3999,17 @@ export default function App() {
     if (availableUpdate) setUpdateDownloadOpen(true);
    }
 
+  async function applyAvailableIncrementalUpdate() {
+    const delta = availableUpdate?.incrementalUpdates.find((item) => item.fromVersion === __APP_VERSION__);
+    if (!delta || !desktop?.applyIncrementalUpdate) return;
+    try {
+      showToast(text('正在下载增量更新，完成后应用会自动重启。', 'Downloading the incremental update. The app will restart when it is ready.'));
+      await desktop.applyIncrementalUpdate(delta.url, delta.sha256, delta.targetSha256);
+    } catch (error) {
+      showToast(text(`增量更新失败，请使用完整包：${error instanceof Error ? error.message : String(error)}`, `Incremental update failed. Use the full package instead: ${error instanceof Error ? error.message : String(error)}`));
+    }
+   }
+
   async function openUpdateChannel(url: string) {
     if (!url) return;
     try {
@@ -3906,19 +4030,36 @@ export default function App() {
 
   async function importCharts(file: File | null) {
     if (!file) return;
-    const source = await file.text();
-    const parsed = JSON.parse(source.replace(/^\uFEFF/, ''));
-    const neighborImport = parseNeighborComboJson(parsed, moves, language);
-    if (neighborImport) {
-      importComboPackageValue({ chart: neighborImport.chart, contentLabels: neighborImport.contentLabels });
-      setStartingCharacterSlot(neighborImport.startingCharacterSlot);
-      const copied = await copyTextToClipboard(neighborImport.textAxis);
-      showToast(copied
-        ? text('已导入隔壁项目连段，文字轴已复制到剪贴板。', 'Imported the combo. The text axis was copied to the clipboard.')
-        : text('已导入隔壁项目连段，但自动复制文字轴失败，请检查剪贴板权限。', 'The combo was imported, but copying the text axis failed. Check clipboard permissions.'));
-      return;
+    try {
+      const source = (await file.text()).replace(/^\uFEFF/, '');
+      if (!source.trim()) throw new Error('empty-combo-import');
+      const parsed = JSON.parse(source);
+      if ((parsed as { kind?: unknown } | null)?.kind === 'wwcombo-input-settings') throw new Error('input-settings-imported-as-combo');
+      const neighborImport = parseNeighborComboJson(parsed, moves, language);
+      if (neighborImport) {
+        importComboPackageValue({ chart: neighborImport.chart, contentLabels: neighborImport.contentLabels });
+        setStartingCharacterSlot(neighborImport.startingCharacterSlot);
+        const copied = await copyTextToClipboard(neighborImport.textAxis);
+        showToast(copied
+          ? text('已导入隔壁项目连段，文字轴已复制到剪贴板。', 'Imported the combo. The text axis was copied to the clipboard.')
+          : text('已导入隔壁项目连段，但自动复制文字轴失败，请检查剪贴板权限。', 'The combo was imported, but copying the text axis failed. Check clipboard permissions.'));
+        return;
+      }
+      const count = importComboPackageValue(parsed);
+      if (!count) throw new Error('no-valid-combo-data');
+      showToast(text(`已导入：${file.name}（${count} 个连段）`, `Imported: ${file.name} (${count} combo${count === 1 ? '' : 's'})`));
+    } catch (error) {
+      const detail = error instanceof SyntaxError
+        ? text('JSON 格式无效。', 'Invalid JSON.')
+        : error instanceof Error && error.message === 'empty-combo-import'
+          ? text('文件内容为空。', 'The file is empty.')
+          : error instanceof Error && error.message === 'input-settings-imported-as-combo'
+            ? text('这是按键设置文件，请前往“设置 > 按键设置”导入。', 'This is an input settings file. Import it from Settings > Key Bindings.')
+            : error instanceof Error && error.message === 'no-valid-combo-data'
+              ? text('没有找到有效的连段数据。', 'No valid combo data was found.')
+              : error instanceof Error ? error.message : String(error);
+      showToast(text(`导入失败：${detail}`, `Import failed: ${detail}`));
     }
-    importComboPackageValue(parsed);
    }
 
   function importComboPackageValue(value: unknown): number {
@@ -4011,6 +4152,13 @@ export default function App() {
       await desktop?.setOverlayVisible(true);
      }
     const nextOverlayMoveMode = enabled ? false : overlayMoveMode;
+    if (!enabled) await desktop?.setOverlayNotesClickThrough?.(true);
+    const liveNoteBounds = enabled ? null : await desktop?.getOverlayNotesBounds?.().catch(() => null);
+    if (liveNoteBounds) {
+      const layout = overlaySettingsRef.current.layout;
+      const normalized = normalizeOverlayNoteBounds(liveNoteBounds, overlayNoteLayoutBounds[layout] ?? DEFAULT_OVERLAY_NOTE_LAYOUT_BOUNDS[layout]);
+      setOverlayNoteLayoutBounds((current) => ({ ...current, [layout]: normalized }));
+    }
     setOverlayNoteMoveMode(enabled);
     await desktop?.setOverlayClickThrough(!nextOverlayMoveMode);
     if (enabled) {
@@ -4018,11 +4166,9 @@ export default function App() {
       // This avoids the first click being lost when the window is still lazy-created.
       await desktop?.setOverlayNotesVisible?.(true);
       await desktop?.setOverlayNotesClickThrough?.(false);
-    } else {
-      await desktop?.setOverlayNotesClickThrough?.(true);
-      await desktop?.setOverlayNotesVisible?.(overlayVisible);
-    }
-    await desktop?.updateOverlay({ chart: overlayPracticeChart, practice, practicePreset, language, visible: enabled ? true : overlayVisible, moveMode: false, noteMoveMode: enabled && activeOverlayComboImageStyle.showNotesSeparately, showNotesSeparately: activeOverlayComboImageStyle.showNotesSeparately, noteBounds: overlayNoteLayoutBounds[overlaySettings.layout], settings: overlaySettings, comboImageStyle: activeOverlayComboImageStyle, rhythmUiSettings, mode: overlaySettings.layout === 'waterfall' ? 'rhythm' : 'combo' });
+    } else await desktop?.setOverlayNotesVisible?.(overlayVisible);
+    const noteBounds = liveNoteBounds ?? overlayNoteLayoutBounds[overlaySettings.layout];
+    await desktop?.updateOverlay({ chart: overlayPracticeChart, practice, practicePreset, language, visible: enabled ? true : overlayVisible, moveMode: false, noteMoveMode: enabled && activeOverlayComboImageStyle.showNotesSeparately, showNotesSeparately: activeOverlayComboImageStyle.showNotesSeparately, noteBounds, settings: overlaySettings, comboImageStyle: activeOverlayComboImageStyle, rhythmUiSettings, mode: overlaySettings.layout === 'waterfall' ? 'rhythm' : 'combo' });
    }
 
   function beginOverlayScaleDrag(event: ReactPointerEvent<HTMLButtonElement>) {
@@ -4235,6 +4381,7 @@ export default function App() {
   const helpContent = HELP_CONTENT[language];
   const updateDownloadLinks = appReleaseDownloadLinks(availableUpdate);
   const hasUpdateDownload = updateDownloadLinks.some((channel) => Boolean(channel.url));
+  const incrementalUpdate = availableUpdate?.incrementalUpdates.find((item) => item.fromVersion === __APP_VERSION__);
   const moduleLoadingFallback = <div className="panel module-loading" role="status">{text('正在加载模块...', 'Loading module...') }</div>;
   const workshopLoadingFallback = <div className="afyg-frame-loading" role="status">{text('正在开启椰果工具箱……', 'Opening Yeguo Toolbox...') }</div>;
   const sidebarDestination: HomeDestination | null = page === 'experiment'
@@ -4270,13 +4417,14 @@ export default function App() {
   /> : null;
 
   return (
-    <div className={`app-shell ${appearanceMode === 'night' ? 'theme-night' : '' } ${appearanceMode === 'day' || appearanceMode === 'coast' ? 'theme-day' : '' } ${appearanceMode === 'night2' ? 'theme-night2' : '' } ${appearanceMode === 'coast' ? 'theme-coast' : '' } ${page === 'experiment' && experimentPage === 'axis' ? 'axis-game-open' : '' } ${page === 'community' || (page === 'experiment' && experimentPage === 'afyg-dps') ? 'browser-page-open' : '' }` }>
+    <div className={`app-shell ${appearanceMode === 'night' ? 'theme-night' : '' } ${appearanceMode === 'day' || appearanceMode === 'coast' ? 'theme-day' : '' } ${appearanceMode === 'night2' ? 'theme-night2' : '' } ${appearanceMode === 'coast' ? 'theme-coast' : '' } ${homeShowcaseActive ? 'home-showcase-active' : '' } ${page === 'experiment' && experimentPage === 'axis' ? 'axis-game-open' : '' } ${page === 'community' || (page === 'experiment' && experimentPage === 'afyg-dps') ? 'browser-page-open' : '' }` }>
       {toastMessage && <div className="app-toast" role="status">{toastMessage}</div>}
       {availableUpdate && <section className="app-update-notice" aria-label={text('客户端更新', 'Client Update') }>
         <div className="app-update-heading"><div><span>{text('发现新版本', 'New version available') }</span><strong>{availableUpdate.title || 'WW Combo Trainer ' + availableUpdate.version }</strong></div><button type="button" title={text('稍后提醒', 'Remind me later') } aria-label={text('关闭更新提示', 'Close update notice') } onClick={() => { dismissedUpdateVersionRef.current = availableUpdate.version; setAvailableUpdate(null); setUpdateDownloadOpen(false); } }><X size={17 } /></button></div>
         <p className="app-update-version">v{__APP_VERSION__ } <span>→</span> v{availableUpdate.version }</p>
         {availableUpdate.notes && <p className="app-update-notes">{availableUpdate.notes }</p>}
         {hasUpdateDownload && <button className="app-update-download" type="button" onClick={openUpdateDownload}><Download size={17 } />{text('下载线路', 'Choose Download Source')}</button>}
+        {incrementalUpdate && desktop?.applyIncrementalUpdate && <button className="app-update-download app-update-incremental" type="button" onClick={() => void applyAvailableIncrementalUpdate()}><RefreshCw size={17 } />{text('增量更新', 'Incremental Update')}{incrementalUpdate.bytes ? <small>{Math.round(incrementalUpdate.bytes / 1024 / 1024)} MB</small> : null}</button>}
       </section>}
       {updateDownloadOpen && availableUpdate && <div className="app-download-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setUpdateDownloadOpen(false); }}>
         <section className="app-download-modal" role="dialog" aria-modal="true" aria-labelledby="appDownloadModalTitle">
@@ -4327,7 +4475,7 @@ export default function App() {
       </aside>
 
       <main className={`workspace ${page === 'home' ? 'workspace-home' : '' } ${page === 'community' ? 'workspace-community' : '' } ${page === 'experiment' ? 'workspace-experiment' : '' } ${page === 'experiment' && experimentPage === 'afyg-dps' ? 'workspace-afyg' : '' }` }>
-        {page === 'home' && <HomePage appearanceMode={appearanceMode } live2dEnabled={live2dEnabled } homeSpineId={homeSpineId } homeSpineTransforms={homeSpineTransforms } live2dAssets={dlcStatus.live2dAssets } onNavigate={(destination) => {
+        {page === 'home' && <HomePage appearanceMode={appearanceMode } announcement={clientAnnouncement } live2dEnabled={live2dEnabled } homeSpineId={homeSpineId } homeSpineTransforms={homeSpineTransforms } live2dAssets={dlcStatus.live2dAssets } directControlEnabled={homeDirectControl } backgroundSrc={homeBackgroundSrc } showcaseActive={homeShowcaseActive } onTransformChange={(id, transform) => setHomeSpineTransforms((current) => ({ ...current, [id]: transform })) } onEnterShowcase={() => { setHomeShowcaseActive(true); const request = document.documentElement.requestFullscreen?.(); if (request) void request.catch(() => undefined); } } onExitShowcase={() => { setHomeShowcaseActive(false); if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined); } } onNavigate={(destination) => {
           if (destination === 'experiment') {
             setExperimentPage('afyg-dps');
             navigateToPage('experiment');
@@ -4380,7 +4528,7 @@ export default function App() {
               <PracticeAxisPreview chart={practiceChart } practice={practice } style={activeRenderComboImageStyle } errorStepIds={practicePreset === 'strict' ? practiceAxisErrorStepIds : [] } onExport={(previewWidth) => { setExportAxisPracticeWidth(previewWidth); setExportAxisOpenedFromPractice(true); setExperimentPage('export-axis'); navigateToPage('experiment');  } } />
             </div>
             <LibraryPanel chart={chart } library={library } style={comboImageStyle } avatarPresets={defaultAvatars } onSelect={(id) => selectComboChart(library.find((item) => item.id === id) ?? chart) } onEdit={(id) => { const item = library.find((entry) => entry.id === id); if (item) { selectComboChart(item); setPage('record'); setEditorTab('timeline');  }  } } onDelete={deleteLibraryChart } onShare={openShareDialog } onImport={() => importInputRef.current?.click() } onRecord={() => navigateToPage('record') } onCommunity={() => navigateToPage('community') } />
-            <input ref={importInputRef } className="file-input" type="file" accept="application/json,.json" onChange={(event) => void importCharts(event.target.files?.[0] ?? null) } />
+            <input ref={importInputRef } className="file-input" type="file" accept="application/json,.json" onChange={(event) => { const file = event.currentTarget.files?.[0] ?? null; event.currentTarget.value = ''; void importCharts(file);  } } />
           </section>
         ) }
 
@@ -4431,8 +4579,8 @@ export default function App() {
           onExit={exitExperimentSubpage }
         /></Suspense>}
 
-        {page === 'community' && (
-          <section className="community-page" data-trainer-capture-suspend="true">
+        {communityVisited && (
+          <section className={`community-page ${page === 'community' ? '' : 'is-hidden'}`} data-trainer-capture-suspend="true" aria-hidden={page !== 'community'}>
             <EmbeddedBrowserExitControl onExit={() => setPage('home')} />
             <iframe
               key={`${language }-${appearanceMode }-${communityFrameKey }`}
@@ -4463,7 +4611,7 @@ export default function App() {
           </section>
         ) }
 
-        {page === 'settings' && <SettingsPanel view={settingsView } helpTab={helpTab } moves={moves } bindings={bindings } gamepadBindings={gamepadBindings } inputMode={inputMode } gamepadIconSet={gamepadIconSet } shortcutSettings={shortcutSettings } customIconSources={customIconSources } appearanceMode={appearanceMode } compatibilityMode={compatibilityMode } live2dEnabled={live2dEnabled } homeSpineId={homeSpineId } homeSpineTransforms={homeSpineTransforms } dlcStatus={dlcStatus } dlcStatusLoading={dlcStatusLoading } exportDirectory={exportDirectory } recordingIndicatorEnabled={recordingIndicatorEnabled } recordingIndicatorCorner={recordingIndicatorCorner } recordingRecognitionSettings={recordingRecognitionSettings } canChooseExportDirectory={Boolean(desktop?.pickExportDirectory) } onViewChange={setSettingsView } onHelpTabChange={setHelpTab } onInputModeChange={setInputMode } onGamepadIconSetChange={setGamepadIconSet } onShortcutSettingsChange={setShortcutSettings } onCustomIconSourcesChange={setCustomIconSources } onAppearanceModeChange={setAppearanceMode } onCompatibilityModeChange={setCompatibilityMode } onLive2dEnabledChange={setLive2dEnabled } onHomeSpineIdChange={setHomeSpineId } onHomeSpineTransformChange={(id, transform) => setHomeSpineTransforms((current) => ({ ...current, [id]: transform })) } onOpenDlcFolder={() => { void desktop?.openDlcFolder?.().catch(() => undefined); } } onRefreshDlc={() => { void refreshDlcStatus(); } } onChooseExportDirectory={() => { void chooseExportDirectory();  } } onExportInputSettings={() => { void exportInputSettings();  } } onImportInputSettings={(file) => { void importInputSettings(file);  } } onResetInputBindings={resetInputBindings } onRecordingIndicatorEnabledChange={setRecordingIndicatorEnabled } onRecordingIndicatorCornerChange={setRecordingIndicatorCorner } onRecordingRecognitionSettingsChange={updateRecordingRecognitionSettings } onOpenRealtimeVisionSettings={openRealtimeVisionSettings } onMoveChange={updateMove } onBindingChange={updateBinding } onGamepadBindingChange={updateGamepadBinding } /> }
+        {page === 'settings' && <SettingsPanel view={settingsView } helpTab={helpTab } moves={moves } bindings={bindings } gamepadBindings={gamepadBindings } inputMode={inputMode } gamepadIconSet={gamepadIconSet } gamepadRecognitionMode={gamepadRecognitionMode } globalInputEnabled={globalInputEnabled } inputSignal={keyMappingInputSignal } shortcutSettings={shortcutSettings } customIconSources={customIconSources } appearanceMode={appearanceMode } compatibilityMode={compatibilityMode } live2dEnabled={live2dEnabled } homeSpineId={homeSpineId } homeSpineTransforms={homeSpineTransforms } homeDirectControl={homeDirectControl } homeBackgroundSrc={homeBackgroundSrc } dlcStatus={dlcStatus } dlcStatusLoading={dlcStatusLoading } exportDirectory={exportDirectory } recordingIndicatorEnabled={recordingIndicatorEnabled } recordingIndicatorCorner={recordingIndicatorCorner } recordingRecognitionSettings={recordingRecognitionSettings } canChooseExportDirectory={Boolean(desktop?.pickExportDirectory) } onViewChange={setSettingsView } onHelpTabChange={setHelpTab } onInputModeChange={setInputMode } onGamepadIconSetChange={setGamepadIconSet } onGamepadRecognitionModeChange={setGamepadRecognitionMode } onRequestGlobalInput={() => void startGlobalInput() } onShortcutSettingsChange={setShortcutSettings } onCustomIconSourcesChange={setCustomIconSources } onAppearanceModeChange={setAppearanceMode } onCompatibilityModeChange={setCompatibilityMode } onLive2dEnabledChange={setLive2dEnabled } onHomeSpineIdChange={setHomeSpineId } onHomeSpineTransformChange={(id, transform) => setHomeSpineTransforms((current) => ({ ...current, [id]: transform })) } onHomeDirectControlChange={setHomeDirectControl } onHomeBackgroundChange={setHomeBackgroundSrc } onOpenDlcFolder={() => { void desktop?.openDlcFolder?.().catch(() => undefined); } } onRefreshDlc={() => { void refreshDlcStatus(); } } onChooseExportDirectory={() => { void chooseExportDirectory();  } } onExportInputSettings={() => { void exportInputSettings();  } } onImportInputSettings={(file) => { void importInputSettings(file);  } } onResetInputBindings={resetInputBindings } onRecordingIndicatorEnabledChange={setRecordingIndicatorEnabled } onRecordingIndicatorCornerChange={setRecordingIndicatorCorner } onRecordingRecognitionSettingsChange={updateRecordingRecognitionSettings } onOpenRealtimeVisionSettings={openRealtimeVisionSettings } onMoveChange={updateMove } onBindingChange={updateBinding } onGamepadBindingChange={updateGamepadBinding } /> }
       </main>
       {quickInputOpen && (quickInputTarget === 'simulated' ? simulatedInputChart : practiceChart) && <QuickInputDialog chart={(quickInputTarget === 'simulated' ? simulatedInputChart : practiceChart)! } style={quickInputTarget === 'simulated' ? simulatedInputTimelineStyle : comboImageStyle } initialValues={quickInputTarget === 'simulated' ? simulatedInputQuickInputMemory : quickInputMemory } startStepId={quickInputStartStepId } onApply={applyQuickInput } onClose={() => setQuickInputOpen(false) } /> }
       {!desktop && <InlineOverlayNotesFallback chart={overlayPracticeChart } practice={practice } visible={overlayVisible } moveMode={overlayNoteMoveMode } showNotesSeparately={activeOverlayComboImageStyle.showNotesSeparately } noteStyle={activeOverlayComboImageStyle } bounds={activeOverlayNoteBounds } visibleStepIds={overlayVisibleNoteStepIds } onBoundsChange={(next) => setOverlayNoteLayoutBounds((current) => ({ ...current, [overlaySettings.layout]: normalizeOverlayNoteBounds(next, current[overlaySettings.layout]) })) } />}
@@ -4486,10 +4634,12 @@ const HOME_NAV_SPINE_OFFSETS: Record<HomeDestination, number> = {
   settings: 0.15
 };
 
-function HomePage({ appearanceMode, live2dEnabled, homeSpineId, homeSpineTransforms, live2dAssets, onNavigate  }: { appearanceMode: AppearanceMode; live2dEnabled: boolean; homeSpineId: HomeSpineId; homeSpineTransforms: HomeSpineTransforms; live2dAssets: DlcStatus['live2dAssets']; onNavigate: (destination: HomeDestination) => void  }) {
+function HomePage({ appearanceMode, announcement, live2dEnabled, homeSpineId, homeSpineTransforms, live2dAssets, directControlEnabled, backgroundSrc, showcaseActive, onTransformChange, onEnterShowcase, onExitShowcase, onNavigate  }: { appearanceMode: AppearanceMode; announcement: ClientAnnouncement; live2dEnabled: boolean; homeSpineId: HomeSpineId; homeSpineTransforms: HomeSpineTransforms; live2dAssets: DlcStatus['live2dAssets']; directControlEnabled: boolean; backgroundSrc: string; showcaseActive: boolean; onTransformChange: (id: HomeSpineId, transform: HomeSpineTransform) => void; onEnterShowcase: () => void; onExitShowcase: () => void; onNavigate: (destination: HomeDestination) => void  }) {
   const { text  } = useI18n();
   const [activeDestination, setActiveDestination] = useState<HomeDestination | null>(null);
   const [navigationVisible, setNavigationVisible] = useState(true);
+  const [showcaseHintVisible, setShowcaseHintVisible] = useState(false);
+  const dragRef = useRef<{ x: number; y: number; transform: HomeSpineTransform } | null>(null);
   const spineOption = homeSpineOption(homeSpineId);
   const spineTransform = homeSpineTransforms[homeSpineId] ?? defaultHomeSpineTransform(homeSpineId);
   const installedSpine = live2dAssets.find((asset) => asset.id === homeSpineId);
@@ -4546,9 +4696,47 @@ function HomePage({ appearanceMode, live2dEnabled, homeSpineId, homeSpineTransfo
     });
   };
 
+  useEffect(() => {
+    if (!showcaseActive) {
+      setShowcaseHintVisible(false);
+      return;
+    }
+    setShowcaseHintVisible(true);
+    const timer = window.setTimeout(() => setShowcaseHintVisible(false), 3200);
+    return () => window.clearTimeout(timer);
+  }, [showcaseActive]);
+
+  const updateDirectTransform = (patch: Partial<HomeSpineTransform>) => {
+    onTransformChange(homeSpineId, { ...spineTransform, ...patch });
+  };
+  const onDirectPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!directControlEnabled || event.button !== 0) return;
+    dragRef.current = { x: event.clientX, y: event.clientY, transform: spineTransform };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+  const onDirectPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    if (!drag) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    updateDirectTransform({ offsetX: clamp(drag.transform.offsetX + (event.clientX - drag.x) / Math.max(1, rect.width), -1, 1), offsetY: clamp(drag.transform.offsetY + (event.clientY - drag.y) / Math.max(1, rect.height), -1, 1) });
+  };
+  const stopDirectDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (dragRef.current) {
+      dragRef.current = null;
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  };
+  const onDirectWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
+    if (!directControlEnabled) return;
+    event.preventDefault();
+    event.stopPropagation();
+    updateDirectTransform({ scale: clamp(spineTransform.scale * Math.pow(1.0018, -event.deltaY), 0.25, 8) });
+  };
+
   return (
-    <section className="home-page" aria-label={homeTitle }>
-      {live2dEnabled && installedSpine && <div className="home-art-stage" aria-hidden="true">
+    <section className="home-page" aria-label={homeTitle } style={backgroundSrc ? { backgroundImage: `url(${backgroundSrc})` } : undefined}>
+      {announcement.enabled && announcement.body && <div className="home-announcement" role="status" aria-label={text('公告', 'Announcement') }><Megaphone size={18 } aria-hidden="true" /><div className="home-announcement-copy"><strong>{announcement.title || text('公告', 'Announcement') }</strong><span>{announcement.body }</span></div></div>}
+      {live2dEnabled && installedSpine && <div className={`home-art-stage ${directControlEnabled ? 'direct-control-enabled' : ''}`} aria-hidden="true" onPointerDown={onDirectPointerDown} onPointerMove={onDirectPointerMove} onPointerUp={stopDirectDrag} onPointerCancel={stopDirectDrag} onWheel={onDirectWheel}>
         <div key={homeSpineId } className="home-spine-viewport visible" data-home-spine={homeSpineId }>
           <div className="home-spine-crop">
             <div className="home-spine-scene"><HomeSpineStage {...spineConfig } shiftX={spineShiftX } active /></div>
@@ -4565,10 +4753,102 @@ function HomePage({ appearanceMode, live2dEnabled, homeSpineId, homeSpineTransfo
         <button className="home-nav-visibility-toggle" type="button" title={navigationToggleLabel } aria-label={navigationToggleLabel } aria-controls="home-navigation" aria-expanded={navigationVisible } onClick={toggleNavigation }>
           {navigationVisible ? <EyeOff size={22 } /> : <Eye size={22 } /> }
         </button>
+        <button className="home-nav-showcase-toggle" type="button" title={showcaseActive ? text('退出全屏欣赏', 'Exit full-screen showcase') : text('全屏欣赏', 'Full-screen showcase')} aria-label={showcaseActive ? text('退出全屏欣赏', 'Exit full-screen showcase') : text('全屏欣赏', 'Full-screen showcase')} onClick={showcaseActive ? onExitShowcase : onEnterShowcase}>
+          <Maximize2 size={22} />
+        </button>
       </div>
+      {showcaseActive && showcaseHintVisible && <div className="home-showcase-hint" role="status">{text('已进入全屏欣赏，右键退出', 'Full-screen showcase active. Right-click to exit.')}</div>}
     </section>
   );
  }
+
+function HomeBackgroundCropDialog({ src, onCancel, onApply }: { src: string; onCancel: () => void; onApply: (src: string) => void }) {
+  const { text } = useI18n();
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const [targetRatio, setTargetRatio] = useState(() => {
+    const width = window.screen.width || window.innerWidth || 16;
+    const height = window.screen.height || window.innerHeight || 9;
+    return Math.max(0.35, Math.min(4, width / Math.max(1, height)));
+  });
+  const [imageSize, setImageSize] = useState({ width: 16, height: 9 });
+  const [crop, setCrop] = useState({ x: 0, y: 0, w: 100, h: 100 });
+  const dragRef = useRef<{ pointerX: number; pointerY: number; crop: typeof crop } | null>(null);
+
+  useEffect(() => {
+    const updateTargetRatio = () => {
+      const width = window.screen.width || window.innerWidth || 16;
+      const height = window.screen.height || window.innerHeight || 9;
+      setTargetRatio(Math.max(0.35, Math.min(4, width / Math.max(1, height))));
+    };
+    updateTargetRatio();
+    window.addEventListener('resize', updateTargetRatio);
+    return () => window.removeEventListener('resize', updateTargetRatio);
+  }, []);
+
+  useEffect(() => {
+    const image = new Image();
+    image.onload = () => {
+      const width = Math.max(1, image.naturalWidth);
+      const height = Math.max(1, image.naturalHeight);
+      setImageSize({ width, height });
+      const imageRatio = width / height;
+      const w = imageRatio >= targetRatio ? (height * targetRatio / width) * 100 : 100;
+      const h = imageRatio >= targetRatio ? 100 : (width / targetRatio / height) * 100;
+      setCrop({ x: (100 - w) / 2, y: (100 - h) / 2, w, h });
+    };
+    image.src = src;
+  }, [src, targetRatio]);
+
+  const beginDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    event.currentTarget.setPointerCapture(event.pointerId);
+    dragRef.current = { pointerX: event.clientX, pointerY: event.clientY, crop };
+  };
+  const moveDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    const stage = stageRef.current;
+    if (!drag || !stage) return;
+    const rect = stage.getBoundingClientRect();
+    setCrop((current) => ({ ...current, x: clamp(drag.crop.x + (event.clientX - drag.pointerX) / Math.max(1, rect.width) * 100, 0, 100 - drag.crop.w), y: clamp(drag.crop.y + (event.clientY - drag.pointerY) / Math.max(1, rect.height) * 100, 0, 100 - drag.crop.h) }));
+  };
+  const endDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    dragRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  };
+  const apply = () => {
+    const image = new Image();
+    image.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 1600;
+      canvas.height = Math.max(1, Math.round(canvas.width / targetRatio));
+      const context = canvas.getContext('2d');
+      if (!context) return;
+      const sourceX = Math.round(imageSize.width * crop.x / 100);
+      const sourceY = Math.round(imageSize.height * crop.y / 100);
+      const sourceW = Math.max(1, Math.round(imageSize.width * crop.w / 100));
+      const sourceH = Math.max(1, Math.round(imageSize.height * crop.h / 100));
+      context.drawImage(image, sourceX, sourceY, sourceW, sourceH, 0, 0, canvas.width, canvas.height);
+      let quality = 0.84;
+      let output = canvas.toDataURL('image/webp', quality);
+      while (output.length > 1_400_000 && quality > 0.46) {
+        quality -= 0.08;
+        output = canvas.toDataURL('image/webp', quality);
+      }
+      if (output.length > 1_400_000) output = canvas.toDataURL('image/jpeg', 0.68);
+      onApply(output);
+    };
+    image.src = src;
+  };
+
+  return <div className="preset-picker-backdrop home-background-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onCancel(); }}>
+    <div className="crop-dialog-panel home-background-crop-dialog" onMouseDown={(event) => event.stopPropagation()}>
+      <div className="preset-picker-head"><div><h3>{text('裁剪主界面背景', 'Crop Home Background')}</h3><p>{text('拖动框选取主界面横向背景区域。', 'Drag the frame to choose a landscape area for the home screen.')}</p></div><button type="button" onClick={onCancel}><X size={18} /></button></div>
+      <div ref={stageRef} className="home-background-crop-stage" style={{ aspectRatio: `${targetRatio}`, backgroundImage: `url(${src})` }}>
+        <div className="home-background-crop-box" style={{ left: `${crop.x}%`, top: `${crop.y}%`, width: `${crop.w}%`, height: `${crop.h}%` }} onPointerDown={beginDrag} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag}><span>{text('保留区域', 'Keep')}</span></div>
+      </div>
+      <div className="custom-base-editor-actions"><button type="button" onClick={onCancel}>{text('取消', 'Cancel')}</button><button type="button" className="primary" onClick={apply}>{text('确认导入', 'Apply Background')}</button></div>
+    </div>
+  </div>;
+}
 
 function StartingRolePicker({ value, style, characterSlots = DEFAULT_CHARACTER_SLOTS, disabled = false, onChange  }: { value: CharacterSlot; style: ComboImageStyle; characterSlots?: CharacterSlot[]; disabled?: boolean; onChange: (slot: CharacterSlot) => void  }) {
   const { language, text  } = useI18n();
@@ -5625,7 +5905,7 @@ function TextAxisImportDialog({ moves, characters, chart, contentLabels, startin
   );
  }
 
-function TimelineEditor({ chart, moves, bindings, shortcutSettings, inputSignal, comboImageStyle, clipboardControl, mode, onModeChange, zoom, onZoomChange, playheadControl, onUpdate, onInsert, onDelete, onPeriodsChange, onContentChange, onQuickInput, onSelectionChange, onPeriodSelectionChange, onSave, historyControl, videoCompactMode = false, videoLayerTransformControl, videoNoteTransformControl, videoLaneHeight, inspectorPortalTarget, toolbarPortalTarget, hideInspector = false, renderTotalOverride, keyboardShortcutsEnabled = true, videoAutoFollow = false, timelinePanelControl, referenceTimingControl, timingKeyframeControl, workshopImportControl, highlightedStepIds, readOnly = false, auxiliaryLane }: { chart: ComboChart; moves: MoveDefinition[]; bindings: KeyBinding[]; shortcutSettings: ShortcutSettings; inputSignal?: (TrainerLikeInputEvent & { id: string  }) | null; comboImageStyle: ComboImageStyle; clipboardControl: TimelineClipboardControl; mode: EditorTab; onModeChange?: (mode: EditorTab) => void; zoom: number; onZoomChange: (value: number) => void; playheadControl?: TimelinePlayheadControl; onUpdate: (stepId: string, patch: Partial<ComboStep>) => void; onInsert: (steps: ComboStep[]) => void; onDelete: (stepIds: string[]) => void; onPeriodsChange: (periods: ComboPeriod[]) => void; onContentChange: (patch: Partial<ComboImageStyle>) => void; onQuickInput: (stepId: string | null) => void; onSelectionChange?: (stepIds: string[]) => void; onPeriodSelectionChange?: (period: ComboPeriod | null) => void; onSave: () => void; historyControl?: TimelineHistoryControl; videoCompactMode?: boolean; videoLayerTransformControl?: VideoLayerTransformControl; videoNoteTransformControl?: VideoLayerTransformControl & { disabled?: boolean }; videoLaneHeight?: number; inspectorPortalTarget?: HTMLElement | null; toolbarPortalTarget?: HTMLElement | null; hideInspector?: boolean; renderTotalOverride?: number; keyboardShortcutsEnabled?: boolean; videoAutoFollow?: boolean; timelinePanelControl?: TimelinePanelControl; referenceTimingControl?: TimelineReferenceTimingControl; timingKeyframeControl?: TimelineTimingKeyframeControl; workshopImportControl?: TimelineWorkshopImportControl; highlightedStepIds?: Set<string>; readOnly?: boolean; auxiliaryLane?: { label: string }  }) {
+function TimelineEditor({ chart, moves, bindings, shortcutSettings, inputSignal, comboImageStyle, clipboardControl, mode, onModeChange, zoom, onZoomChange, playheadControl, onUpdate, onInsert, onDelete, onPeriodsChange, onContentChange, onQuickInput, onSelectionChange, onPeriodSelectionChange, onSave, historyControl, videoCompactMode = false, videoLayerTransformControl, videoNoteTransformControl, videoLaneHeight, inspectorPortalTarget, toolbarPortalTarget, hideInspector = false, renderTotalOverride, keyboardShortcutsEnabled = true, videoAutoFollow = false, timelinePanelControl, referenceTimingControl, timingKeyframeControl, workshopImportControl, highlightedStepIds, readOnly = false, auxiliaryLane, timeLabelForMs }: { chart: ComboChart; moves: MoveDefinition[]; bindings: KeyBinding[]; shortcutSettings: ShortcutSettings; inputSignal?: (TrainerLikeInputEvent & { id: string  }) | null; comboImageStyle: ComboImageStyle; clipboardControl: TimelineClipboardControl; mode: EditorTab; onModeChange?: (mode: EditorTab) => void; zoom: number; onZoomChange: (value: number) => void; playheadControl?: TimelinePlayheadControl; onUpdate: (stepId: string, patch: Partial<ComboStep>) => void; onInsert: (steps: ComboStep[]) => void; onDelete: (stepIds: string[]) => void; onPeriodsChange: (periods: ComboPeriod[]) => void; onContentChange: (patch: Partial<ComboImageStyle>) => void; onQuickInput: (stepId: string | null) => void; onSelectionChange?: (stepIds: string[]) => void; onPeriodSelectionChange?: (period: ComboPeriod | null) => void; onSave: () => void; historyControl?: TimelineHistoryControl; videoCompactMode?: boolean; videoLayerTransformControl?: VideoLayerTransformControl; videoNoteTransformControl?: VideoLayerTransformControl & { disabled?: boolean }; videoLaneHeight?: number; inspectorPortalTarget?: HTMLElement | null; toolbarPortalTarget?: HTMLElement | null; hideInspector?: boolean; renderTotalOverride?: number; keyboardShortcutsEnabled?: boolean; videoAutoFollow?: boolean; timelinePanelControl?: TimelinePanelControl; referenceTimingControl?: TimelineReferenceTimingControl; timingKeyframeControl?: TimelineTimingKeyframeControl; workshopImportControl?: TimelineWorkshopImportControl; highlightedStepIds?: Set<string>; readOnly?: boolean; auxiliaryLane?: { label: string }; timeLabelForMs?: (timelineMs: number) => number  }) {
   const { language, text  } = useI18n();
   const CHARACTER_SLOTS = chart.characterCount === 4 ? ALL_CHARACTER_SLOTS : DEFAULT_CHARACTER_SLOTS;
   const [selectedId, setSelectedId] = useState(chart.steps[0]?.id ?? '');
@@ -7949,7 +8229,7 @@ function TimelineEditor({ chart, moves, bindings, shortcutSettings, inputSignal,
             return <div key={`ghost-${period.id }` } className={`timeline-placement-ghost copy period ${period.kind }`  } style={{ left: `${((period.startMs + delta) / renderTotal) * 100 }%`, width: `${Math.max(1.8, ((period.endMs - period.startMs) / renderTotal) * 100) }%`  } }><strong>{timelinePeriodLabel(period) }</strong></div>;
            }) }
         </div>
-        <div className="timeline-editor-ruler" style={{ width: trackWidth  } }>{Array.from({ length: Math.ceil(renderTotal / 500) + 1  }, (_, index) => <span key={index  } style={{ left: `${((index * 500) / renderTotal) * 100 }%`  } }>{(index * 0.5).toFixed(index % 2 === 0 ? 0 : 1) }s</span>) }</div>
+         <div className="timeline-editor-ruler" style={{ width: trackWidth  } }>{Array.from({ length: Math.ceil(renderTotal / 500) + 1  }, (_, index) => { const timelineMs = index * 500; const displayMs = Math.max(0, Math.round(timeLabelForMs?.(timelineMs) ?? timelineMs)); const seconds = (displayMs / 1000).toFixed(2).replace(/\.?0+$/, ''); return <span key={index  } style={{ left: `${(timelineMs / renderTotal) * 100 }%`  } }>{seconds }s</span>; }) }</div>
         <div className={`timeline-editor-body ${auxiliaryLane ? 'has-auxiliary-lane' : '' }` } style={timelineBodyStyle }>
           {lanes.map((lane) => {
             const roleStyle = lane.slot ? comboImageStyle.roleStyles[lane.slot] : null;
@@ -7965,6 +8245,7 @@ function TimelineEditor({ chart, moves, bindings, shortcutSettings, inputSignal,
                   const isDraft = step.moveId === DRAFT_MOVE_ID;
                   const nearbyStartIndex = [...laneSteps].filter((candidate) => Math.abs(candidate.startMin - step.startMin) * zoom < 30).sort((left, right) => left.startMin - right.startMin || left.id.localeCompare(right.id)).findIndex((candidate) => candidate.id === step.id);
                   return <div key={step.id } data-step-id={step.id } className={`timeline-editor-block ${step.free ? 'free' : '' } ${isDraft ? 'draft' : '' } ${highlightedStepIds?.has(step.id) ? 'damage-bound' : ''} ${selectedIds.includes(step.id) ? 'selected' : '' } ${raisedStepId === step.id ? 'raised' : '' } ${pending?.kind === 'delete' ? 'delete-ready' : '' }`  } style={{ left: `${(step.startMin / renderTotal) * 100 }%`, width: `${Math.max(0.01, (step.durationMax / renderTotal) * 100) }%`, '--move-color': step.color, '--drag-tab-offset': `${Math.max(0, nearbyStartIndex) * 24 }px`, zIndex: pending?.kind === 'cut' || pending?.kind === 'delete' ? 120 : raisedStepId === step.id ? 8 : selectedIds.includes(step.id) ? 5 : 2  } as CSSProperties } onPointerDownCapture={(event) => {
+                    if (!pending && (event.target as HTMLElement | null)?.closest('.resize-handle')) return;
                     if (event.button === 0 && (event.ctrlKey || event.metaKey || timelineToolbarEditMode === 'multi')) {
                       event.preventDefault();
                       event.stopPropagation();
@@ -7973,7 +8254,7 @@ function TimelineEditor({ chart, moves, bindings, shortcutSettings, inputSignal,
                       return;
                     }
                     deleteStepInContinuousMode(event, step.id);
-                  } } onPointerDown={(event) => { if (pending?.kind === 'cut') { cutStepAtPointer(event, step); return;  } if (pending) return; if (event.ctrlKey || event.metaKey || timelineToolbarEditMode === 'multi') { event.preventDefault(); event.stopPropagation(); toggleStepSelection(step.id, true); return;  } beginDrag(event, step.id, 'move');  } } onDoubleClick={(event) => { if (selectedIds.length <= 1 || !selectedIds.includes(step.id)) return; event.preventDefault(); event.stopPropagation(); setSelectedId(step.id); setSelectedIds([step.id]); setRaisedStepId(step.id); setTimelineToolbarEditMode(null);  } } onContextMenu={(event) => handleSpecialContextMenu(event, () => openStepContext(event, step, laneSteps)) }><span className="timeline-block-drag-tab" title={text('拖动招式块', 'Drag Action Block') } onPointerDown={(event) => { event.stopPropagation(); setRaisedStepId(step.id); beginDrag(event, step.id, 'move');  } } /><div className="resize-handle left" onPointerDown={(event) => { event.stopPropagation(); beginDrag(event, step.id, event.altKey ? 'preheat' : 'start');  } } /><div className="warmup-zone left" style={{ width: `${preheatPercent }%`  } } /><div className="warmup-zone right" style={{ width: `${recoveryPercent }%`  } } /><div className="warmup-divider preheat" style={{ left: `${preheatPercent }%`  } } onPointerDown={(event) => { if (event.altKey) { event.stopPropagation(); beginDrag(event, step.id, 'preheat-divider');  }  } } /><div className="warmup-divider recovery" style={{ right: `${recoveryPercent }%`  } } onPointerDown={(event) => { if (event.altKey) { event.stopPropagation(); beginDrag(event, step.id, 'recovery-divider');  }  } } />{renderStepLabel(step) }{step.free && <em>{text('自由', 'Free') }</em> }{mode === 'content' && <div className="timeline-block-meta"><span className="move-type">{displayMoveLabel(step) }</span><span className="duration">{(step.durationMax / 1000).toFixed(2) }s</span></div> }<div className="resize-handle right" onPointerDown={(event) => { event.stopPropagation(); beginDrag(event, step.id, event.altKey ? 'recovery' : 'end');  } } /></div>;
+                  } } onPointerDown={(event) => { if (!pending && (event.target as HTMLElement | null)?.closest('.resize-handle')) return; if (pending?.kind === 'cut') { cutStepAtPointer(event, step); return;  } if (pending) return; if (event.ctrlKey || event.metaKey || timelineToolbarEditMode === 'multi') { event.preventDefault(); event.stopPropagation(); toggleStepSelection(step.id, true); return;  } beginDrag(event, step.id, 'move');  } } onDoubleClick={(event) => { if (selectedIds.length <= 1 || !selectedIds.includes(step.id)) return; event.preventDefault(); event.stopPropagation(); setSelectedId(step.id); setSelectedIds([step.id]); setRaisedStepId(step.id); setTimelineToolbarEditMode(null);  } } onContextMenu={(event) => handleSpecialContextMenu(event, () => openStepContext(event, step, laneSteps)) }><span className="timeline-block-drag-tab" title={text('拖动招式块', 'Drag Action Block') } onPointerDown={(event) => { event.stopPropagation(); setRaisedStepId(step.id); beginDrag(event, step.id, 'move');  } } /><div className="resize-handle left" onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); beginDrag(event, step.id, event.altKey ? 'preheat' : 'start');  } } /><div className="warmup-zone left" style={{ width: `${preheatPercent }%`  } } /><div className="warmup-zone right" style={{ width: `${recoveryPercent }%`  } } /><div className="warmup-divider preheat" style={{ left: `${preheatPercent }%`  } } onPointerDown={(event) => { if (event.altKey) { event.stopPropagation(); beginDrag(event, step.id, 'preheat-divider');  }  } } /><div className="warmup-divider recovery" style={{ right: `${recoveryPercent }%`  } } onPointerDown={(event) => { if (event.altKey) { event.stopPropagation(); beginDrag(event, step.id, 'recovery-divider');  }  } } />{renderStepLabel(step) }{step.free && <em>{text('自由', 'Free') }</em> }{mode === 'content' && <div className="timeline-block-meta"><span className="move-type">{displayMoveLabel(step) }</span><span className="duration">{(step.durationMax / 1000).toFixed(2) }s</span></div> }<div className="resize-handle right" onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); beginDrag(event, step.id, event.altKey ? 'recovery' : 'end');  } } /></div>;
                  }) }
                 {pending && pending.kind !== 'copy' && pending.kind !== 'cut' && pending.kind !== 'delete' && pendingPoint && pendingPoint.slot === lane.slot && Boolean(pendingPoint.auxiliary) === Boolean(lane.auxiliary) && pendingPoint.lane === lane.lane && <div className={`timeline-placement-ghost ${pending.kind } ${pending.kind === 'period' && pendingPeriodPreview ? pendingPeriodPreview.kind : ''}`  } style={{ left: `${(pendingPoint.startMs / renderTotal) * 100 }%`, width: pending.kind === 'period' ? `${Math.max(1.8, (DEFAULT_FREE_FIRE_DURATION / renderTotal) * 100) }%` : pending.kind === 'move' ? `${Math.max(0.01, (500 / renderTotal) * 100) }%` : `${Math.max(1.8, (300 / renderTotal) * 100) }%`, ...(pending.kind === 'move' && activePlacedMove ? { '--move-color': activePlacedMove.color  } : { })  } as CSSProperties }>{pending.kind === 'move' && activePlacementLabel ? <strong>{activePlacementLabel }</strong> : pending.kind === 'period' && pendingPeriodPreview ? timelinePeriodLabel(pendingPeriodPreview) : pending.kind === 'step' ? text('待设置指令', 'Unassigned Action') : text('待设置时段', 'Unassigned Period') }</div> }
                 {copiedGhost && copiedGhostPoint && copiedGhost.periods.filter((period) => {
@@ -8770,7 +9051,79 @@ function SimulatedInputSettingsPanel({ settings, selectedChart, selectedChartId,
   </div>;
 }
 
-function SettingsPanel({ view, helpTab, moves, bindings, gamepadBindings, inputMode, gamepadIconSet, shortcutSettings, customIconSources, appearanceMode, compatibilityMode, live2dEnabled, homeSpineId, homeSpineTransforms, dlcStatus, dlcStatusLoading, exportDirectory, recordingIndicatorEnabled, recordingIndicatorCorner, recordingRecognitionSettings, canChooseExportDirectory, onViewChange, onHelpTabChange, onInputModeChange, onGamepadIconSetChange, onShortcutSettingsChange, onCustomIconSourcesChange, onAppearanceModeChange, onCompatibilityModeChange, onLive2dEnabledChange, onHomeSpineIdChange, onHomeSpineTransformChange, onOpenDlcFolder, onRefreshDlc, onChooseExportDirectory, onExportInputSettings, onImportInputSettings, onResetInputBindings, onRecordingIndicatorEnabledChange, onRecordingIndicatorCornerChange, onRecordingRecognitionSettingsChange, onOpenRealtimeVisionSettings, onMoveChange, onBindingChange, onGamepadBindingChange  }: {
+function GamepadDiagnosticsPanel({ iconSet, recognitionMode, onIconSetChange, onRecognitionModeChange, globalInputEnabled, inputSignal, onRequestGlobalInput }: {
+  iconSet: GamepadIconSet;
+  recognitionMode: GamepadRecognitionMode;
+  onIconSetChange: (value: GamepadIconSet) => void;
+  onRecognitionModeChange: (value: GamepadRecognitionMode) => void;
+  globalInputEnabled: boolean;
+  inputSignal: (TrainerLikeInputEvent & { id: string }) | null;
+  onRequestGlobalInput: () => void;
+}) {
+  const { text } = useI18n();
+  const [connectedCount, setConnectedCount] = useState(0);
+  const [pressedCodes, setPressedCodes] = useState<string[]>([]);
+  const [recentEvents, setRecentEvents] = useState<Array<{ id: string; code: string; type: TrainerLikeInputEvent['type']; source?: string }>>([]);
+
+  useEffect(() => {
+    if (globalInputEnabled) return;
+    const refresh = () => {
+      const connected = matchingGamepads(recognitionMode);
+      const pressed = [...readPressedGamepadCodes(recognitionMode)].sort();
+      setConnectedCount(connected.length);
+      setPressedCodes((current) => current.join('|') === pressed.join('|') ? current : pressed);
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 120);
+    return () => window.clearInterval(timer);
+  }, [globalInputEnabled, recognitionMode]);
+
+  useEffect(() => {
+    if (!inputSignal || !isGamepadEvent(inputSignal)) return;
+    setRecentEvents((current) => [{ id: inputSignal.id, code: inputSignal.code, type: inputSignal.type, source: inputSignal.source }, ...current].slice(0, 12));
+    if (globalInputEnabled) {
+      setPressedCodes((current) => {
+        const next = new Set(current);
+        if (inputSignal.type === 'gamepadbuttondown') next.add(inputSignal.code);
+        else next.delete(inputSignal.code);
+        return [...next].sort();
+      });
+    }
+  }, [globalInputEnabled, inputSignal]);
+
+  const clearDiagnostics = () => {
+    setRecentEvents([]);
+    setPressedCodes([]);
+  };
+  const sourceLabel = globalInputEnabled
+    ? text('桌面全局捕获（原生识别）', 'Desktop global capture (native detection)')
+    : text('窗口内 Gamepad API', 'In-window Gamepad API');
+  const connectionLabel = globalInputEnabled
+    ? text('已开启，按键事件会从桌面捕获链路进入这里。', 'Enabled. Button events from desktop capture appear here.')
+    : connectedCount > 0
+      ? text(`已连接 ${connectedCount} 个${recognitionMode === 'playstation' ? 'PlayStation' : 'Xbox/XInput'} 手柄。`, `${connectedCount} ${recognitionMode === 'playstation' ? 'PlayStation' : 'Xbox/XInput'} controller(s) connected.`)
+      : text('暂未检测到匹配手柄，请按下任意按键后重试。', 'No matching controller detected. Press a button and try again.');
+
+  return <section className="gamepad-diagnostics" aria-label={text('手柄识别测试', 'Gamepad Recognition Test')}>
+    <div className="gamepad-diagnostics-head">
+      <div><strong>{text('手柄识别测试', 'Gamepad Recognition Test')}</strong><span>{text('在这里确认手柄类型、识别来源和按键事件是否正常。', 'Verify the controller type, input source, and button events here.')}</span></div>
+      <button className="icon-button" type="button" title={text('清空测试记录', 'Clear Test Log')} aria-label={text('清空测试记录', 'Clear Test Log')} onClick={clearDiagnostics}><RotateCcw size={16} /></button>
+    </div>
+    <div className="gamepad-diagnostics-controls">
+      <div className="gamepad-diagnostics-option"><span>{text('识别方式', 'Recognition Method')}</span><div className="segmented" role="group" aria-label={text('手柄识别方式', 'Gamepad Recognition Method')}><button className={recognitionMode === 'xbox' ? 'active' : ''} type="button" onClick={() => onRecognitionModeChange('xbox')}>Xbox / XInput</button><button className={recognitionMode === 'playstation' ? 'active' : ''} type="button" onClick={() => onRecognitionModeChange('playstation')}>PlayStation</button></div></div>
+      <div className="gamepad-diagnostics-option"><span>{text('图标样式', 'Icon Set')}</span><div className="segmented" role="group" aria-label={text('手柄图标样式', 'Gamepad Icon Set')}><button className={iconSet === 'xbox' ? 'active' : ''} type="button" onClick={() => onIconSetChange('xbox')}>Xbox</button><button className={iconSet === 'playstation' ? 'active' : ''} type="button" onClick={() => onIconSetChange('playstation')}>PlayStation</button></div></div>
+      <div className="gamepad-diagnostics-status"><span>{text('连接状态', 'Connection')}</span><strong className={globalInputEnabled || connectedCount > 0 ? 'ready' : ''}>{connectionLabel}</strong></div>
+      <div className="gamepad-diagnostics-status"><span>{text('当前来源', 'Input Source')}</span><strong>{sourceLabel}</strong></div>
+      {!globalInputEnabled && <button type="button" onClick={onRequestGlobalInput}><RadioTower size={15} />{text('启用全局捕获测试', 'Enable Global Capture Test')}</button>}
+    </div>
+    <div className="gamepad-diagnostics-live">
+      <div><span>{text('当前按下', 'Currently Pressed')}</span>{pressedCodes.length ? <div className="gamepad-diagnostics-chips">{pressedCodes.map((code) => <span className="gamepad-diagnostics-chip" key={code}>{gamepadIconSource(code, iconSet) && <img src={gamepadIconSource(code, iconSet)} alt="" />}{gamepadCodeLabel(code, iconSet)}</span>)}</div> : <em>{text('暂无按键', 'No buttons pressed')}</em>}</div>
+      <div><span>{text('最近事件', 'Recent Events')}</span>{recentEvents.length ? <div className="gamepad-diagnostics-events">{recentEvents.map((event) => <div key={event.id}><b className={event.type === 'gamepadbuttondown' ? 'down' : 'up'}>{event.type === 'gamepadbuttondown' ? text('按下', 'DOWN') : text('释放', 'UP')}</b><span>{gamepadCodeLabel(event.code, iconSet)}</span><small>{event.source === 'desktop' ? text('桌面', 'Desktop') : text('窗口', 'Window')}</small></div>)}</div> : <em>{text('等待按键事件', 'Waiting for button events')}</em>}</div>
+    </div>
+  </section>;
+}
+
+function SettingsPanel({ view, helpTab, moves, bindings, gamepadBindings, inputMode, gamepadIconSet, gamepadRecognitionMode, globalInputEnabled, inputSignal, shortcutSettings, customIconSources, appearanceMode, compatibilityMode, live2dEnabled, homeSpineId, homeSpineTransforms, homeDirectControl, homeBackgroundSrc, dlcStatus, dlcStatusLoading, exportDirectory, recordingIndicatorEnabled, recordingIndicatorCorner, recordingRecognitionSettings, canChooseExportDirectory, onViewChange, onHelpTabChange, onInputModeChange, onGamepadIconSetChange, onGamepadRecognitionModeChange, onRequestGlobalInput, onShortcutSettingsChange, onCustomIconSourcesChange, onAppearanceModeChange, onCompatibilityModeChange, onLive2dEnabledChange, onHomeSpineIdChange, onHomeSpineTransformChange, onHomeDirectControlChange, onHomeBackgroundChange, onOpenDlcFolder, onRefreshDlc, onChooseExportDirectory, onExportInputSettings, onImportInputSettings, onResetInputBindings, onRecordingIndicatorEnabledChange, onRecordingIndicatorCornerChange, onRecordingRecognitionSettingsChange, onOpenRealtimeVisionSettings, onMoveChange, onBindingChange, onGamepadBindingChange  }: {
   view: SettingsView;
   helpTab: HelpTab;
   moves: MoveDefinition[];
@@ -8778,6 +9131,9 @@ function SettingsPanel({ view, helpTab, moves, bindings, gamepadBindings, inputM
   gamepadBindings: KeyBinding[];
   inputMode: InputMode;
   gamepadIconSet: GamepadIconSet;
+  gamepadRecognitionMode: GamepadRecognitionMode;
+  globalInputEnabled: boolean;
+  inputSignal: (TrainerLikeInputEvent & { id: string }) | null;
   shortcutSettings: ShortcutSettings;
   customIconSources: CustomIconSources;
   appearanceMode: AppearanceMode;
@@ -8785,6 +9141,8 @@ function SettingsPanel({ view, helpTab, moves, bindings, gamepadBindings, inputM
   live2dEnabled: boolean;
   homeSpineId: HomeSpineId;
   homeSpineTransforms: HomeSpineTransforms;
+  homeDirectControl: boolean;
+  homeBackgroundSrc: string;
   dlcStatus: DlcStatus;
   dlcStatusLoading: boolean;
   exportDirectory: string;
@@ -8796,6 +9154,8 @@ function SettingsPanel({ view, helpTab, moves, bindings, gamepadBindings, inputM
   onHelpTabChange: (value: HelpTab) => void;
   onInputModeChange: (value: InputMode) => void;
   onGamepadIconSetChange: (value: GamepadIconSet) => void;
+  onGamepadRecognitionModeChange: (value: GamepadRecognitionMode) => void;
+  onRequestGlobalInput: () => void;
   onShortcutSettingsChange: (value: ShortcutSettings) => void;
   onCustomIconSourcesChange: (value: CustomIconSources) => void;
   onAppearanceModeChange: (value: AppearanceMode) => void;
@@ -8803,6 +9163,8 @@ function SettingsPanel({ view, helpTab, moves, bindings, gamepadBindings, inputM
   onLive2dEnabledChange: (value: boolean) => void;
   onHomeSpineIdChange: (value: HomeSpineId) => void;
   onHomeSpineTransformChange: (id: HomeSpineId, value: HomeSpineTransform) => void;
+  onHomeDirectControlChange: (value: boolean) => void;
+  onHomeBackgroundChange: (value: string) => void;
   onOpenDlcFolder: () => void;
   onRefreshDlc: () => void;
   onChooseExportDirectory: () => void;
@@ -8821,12 +9183,19 @@ function SettingsPanel({ view, helpTab, moves, bindings, gamepadBindings, inputM
   const [capture, setCapture] = useState<{ mode: InputMode; moveId: string; slot: 0 | 1  } | null>(null);
   const [bindingDrafts, setBindingDrafts] = useState<Record<string, string>>({ });
   const installedLive2dIds = useMemo(() => new Set(dlcStatus.live2dAssets.map((asset) => asset.id)), [dlcStatus.live2dAssets]);
+  const availableHomeSpineOptions = useMemo(() => {
+    const options = dlcStatus.live2dAssets.map(homeSpineOptionForAsset);
+    if (!options.some((option) => option.id === homeSpineId)) options.unshift(homeSpineOption(homeSpineId));
+    return options;
+  }, [dlcStatus.live2dAssets, homeSpineId]);
   const selectedHomeSpineInstalled = installedLive2dIds.has(homeSpineId);
   const selectedHomeSpineTransform = homeSpineTransforms[homeSpineId] ?? defaultHomeSpineTransform(homeSpineId);
   const updateSelectedHomeSpineTransform = (patch: Partial<HomeSpineTransform>) => {
     onHomeSpineTransformChange(homeSpineId, { ...selectedHomeSpineTransform, ...patch });
   };
   const [iconUploadError, setIconUploadError] = useState('');
+  const [homeBackgroundDraft, setHomeBackgroundDraft] = useState<string | null>(null);
+  const homeBackgroundInputRef = useRef<HTMLInputElement | null>(null);
   const inputSettingsImportRef = useRef<HTMLInputElement | null>(null);
   const activeBindings = inputMode === 'gamepad' ? gamepadBindings : bindings;
   const bindingSettingMoves = useMemo(() => [
@@ -8917,14 +9286,14 @@ function SettingsPanel({ view, helpTab, moves, bindings, gamepadBindings, inputM
   useEffect(() => {
     if (!capture || capture.mode !== 'gamepad') return;
     let frame = 0;
-    let previous = readPressedGamepadCodes(gamepadIconSet);
+    let previous = readPressedGamepadCodes(gamepadRecognitionMode);
     let modifierPressedAt: number | null = null;
     const finishCapture = (code: string) => {
       setBindingSlot('gamepad', capture.moveId, capture.slot, code);
       setCapture(null);
      };
     const tick = () => {
-      const current = readPressedGamepadCodes(gamepadIconSet);
+      const current = readPressedGamepadCodes(gamepadRecognitionMode);
       const newlyPressed = [...current].filter((code) => !previous.has(code));
       const modifierJustPressed = newlyPressed.includes(GAMEPAD_COMBO_MODIFIER);
       const primary = newlyPressed.find((code) => code !== GAMEPAD_COMBO_MODIFIER)
@@ -8954,7 +9323,7 @@ function SettingsPanel({ view, helpTab, moves, bindings, gamepadBindings, inputM
       cancelAnimationFrame(frame);
       window.removeEventListener('keydown', cancel, true);
     };
-   }, [capture, gamepadIconSet]);
+   }, [capture, gamepadRecognitionMode]);
 
   useEffect(() => {
     if (view !== 'keybindings') setCapture(null);
@@ -9010,11 +9379,21 @@ function SettingsPanel({ view, helpTab, moves, bindings, gamepadBindings, inputM
           <small className="settings-dlc-path">{dlcStatus.rootPath || text('桌面版会在程序旁创建 wwcombo dlc 文件夹。', 'The desktop app creates a wwcombo dlc folder beside the executable.') }</small>
         </div>
       </div>
+      <div className="settings-preference-row settings-home-background">
+        <span className="settings-preference-label">{text('主界面背景', 'Home Background')}</span>
+        <div className="settings-home-background-controls">
+          <button type="button" onClick={() => homeBackgroundInputRef.current?.click()}><Upload size={16} />{text('上传并裁剪', 'Upload and Crop')}</button>
+          <input ref={homeBackgroundInputRef} className="file-input" type="file" accept="image/*" onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; if (!file) return; void readFileAsDataUrl(file).then(setHomeBackgroundDraft).catch(() => undefined); }} />
+          {homeBackgroundSrc && <button type="button" onClick={() => onHomeBackgroundChange('')}><Trash2 size={16} />{text('恢复默认', 'Use Default')}</button>}
+          <small>{homeBackgroundSrc ? text('已设置自定义背景。', 'A custom background is active.') : text('建议使用横向图片，确认裁剪后才会保存。', 'Landscape images work best. The crop is saved after confirmation.')}</small>
+        </div>
+      </div>
       <div className="settings-preference-row settings-live2d">
         <span className="settings-preference-label">Live2D</span>
         <div className="settings-live2d-controls">
           <label className="checkline"><input type="checkbox" checked={live2dEnabled } onChange={(event) => onLive2dEnabledChange(event.target.checked) } />{text('启用 Live2D', 'Enable Live2D') }</label>
-          <label className="settings-live2d-character"><span>{text('主页角色', 'Home Character') }</span><select value={homeSpineId } disabled={!live2dEnabled } onChange={(event) => onHomeSpineIdChange(normalizeHomeSpineId(event.target.value)) }>{HOME_SPINE_OPTIONS.map((option) => <option key={option.id } value={option.id }>{option.names[language] }{installedLive2dIds.has(option.id) ? '' : text('（未安装）', ' (Not installed)') }</option>) }</select></label>
+          <label className="checkline"><input type="checkbox" checked={homeDirectControl } disabled={!live2dEnabled } onChange={(event) => onHomeDirectControlChange(event.target.checked) } />{text('滚轮直接控制', 'Direct Mouse Control') }</label>
+          <label className="settings-live2d-character"><span>{text('主页角色', 'Home Character') }</span><select value={homeSpineId } disabled={!live2dEnabled } onChange={(event) => onHomeSpineIdChange(normalizeHomeSpineId(event.target.value)) }>{availableHomeSpineOptions.map((option) => <option key={option.id } value={option.id }>{option.names[language] || option.names['en-US'] || option.id }{installedLive2dIds.has(option.id) ? '' : text('（未安装）', ' (Not installed)') }</option>) }</select></label>
         </div>
       </div>
       <div className="settings-preference-row settings-live2d-adjustments">
@@ -9026,6 +9405,7 @@ function SettingsPanel({ view, helpTab, moves, bindings, gamepadBindings, inputM
           <small className={`settings-live2d-hint ${selectedHomeSpineInstalled ? 'installed' : 'missing' }`}>{selectedHomeSpineInstalled ? text('当前角色已安装，只会在主页加载；离开主页后会释放资源。', 'This character is installed. It loads only on the home page and is released after leaving it.') : text('当前角色未安装。将该角色的独立压缩包解压到 wwcombo dlc 后刷新。', 'This character is not installed. Extract its individual package into wwcombo dlc, then refresh.') }</small>
         </div>
       </div>
+      {homeBackgroundDraft && <HomeBackgroundCropDialog src={homeBackgroundDraft} onCancel={() => setHomeBackgroundDraft(null)} onApply={(src) => { onHomeBackgroundChange(src); setHomeBackgroundDraft(null); }} />}
       {__BUFF_TIMER_ENABLED__ && <div className="settings-preference-row settings-buff-timer">
         <span className="settings-preference-label"><Clock3 size={18 } />{text('按键 Buff 计时', 'Key-triggered Buff Timer') }</span>
         <div className="settings-buff-timer-controls">
@@ -9068,10 +9448,11 @@ function SettingsPanel({ view, helpTab, moves, bindings, gamepadBindings, inputM
         <span>{text('输入模式', 'Input Mode') }</span>
         <div className="settings-input-mode-controls">
           <div className="segmented"><button className={inputMode === 'keyboard' ? 'active' : '' } type="button" onClick={() => { setCapture(null); onInputModeChange('keyboard');  } }><Keyboard size={16 } />{text('键鼠', 'Keyboard & Mouse') }</button><button className={inputMode === 'gamepad' ? 'active' : '' } type="button" onClick={() => { setCapture(null); onInputModeChange('gamepad');  } }><Gamepad2 size={16 } />{text('手柄', 'Gamepad') }</button></div>
-          {inputMode === 'gamepad' && <div className="settings-input-icon-set settings-gamepad-icon-set"><span>{text('手柄类型', 'Controller Type') }</span><div className="segmented" role="group" aria-label={text('手柄类型', 'Controller Type') }><button className={gamepadIconSet === 'xbox' ? 'active' : '' } type="button" onClick={() => onGamepadIconSetChange('xbox') }>Xbox</button><button className={gamepadIconSet === 'playstation' ? 'active' : '' } type="button" onClick={() => onGamepadIconSetChange('playstation') }>PlayStation</button></div></div> }
+          {inputMode === 'gamepad' && <><div className="settings-input-icon-set settings-gamepad-icon-set"><span>{text('识别方式', 'Recognition Method') }</span><div className="segmented" role="group" aria-label={text('手柄识别方式', 'Gamepad Recognition Method') }><button className={gamepadRecognitionMode === 'xbox' ? 'active' : '' } type="button" onClick={() => onGamepadRecognitionModeChange('xbox') }>Xbox</button><button className={gamepadRecognitionMode === 'playstation' ? 'active' : '' } type="button" onClick={() => onGamepadRecognitionModeChange('playstation') }>PlayStation</button></div></div><div className="settings-input-icon-set settings-gamepad-icon-set"><span>{text('图标样式', 'Icon Set') }</span><div className="segmented" role="group" aria-label={text('手柄图标样式', 'Gamepad Icon Set') }><button className={gamepadIconSet === 'xbox' ? 'active' : '' } type="button" onClick={() => onGamepadIconSetChange('xbox') }>Xbox</button><button className={gamepadIconSet === 'playstation' ? 'active' : '' } type="button" onClick={() => onGamepadIconSetChange('playstation') }>PlayStation</button></div></div></> }
           <button className="settings-reset-input-bindings" type="button" title={text('恢复当前输入模式的默认按键和按键图标', 'Restore default bindings and input icons for the current input mode') } onClick={() => { setCapture(null); onResetInputBindings(inputMode);  }}><RotateCcw size={16 } />{text('恢复默认', 'Restore Defaults') }</button>
         </div>
       </div>
+      {inputMode === 'gamepad' && <GamepadDiagnosticsPanel iconSet={gamepadIconSet } recognitionMode={gamepadRecognitionMode } onIconSetChange={onGamepadIconSetChange } onRecognitionModeChange={onGamepadRecognitionModeChange } globalInputEnabled={globalInputEnabled } inputSignal={inputSignal } onRequestGlobalInput={onRequestGlobalInput } />}
       {iconUploadError && <div className="settings-custom-icons-error">{iconUploadError}</div>}
       <div className="settings-table">
         <div className="settings-head"><span>{text('招式', 'Action') }</span><span>{text('按键 1', 'Binding 1') }</span><span>{text('按键 2', 'Binding 2') }</span><span>{text('独立', 'Independent') }</span><span>{text('推进', 'Advances Practice Step') }</span></div>
@@ -9576,7 +9957,9 @@ function filterContentLabelsForChart(chart: ComboChart, contentLabels: Record<st
  }
 
 function parseImportedComboPackage(value: unknown): ImportedComboPackage {
-  const record = value as { chart?: ComboChart; charts?: ComboChart[]; contentLabels?: Record<string, string>; moves?: MoveDefinition[]; bindings?: KeyBinding[]  };
+  const record = value && typeof value === 'object'
+    ? value as { chart?: ComboChart; charts?: ComboChart[]; contentLabels?: Record<string, string>; moves?: MoveDefinition[]; bindings?: KeyBinding[]  }
+    : {};
   const candidates = Array.isArray(value) ? value : Array.isArray(record.charts) ? record.charts : record.chart ? [record.chart] : [value as ComboChart];
   const charts = candidates.filter(isReasonableChart).map((item) => normalizeChart({ ...item, id: item.id || crypto.randomUUID(), updatedAt: Date.now()  }));
   const stepIds = new Set(charts.flatMap((chart) => chart.steps.map((step) => step.id)));

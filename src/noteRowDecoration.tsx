@@ -15,11 +15,12 @@ export function noteOperationIcon(step: ComboStep, style: ComboImageStyle): Note
   return part?.kind === 'icon' ? part : null;
 }
 
-export function DecoratedNoteRow({ step, style, className }: { step: ComboStep; style: ComboImageStyle; className: string }) {
+export function DecoratedNoteRow({ step, style, className, scale = 1, number }: { step: ComboStep; style: ComboImageStyle; className: string; scale?: number; number?: number }) {
   const slot = (step.characterSlot ?? 1) as CharacterSlot;
   const role = style.roleStyles[slot];
   const icon = noteOperationIcon(step, style);
-  const strokeSpace = style.noteTextStrokeEnabled ? Math.ceil(Math.max(0, style.noteTextStrokeWidth)) + 1 : 1;
+  const visualScale = Number.isFinite(scale) && scale > 0 ? scale : 1;
+  const strokeSpace = style.noteTextStrokeEnabled ? (Math.ceil(Math.max(0, style.noteTextStrokeWidth) * visualScale) + visualScale) : visualScale;
   const crop = normalizeRectPercent(role.avatarCrop, { x: 0, y: 0, w: 100, h: 100 });
   const avatarStyle = role.avatar ? {
     backgroundImage: `url(${role.avatar})`,
@@ -33,6 +34,7 @@ export function DecoratedNoteRow({ step, style, className }: { step: ComboStep; 
     <span className="decorated-note-operation" style={{ '--note-operation-width-scale': icon?.iconWidthScale ?? 1 } as CSSProperties} aria-hidden="true">
       {icon && <img src={icon.src} alt="" />}
     </span>
+    {number !== undefined && <span className="decorated-note-number" aria-label={`Note ${number}`}>{number}</span>}
     <span className="decorated-note-diamond-slot" aria-hidden="true"><span className="decorated-note-diamond" /></span>
     <span className="decorated-note-text">{step.note?.trim()}</span>
   </div>;

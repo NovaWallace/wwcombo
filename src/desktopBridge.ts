@@ -127,6 +127,8 @@ export function createDesktopBridge(): DesktopBridge | null {
         simulatedInputInstalled: boolean;
         live2dAssets: Array<{
           id: string;
+          displayName?: string;
+          names?: Record<string, string>;
           skeletonPath: string;
           atlasPath: string;
           texturePath: string;
@@ -138,6 +140,8 @@ export function createDesktopBridge(): DesktopBridge | null {
         simulatedInputInstalled: status.simulatedInputInstalled,
         live2dAssets: status.live2dAssets.map((asset) => ({
           id: asset.id,
+          displayName: asset.displayName,
+          names: asset.names,
           skeletonUrl: convertDlcFileSrc(asset.skeletonPath),
           atlasUrl: convertDlcFileSrc(asset.atlasPath),
           textureUrl: convertDlcFileSrc(asset.texturePath)
@@ -159,6 +163,7 @@ export function createDesktopBridge(): DesktopBridge | null {
     onVideoExportProgress: (callback: (progress: { progress: number; processedMs: number; durationMs: number }) => void) => listenUntilDisposed('video-export-progress', callback),
     saveExportFile: (directory: string, filename: string, bytes: Uint8Array) => invoke<{ path: string }>('save_export_file', { directory, filename, bytes: Array.from(bytes) }),
     saveExportMp4: (directory: string, filename: string, bytes: Uint8Array) => invoke<{ path: string }>('save_export_mp4', { directory, filename, bytes: Array.from(bytes) }),
+    applyIncrementalUpdate: (url: string, expectedPatchSha256: string, expectedTargetSha256: string) => invoke<{ started: boolean }>('apply_incremental_update', { url, expectedPatchSha256, expectedTargetSha256 }),
     onGlobalInput: (callback: (event: DesktopInputEvent) => void) => {
       const pressedShiftCodes = new Set<string>();
       return listenUntilDisposed<TauriGlobalInputPayload>('global-input', (payload) => {

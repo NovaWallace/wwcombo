@@ -27,7 +27,7 @@ import { createOverlayBridge } from './desktopBridge';
 import { I18nProvider, isAppLanguage, useI18n } from './i18n';
 import type { AppLanguage } from './i18n';
 import { localizedMovePrompt } from './moveLabels';
-import { noteStepCompleted } from './noteDisplay';
+import { noteNumberByStepId, noteStepCompleted } from './noteDisplay';
 import { currentPeriodLabelAtStep } from './periodLabels';
 import { buildRhythmCrowdedGroups, rhythmNoteHeight, rhythmNoteOpacity, rhythmNoteTop, visibleRhythmCrowdedGroups } from './rhythmCrowding';
 import { roundedTextOutlineShadow } from './textOutline';
@@ -88,36 +88,6 @@ function isPayload(value: unknown): value is OverlayPayload {
   return typeof value === 'object' && value !== null && 'practice' in value;
 }
 
-function customNoteNumberByStepId(chart: ComboChart | null): Map<string, number> {
-  const result = new Map<string, number>();
-  if (!chart) return result;
-  const steps = chart.steps
-    .map((step, index) => ({ step, index }))
-    .filter(({ step }) => Boolean(step.note?.trim()))
-    .sort((left, right) => left.step.startMin - right.step.startMin || left.index - right.index);
-  if (!steps.length) return result;
-  const periods = [...(chart.periods ?? [])]
-    .filter((period) => period.kind === 'startup_axis' || period.kind === 'loop_axis')
-    .sort((left, right) => left.startMs - right.startMs || left.id.localeCompare(right.id));
-  const loopPeriods = periods.filter((period) => period.kind === 'loop_axis');
-  const counters = new Map<string, number>();
-  const axisKeyForStep = (startMs: number): string => {
-    const containing = periods
-      .filter((period) => startMs >= period.startMs && (period.endMs <= period.startMs || startMs <= period.endMs))
-      .sort((left, right) => right.startMs - left.startMs)[0];
-    if (containing) return containing.kind === 'loop_axis' ? containing.id : `startup:${containing.id}`;
-    const previousLoop = loopPeriods.filter((period) => startMs >= period.startMs).at(-1);
-    if (previousLoop) return previousLoop.id;
-    return 'startup:default';
-  };
-  for (const { step } of steps) {
-    const key = axisKeyForStep(step.startMin);
-    const next = (counters.get(key) ?? 0) + 1;
-    counters.set(key, next);
-    result.set(step.id, next);
-  }
-  return result;
-}
 
 function isRhythmHoldStep(step: OverlayStep): boolean {
   return step.moveId === 'heavy_attack' || step.moveId.endsWith('_hold');
@@ -306,25 +276,6 @@ function OverlayApp() {
   const activeDisplayIndex = comboImageDisplayIndexForStep(allItems, activeDisplayStepId);
   const indicatorDisplayIndex = comboImageDisplayIndexForStep(allItems, indicatorStepId);
   const visibleItems = visibleComboImageItems(allItems, activeDisplayIndex, linearLayout, comboLayoutBounds, comboStyle);
-  const visibleNoteStepIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const item of visibleItems) {
-      ids.add(item.step.id);
-      for (const stepId of item.mergedStepIds ?? []) ids.add(stepId);
-    }
-    return [...ids];
-  }, [visibleItems]);
-  useEffect(() => {
-    if (!payload?.showNotesSeparately || (!payload.visible && !payload.moveMode)) {
-      visibleNoteIdsRef.current = '';
-      return;
-    }
-    if (!overlay?.updateOverlayVisibleNotes) return;
-    const key = visibleNoteStepIds.join('\u0001');
-    if (visibleNoteIdsRef.current === key) return;
-    visibleNoteIdsRef.current = key;
-    void overlay.updateOverlayVisibleNotes(visibleNoteStepIds);
-  }, [overlay, payload?.showNotesSeparately, visibleNoteStepIds]);
   const trackOffset = comboTrackOffset(allItems, activeDisplayIndex, linearLayout, comboLayoutBounds, comboStyle);
   const activeMetric = metrics[Math.max(0, Math.min(activeDisplayIndex, Math.max(0, metrics.length - 1)))];
   const backgroundSource = comboImageBackgroundSource(comboStyle);
@@ -349,8 +300,51 @@ function OverlayApp() {
     ? verticalComboTrackClipCompensation(comboStyle, activeVerticalItem, activeMetric.start, trackOffset, verticalTopClearance)
     : 0;
   const renderTrackOffset = trackOffset + verticalTopCompensation;
-  const noteNumberByStepId = useMemo(() => {
-    const numbered = customNoteNumberByStepId(chart);
+  const visibleNoteStepIds = useMemo(() => {
+    const viewport = Math.max(1, linearLayout === 'vertical' ? comboLayoutBounds.height : comboLayoutBounds.width);
+    const stepById = new Map((chart?.steps ?? []).map((step) => [step.id, step]));
+    const ids = new Set<string>();
+    for (const [index, item] of allItems.entries()) {
+      const metric = metrics[index];
+      if (!metric) continue;
+      const start = metric.start + renderTrackOffset;
+      const end = start + metric.extent;
+      // A note enters the independent panel when its corresponding icon has
+      // entered the rendered viewport, rather than when the chart is loaded.
+      if (end <= 0 || start >= viewport) continue;
+      for (const stepId of item.mergedStepIds ?? [item.step.id]) {
+        const step = stepById.get(stepId);
+        if (!step?.note?.trim() || (practice && noteStepCompleted(step, practice, chart))) continue;
+        const partIndex = item.mergedStepIds?.indexOf(stepId) ?? 0;
+        const partCount = Math.max(1, item.mergedStepIds?.length ?? 1);
+        const part = item.mergedParts?.find((candidate) => candidate.stepId === stepId);
+        const partStart = part
+          ? start + metric.extent * Math.max(0, (part.centerPercent - part.spanPercent / 2) / 100)
+          : start + metric.extent * (partIndex / partCount);
+        const partEnd = part
+          ? start + metric.extent * Math.min(1, (part.centerPercent + part.spanPercent / 2) / 100)
+          : start + metric.extent * ((partIndex + 1) / partCount);
+        if (partEnd > 0 && partStart < viewport) ids.add(stepId);
+      }
+    }
+    return [...ids];
+  }, [allItems, chart, comboLayoutBounds.height, comboLayoutBounds.width, linearLayout, metrics, practice, renderTrackOffset]);
+  useEffect(() => {
+    if (!payload?.showNotesSeparately || (!payload.visible && !payload.moveMode)) {
+      visibleNoteIdsRef.current = '';
+      return;
+    }
+    if (!overlay?.updateOverlayVisibleNotes) return;
+    // The native layer uses different windows for normal display and move
+    // mode. Resend the same IDs when leaving move mode so the normal window
+    // receives the current viewport filter even if the IDs did not change.
+    const key = `${payload.showNotesSeparately ? 'shown' : 'hidden'}:${payload.visible ? 'visible' : 'hidden'}:${payload.moveMode ? 'move' : 'display'}:${payload.noteMoveMode ? 'note-move' : 'note-display'}:${visibleNoteStepIds.join('\u0001')}`;
+    if (visibleNoteIdsRef.current === key) return;
+    visibleNoteIdsRef.current = key;
+    void overlay.updateOverlayVisibleNotes(visibleNoteStepIds);
+  }, [overlay, payload?.showNotesSeparately, payload?.moveMode, payload?.noteMoveMode, payload?.visible, visibleNoteStepIds]);
+  const noteNumbersByStepId = useMemo(() => {
+    const numbered = noteNumberByStepId(chart);
     if (!chart || !practice) return numbered;
     const stepById = new Map(chart.steps.map((step) => [step.id, step]));
     return new Map([...numbered].filter(([stepId]) => {
@@ -457,7 +451,7 @@ function OverlayApp() {
             const isActive = comboImageItemContainsStep(item, activeDisplayStepId);
             const activeMergedStepId = comboStyle.mergeSameRoleSteps && comboImageItemContainsStep(item, mergedHighlightStepId) ? mergedHighlightStepId : undefined;
             const isNext = comboStyle.prePromptEnabled && comboImageItemContainsStep(item, indicatorStepId) && indicatorDisplayIndex !== activeDisplayIndex;
-            const itemNoteNumbers = (item.mergedStepIds ?? [item.step.id]).flatMap((stepId) => { const number = noteNumberByStepId.get(stepId); return number === undefined ? [] : [number]; });
+            const itemNoteNumbers = (item.mergedStepIds ?? [item.step.id]).flatMap((stepId) => { const number = noteNumbersByStepId.get(stepId); return number === undefined ? [] : [number]; });
             const isDone = Boolean(practice && (practice.completedStepIds.includes(item.step.id) || item.mergedStepIds?.some((stepId) => practice.completedStepIds.includes(stepId))));
             const isError = Boolean(practice && (practice.errorStepIds.includes(item.step.id) || item.mergedStepIds?.some((stepId) => practice.errorStepIds.includes(stepId))));
             const triangleCenter = comboImageContentCenterPercent(item, indicatorStepId);
@@ -488,7 +482,7 @@ function OverlayApp() {
                   {periodLabel ? <ruby className="overlay-action-prompt-ruby"><span>{promptText}</span><rt>{periodLabel}</rt></ruby> : promptText}
                 </div>}
                 {periodLabel && (horizontalLikeLayout ? isActive : !promptText && item === firstVisibleItem) && <div className={`overlay-period-label inline ${horizontalLikeLayout ? `horizontal ${horizontalPeriodSide}` : `vertical ${verticalPeriodSide}`}`}>{periodLabel}</div>}
-                <ComboItemContent item={item} parts={contentParts} mappings={itemIconMappings} convertIcons={comboStyle.convertIcons} className="combo-chip-content" activeMergedStepId={activeMergedStepId} noteNumberByStepId={noteNumberByStepId} textStyle={comboTextStrokeStyle(comboStyle)} />
+                <ComboItemContent item={item} parts={contentParts} mappings={itemIconMappings} convertIcons={comboStyle.convertIcons} className="combo-chip-content" activeMergedStepId={activeMergedStepId} noteNumberByStepId={noteNumbersByStepId} textStyle={comboTextStrokeStyle(comboStyle)} />
               </div>
             );
           }) : <div className="placeholder">{text('暂无连段图', 'No Combo Chart') }</div>}

@@ -52,6 +52,8 @@ $env:CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER = $linker
 $env:CC_aarch64_linux_android = $linker
 $env:AR_aarch64_linux_android = Join-Path $toolchain 'llvm-ar.exe'
 
+& (Join-Path $PSScriptRoot 'sync-android-mobile-icons.ps1') -ProjectRoot $projectRoot
+
 Push-Location $projectRoot
 try {
   & npm.cmd run build

@@ -4,7 +4,7 @@ import { CheckCircle2, Download, ExternalLink, FileInput, Link2, Lock, PanelBott
 import type { AfygTimingSettings, CharacterSlot, ComboChart, ComboImageStyle, ComboPeriod, ComboStep } from '../combo-core';
 import { AFYG_EMBED_URL, afygOperationIdForStepId, buildAfygDirectImportUrl, buildAfygProject, defaultAfygOperationKey } from './afygAdapter';
 import type { AfygOperationKeyOverrides } from './afygAdapter';
-import { afygAxisBoundaries, createAfygTimingKeyframe, deleteAfygTimingKeyframe, moveAfygTimingKeyframe, normalizeAfygTimingSettings, pairAfygTimingKeyframe, updateAfygTimingKeyframe } from './afygTiming';
+import { afygAxisBoundaries, createAfygTimingKeyframe, deleteAfygTimingKeyframe, mapTimelineToGameTime, moveAfygTimingKeyframe, normalizeAfygTimingSettings, pairAfygTimingKeyframe, updateAfygTimingKeyframe } from './afygTiming';
 import { EmbeddedBrowserExitControl } from './EmbeddedBrowserExitControl';
 import { useI18n } from './i18n';
 
@@ -744,8 +744,21 @@ export function AfygDpsLab({ chart, library, style, appearanceMode, timelineEdit
       damageScrollTargetRef.current = null;
       damageScrollSuppressUntilRef.current = 0;
     };
+    const handleTimelineWheel = (event: WheelEvent) => {
+      markTimelineScrollIntent();
+      if (event.ctrlKey || event.metaKey) return;
+      const delta = Math.abs(event.deltaX) >= Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+      if (!delta) return;
+      const maxScrollLeft = Math.max(0, node.scrollWidth - node.clientWidth);
+      if (maxScrollLeft <= 0) return;
+      const nextScrollLeft = clampAfyg(node.scrollLeft + delta, 0, maxScrollLeft);
+      if (Math.abs(nextScrollLeft - node.scrollLeft) < 0.25) return;
+      event.preventDefault();
+      node.scrollLeft = nextScrollLeft;
+      queueTimelineScroll();
+    };
     const resizeObserver = new ResizeObserver(queueTimelineScroll);
-    node.addEventListener('wheel', markTimelineScrollIntent, { passive: true });
+    node.addEventListener('wheel', handleTimelineWheel, { passive: false });
     node.addEventListener('pointerdown', markTimelineScrollIntent, { passive: true });
     node.addEventListener('touchstart', markTimelineScrollIntent, { passive: true });
     node.addEventListener('keydown', markTimelineScrollIntent);
@@ -756,7 +769,7 @@ export function AfygDpsLab({ chart, library, style, appearanceMode, timelineEdit
     const initialFrame = requestAnimationFrame(sendTimelineScroll);
     return () => {
       cancelAnimationFrame(initialFrame);
-      node.removeEventListener('wheel', markTimelineScrollIntent);
+      node.removeEventListener('wheel', handleTimelineWheel);
       node.removeEventListener('pointerdown', markTimelineScrollIntent);
       node.removeEventListener('touchstart', markTimelineScrollIntent);
       node.removeEventListener('keydown', markTimelineScrollIntent);
@@ -983,13 +996,14 @@ export function AfygDpsLab({ chart, library, style, appearanceMode, timelineEdit
   const referenceTimingToolsReady = wsConnected
     && ['switch_view', 'get_panels_state', 'open_panel'].every((tool) => wsTools.includes(tool));
   const enhancedTimelineEditor = isValidElement(timelineEditor)
-    ? cloneElement(timelineEditor as ReactElement<{ onSelectionChange?: (stepIds: string[]) => void; onPeriodSelectionChange?: (period: ComboPeriod | null) => void; videoCompactMode?: boolean; videoLaneHeight?: number; hideInspector?: boolean; zoom?: number; onZoomChange?: (value: number) => void; timelinePanelControl?: AfygTimelinePanelControl; referenceTimingControl?: { onOpen: () => void; disabled?: boolean; busy?: boolean }; timingKeyframeControl?: unknown; workshopImportControl?: unknown; playheadControl?: AfygPlayheadControl; highlightedStepIds?: Set<string>; readOnly?: boolean }>, {
+    ? cloneElement(timelineEditor as ReactElement<{ onSelectionChange?: (stepIds: string[]) => void; onPeriodSelectionChange?: (period: ComboPeriod | null) => void; videoCompactMode?: boolean; videoLaneHeight?: number; hideInspector?: boolean; zoom?: number; onZoomChange?: (value: number) => void; timelinePanelControl?: AfygTimelinePanelControl; referenceTimingControl?: { onOpen: () => void; disabled?: boolean; busy?: boolean }; timingKeyframeControl?: unknown; workshopImportControl?: unknown; playheadControl?: AfygPlayheadControl; highlightedStepIds?: Set<string>; readOnly?: boolean; timeLabelForMs?: (timelineMs: number) => number }>, {
         onSelectionChange: setSelectedStepIds,
         onPeriodSelectionChange: setSelectedPeriod,
         videoCompactMode: true,
         videoLaneHeight: afygTimelineLaneHeight,
         zoom: afygTimelineZoom,
         onZoomChange: setAfygTimelineZoom,
+        timeLabelForMs: (timelineMs: number) => mapTimelineToGameTime(timelineMs, timingSettings),
         timelinePanelControl: afygTimelinePanelControl,
         referenceTimingControl: {
           onOpen: openAfygReferenceTiming,

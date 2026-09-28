@@ -1,6 +1,9 @@
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
+use base64::Engine;
+use flate2::read::DeflateDecoder;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 #[cfg(feature = "release-core")]
@@ -19,6 +22,8 @@ use tauri::{
 use tauri_plugin_opener::OpenerExt;
 
 const DLC_DIRECTORY_NAME: &str = "wwcombo dlc";
+const DELTA_MAGIC: &[u8] = b"WWCOMBO_DELTA_V1\n";
+const DELTA_MAX_BYTES: u64 = 500 * 1024 * 1024;
 #[cfg(not(feature = "release-core"))]
 const SIMULATION_LEAD_MS: u64 = 0;
 
@@ -50,6 +55,7 @@ static OVERLAY_BOUNDS_STATE: Lazy<Mutex<OverlayBounds>> = Lazy::new(|| {
 });
 static OVERLAY_NOTES_STATE: Lazy<Mutex<serde_json::Value>> =
     Lazy::new(|| Mutex::new(serde_json::json!({ "visible": false, "moveMode": false })));
+static OVERLAY_NOTES_RESTORE_BOUNDS: Lazy<Mutex<Option<OverlayBounds>>> = Lazy::new(|| Mutex::new(None));
 static OVERLAY_NOTES_BOUNDS_STATE: Lazy<Mutex<OverlayBounds>> = Lazy::new(|| {
     Mutex::new(OverlayBounds {
         x: 210.0,
@@ -93,6 +99,150 @@ fn parse_global_input_mode(mode: &str) -> Option<u8> {
     }
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DeltaPatch {
+    schema_version: u8,
+    format: String,
+    block_size: usize,
+    base_sha256: String,
+    target_sha256: String,
+    target_bytes: usize,
+    operations: Vec<DeltaOperation>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DeltaOperation {
+    kind: String,
+    block: Option<usize>,
+    data: Option<String>,
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    format!("{:x}", hasher.finalize())
+}
+
+fn build_delta_output(
+    patch_path: &Path,
+    target_path: &Path,
+    expected_patch_sha256: &str,
+    expected_target_sha256: &str,
+) -> Result<Vec<u8>, String> {
+    let compressed = fs::read(patch_path).map_err(|error| format!("读取差分包失败：{error}"))?;
+    if compressed.len() as u64 > DELTA_MAX_BYTES || !compressed.starts_with(DELTA_MAGIC) || (!expected_patch_sha256.is_empty() && sha256_hex(&compressed) != expected_patch_sha256) {
+        return Err(String::from("差分包格式无效。"));
+    }
+    let mut decoder = DeflateDecoder::new(&compressed[DELTA_MAGIC.len()..]);
+    let mut payload = Vec::new();
+    decoder.read_to_end(&mut payload).map_err(|error| format!("解压差分包失败：{error}"))?;
+    if payload.len() as u64 > DELTA_MAX_BYTES { return Err(String::from("差分包内容过大。")); }
+    let patch: DeltaPatch = serde_json::from_slice(&payload).map_err(|error| format!("解析差分包失败：{error}"))?;
+    if patch.schema_version != 1 || patch.format != "wwcombo-block-delta" || !(1..=1024 * 1024).contains(&patch.block_size) || patch.target_bytes == 0 || patch.target_bytes as u64 > DELTA_MAX_BYTES {
+        return Err(String::from("差分包版本或参数不受支持。"));
+    }
+    let base = fs::read(target_path).map_err(|error| format!("读取当前程序失败：{error}"))?;
+    if sha256_hex(&base) != patch.base_sha256 || (!expected_target_sha256.is_empty() && patch.target_sha256 != expected_target_sha256) { return Err(String::from("当前版本与差分包来源不匹配。")); }
+    let mut output = Vec::with_capacity(patch.target_bytes);
+    for operation in patch.operations {
+        match operation.kind.as_str() {
+            "copy" => {
+                let index = operation.block.ok_or_else(|| String::from("差分包复制操作无效。"))?;
+                let start = index.checked_mul(patch.block_size).ok_or_else(|| String::from("差分包位置无效。"))?;
+                let end = (start + patch.block_size).min(base.len());
+                if start >= base.len() || end <= start { return Err(String::from("差分包引用了不存在的数据块。")); }
+                output.extend_from_slice(&base[start..end]);
+            }
+            "data" => {
+                let encoded = operation.data.ok_or_else(|| String::from("差分包数据操作无效。"))?;
+                let bytes = base64::engine::general_purpose::STANDARD.decode(encoded).map_err(|error| format!("差分包数据无效：{error}"))?;
+                output.extend_from_slice(&bytes);
+            }
+            _ => return Err(String::from("差分包包含未知操作。"))
+        }
+        if output.len() > patch.target_bytes { return Err(String::from("差分包生成的文件过大。")); }
+    }
+    if output.len() != patch.target_bytes || sha256_hex(&output) != patch.target_sha256 { return Err(String::from("差分包校验失败。")); }
+    Ok(output)
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct IncrementalUpdateLaunch {
+    started: bool,
+}
+
+#[tauri::command]
+async fn apply_incremental_update(app: AppHandle, url: String, expected_patch_sha256: String, expected_target_sha256: String) -> Result<IncrementalUpdateLaunch, String> {
+    if !matches!(url.get(..8), Some("https://")) && !matches!(url.get(..7), Some("http://")) {
+        return Err(String::from("更新地址无效。"));
+    }
+    let client = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(10 * 60))
+        .build()
+        .map_err(|error| format!("创建更新请求失败：{error}"))?;
+    let response = client.get(url).send().await.map_err(|error| format!("下载差分包失败：{error}"))?;
+    if !response.status().is_success() { return Err(format!("差分包返回异常状态：{}", response.status())); }
+    if response.content_length().unwrap_or(0) > DELTA_MAX_BYTES { return Err(String::from("差分包过大。")); }
+    let bytes = response.bytes().await.map_err(|error| format!("读取差分包失败：{error}"))?;
+    if bytes.is_empty() || bytes.len() as u64 > DELTA_MAX_BYTES { return Err(String::from("差分包为空或过大。")); }
+    let executable = std::env::current_exe().map_err(|error| format!("定位当前程序失败：{error}"))?;
+    let patch_path = executable.with_extension(format!("wwdelta.{}.download", std::process::id()));
+    fs::write(&patch_path, &bytes).map_err(|error| format!("保存差分包失败：{error}"))?;
+    let output = match build_delta_output(&patch_path, &executable, &expected_patch_sha256, &expected_target_sha256) {
+        Ok(output) => output,
+        Err(error) => {
+            let _ = fs::remove_file(&patch_path);
+            return Err(error);
+        }
+    };
+    let replacement = executable.with_extension(format!("wwcombo.new.{}.exe", std::process::id()));
+    let backup = executable.with_extension(format!("wwcombo.backup.{}.exe", std::process::id()));
+    fs::write(&replacement, output).map_err(|error| {
+        let _ = fs::remove_file(&patch_path);
+        format!("写入更新文件失败：{error}")
+    })?;
+    #[cfg(not(windows))]
+    {
+        let _ = fs::remove_file(&patch_path);
+        let _ = fs::remove_file(&replacement);
+        return Err(String::from("当前系统暂不支持自动替换客户端。"));
+    }
+    #[cfg(windows)]
+    {
+        let script_path = executable.with_extension(format!("wwcombo-update-{}.cmd", std::process::id()));
+        let script = format!(
+            "@echo off\r\nsetlocal\r\nset \"TARGET={}\"\r\nset \"REPLACEMENT={}\"\r\nset \"BACKUP={}\"\r\nset \"PATCH={}\"\r\nset /a TRIES=0\r\n:wait_for_exit\r\nset /a TRIES+=1\r\nif %TRIES% GTR 120 goto failed\r\nmove /Y \"%TARGET%\" \"%BACKUP%\" >nul 2>&1\r\nif errorlevel 1 (timeout /t 1 /nobreak >nul & goto wait_for_exit)\r\nmove /Y \"%REPLACEMENT%\" \"%TARGET%\" >nul 2>&1\r\nif errorlevel 1 (move /Y \"%BACKUP%\" \"%TARGET%\" >nul 2>&1 & goto failed)\r\ndel /F /Q \"%BACKUP%\" >nul 2>&1\r\ndel /F /Q \"%PATCH%\" >nul 2>&1\r\nstart \"\" \"%TARGET%\"\r\ndel /F /Q \"%~f0\" >nul 2>&1\r\nexit /b 0\r\n:failed\r\ndel /F /Q \"%REPLACEMENT%\" >nul 2>&1\r\ndel /F /Q \"%PATCH%\" >nul 2>&1\r\ndel /F /Q \"%~f0\" >nul 2>&1\r\nexit /b 1\r\n",
+            executable.display(),
+            replacement.display(),
+            backup.display(),
+            patch_path.display()
+        );
+        fs::write(&script_path, script).map_err(|error| {
+            let _ = fs::remove_file(&patch_path);
+            let _ = fs::remove_file(&replacement);
+            format!("创建更新脚本失败：{error}")
+        })?;
+        let mut command = Command::new("cmd.exe");
+        command.args(["/D", "/Q", "/C", &script_path.to_string_lossy()]);
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x08000000);
+        if let Err(error) = command.spawn() {
+            let _ = fs::remove_file(&patch_path);
+            let _ = fs::remove_file(&replacement);
+            let _ = fs::remove_file(&script_path);
+            return Err(format!("启动更新程序失败：{error}"));
+        }
+        app.exit(0);
+        return Ok(IncrementalUpdateLaunch { started: true });
+    }
+    #[cfg(not(windows))]
+    unreachable!()
+}
+
 fn clear_global_input_pressed_state() {
     INPUT_PRESSED_CODES.lock().clear();
 }
@@ -116,6 +266,29 @@ struct OverlayBounds {
     y: f64,
     width: f64,
     height: f64,
+}
+
+fn apply_overlay_notes_bounds(window: &WebviewWindow, bounds: OverlayBounds) {
+    let changed = {
+        let mut current = OVERLAY_NOTES_BOUNDS_STATE.lock();
+        let changed = current.x.round() != bounds.x.round()
+            || current.y.round() != bounds.y.round()
+            || current.width.round() != bounds.width.round()
+            || current.height.round() != bounds.height.round();
+        *current = bounds;
+        changed
+    };
+    if !changed {
+        return;
+    }
+    let _ = window.set_position(PhysicalPosition::new(
+        bounds.x.round() as i32,
+        bounds.y.round() as i32,
+    ));
+    let _ = window.set_size(PhysicalSize::new(
+        bounds.width.max(1.0).round() as u32,
+        bounds.height.max(1.0).round() as u32,
+    ));
 }
 
 #[derive(Clone, Copy, Deserialize, Serialize)]
@@ -469,6 +642,10 @@ async fn fetch_remote_character_avatars() -> Result<serde_json::Value, String> {
 #[serde(rename_all = "camelCase")]
 struct Live2dDlcAsset {
     id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    display_name: Option<String>,
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    names: HashMap<String, String>,
     skeleton_path: String,
     atlas_path: String,
     texture_path: String,
@@ -508,6 +685,9 @@ fn preferred_dlc_root(app: &AppHandle) -> PathBuf {
 fn dlc_search_roots(app: &AppHandle) -> Vec<PathBuf> {
     let mut roots = Vec::new();
     push_unique_path(&mut roots, preferred_dlc_root(app));
+    if let Some(directory) = executable_directory() {
+        push_unique_path(&mut roots, directory);
+    }
     if let Ok(resource_dir) = app.path().resource_dir() {
         push_unique_path(&mut roots, resource_dir.join(DLC_DIRECTORY_NAME));
     }
@@ -538,6 +718,33 @@ fn safe_relative_asset_path(package_root: &Path, raw_path: &str) -> Option<PathB
     candidate.is_file().then_some(candidate)
 }
 
+fn live2d_display_metadata(value: &serde_json::Value) -> (Option<String>, HashMap<String, String>) {
+    let mut names = value
+        .get("names")
+        .and_then(serde_json::Value::as_object)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|(language, name)| Some((language.clone(), name.as_str()?.trim().to_string())))
+                .filter(|(_, name)| !name.is_empty())
+                .collect::<HashMap<_, _>>()
+        })
+        .unwrap_or_default();
+    let display_name = value
+        .get("displayName")
+        .or_else(|| value.get("name"))
+        .or_else(|| value.get("live2d"))
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map(ToOwned::to_owned)
+        .or_else(|| names.get("zh-CN").cloned());
+    if let Some(display_name) = display_name.as_ref() {
+        names.entry(String::from("zh-CN")).or_insert_with(|| display_name.clone());
+    }
+    (display_name, names)
+}
+
 fn live2d_assets_from_manifest(manifest_path: &Path) -> Vec<Live2dDlcAsset> {
     let Ok(source) = fs::read_to_string(manifest_path) else {
         return Vec::new();
@@ -566,8 +773,11 @@ fn live2d_assets_from_manifest(manifest_path: &Path) -> Vec<Live2dDlcAsset> {
                 .and_then(serde_json::Value::as_str)
                 .and_then(|raw_path| safe_relative_asset_path(package_root, raw_path)),
         ) {
+            let (display_name, names) = live2d_display_metadata(&value);
             records.push(Live2dDlcAsset {
                 id: id.to_string(),
+                display_name,
+                names,
                 skeleton_path: path.to_string_lossy().into_owned(),
                 atlas_path: atlas_path.to_string_lossy().into_owned(),
                 texture_path: texture_path.to_string_lossy().into_owned(),
@@ -600,8 +810,11 @@ fn live2d_assets_from_manifest(manifest_path: &Path) -> Vec<Live2dDlcAsset> {
                     .and_then(serde_json::Value::as_str)
                     .and_then(|raw_path| safe_relative_asset_path(package_root, raw_path)),
             ) {
+                let (display_name, names) = live2d_display_metadata(character);
                 records.push(Live2dDlcAsset {
                     id: id.to_string(),
+                    display_name,
+                    names,
                     skeleton_path: path.to_string_lossy().into_owned(),
                     atlas_path: atlas_path.to_string_lossy().into_owned(),
                     texture_path: texture_path.to_string_lossy().into_owned(),
@@ -612,16 +825,113 @@ fn live2d_assets_from_manifest(manifest_path: &Path) -> Vec<Live2dDlcAsset> {
     records
 }
 
+fn collect_live2d_files(root: &Path, files: &mut Vec<PathBuf>, recursive: bool) {
+    let Ok(entries) = fs::read_dir(root) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
+        if file_type.is_dir() && recursive {
+            collect_live2d_files(&path, files, true);
+        } else if file_type.is_file() {
+            files.push(path);
+        }
+    }
+}
+
+fn file_extension_is(path: &Path, extensions: &[&str]) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .map(|extension| extensions.iter().any(|candidate| extension.eq_ignore_ascii_case(candidate)))
+        .unwrap_or(false)
+}
+
+fn file_stem_lowercase(path: &Path) -> String {
+    path.file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase()
+}
+
+fn matching_live2d_file(files: &[PathBuf], extensions: &[&str], stem: &str) -> Option<PathBuf> {
+    let normalized_stem = stem.to_ascii_lowercase();
+    files
+        .iter()
+        .find(|path| file_extension_is(path, extensions) && file_stem_lowercase(path) == normalized_stem)
+        .cloned()
+        .or_else(|| {
+            let candidates = files
+                .iter()
+                .filter(|path| file_extension_is(path, extensions))
+                .collect::<Vec<_>>();
+            (candidates.len() == 1).then(|| candidates[0].clone())
+        })
+}
+
+fn live2d_assets_from_files(root: &Path, fallback_id: &str, recursive: bool) -> Vec<Live2dDlcAsset> {
+    let mut files = Vec::new();
+    collect_live2d_files(root, &mut files, recursive);
+    let skeletons = files
+        .iter()
+        .filter(|path| file_extension_is(path, &["skel", "json"]))
+        .filter(|path| path.file_name().and_then(|name| name.to_str()) != Some("manifest.json"));
+    let mut assets = Vec::new();
+    for skeleton in skeletons {
+        let stem = file_stem_lowercase(skeleton);
+        let Some(atlas) = matching_live2d_file(&files, &["atlas"], &stem) else {
+            continue;
+        };
+        let Some(texture) = matching_live2d_file(&files, &["png", "webp", "jpg", "jpeg"], &stem) else {
+            continue;
+        };
+        let id = if fallback_id.trim().is_empty() {
+            stem.clone()
+        } else if assets.is_empty() {
+            fallback_id.trim().to_string()
+        } else {
+            format!("{}-{stem}", fallback_id.trim())
+        };
+        assets.push(Live2dDlcAsset {
+            id: id.clone(),
+            display_name: Some(id),
+            names: HashMap::new(),
+            skeleton_path: skeleton.to_string_lossy().into_owned(),
+            atlas_path: atlas.to_string_lossy().into_owned(),
+            texture_path: texture.to_string_lossy().into_owned(),
+        });
+    }
+    assets
+}
+
 fn scan_live2d_package_directory(root: &Path) -> Vec<Live2dDlcAsset> {
-    let live2d_root = root.join("live2d");
-    let Ok(entries) = fs::read_dir(live2d_root) else {
+    let live2d_root = if root.join("live2d").is_dir() {
+        root.join("live2d")
+    } else {
+        root.to_path_buf()
+    };
+    let Ok(entries) = fs::read_dir(&live2d_root) else {
         return Vec::new();
     };
-    entries
-        .filter_map(Result::ok)
-        .filter(|entry| entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false))
-        .flat_map(|entry| live2d_assets_from_manifest(&entry.path().join("manifest.json")))
-        .collect()
+    let mut assets = Vec::new();
+    for entry in entries.flatten() {
+        if !entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false) {
+            continue;
+        }
+        let package = entry.path();
+        let manifest_assets = live2d_assets_from_manifest(&package.join("manifest.json"));
+        if manifest_assets.is_empty() {
+            let id = entry.file_name().to_string_lossy().into_owned();
+            assets.extend(live2d_assets_from_files(&package, &id, true));
+        } else {
+            assets.extend(manifest_assets);
+        }
+    }
+    // Also accept a single loose model directly inside wwcombo dlc/live2d.
+    assets.extend(live2d_assets_from_files(&live2d_root, "", false));
+    assets
 }
 
 fn legacy_live2d_roots(app: &AppHandle) -> Vec<PathBuf> {
@@ -725,6 +1035,39 @@ mod dlc_tests {
         assert_eq!(assets.len(), 1);
         assert_eq!(assets[0].id, "zani");
         assert!(Path::new(&assets[0].skeleton_path).is_file());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn discovers_a_live2d_package_without_manifest() {
+        let root = temp_root("dlc-auto-discovery");
+        let package = root.join("live2d").join("新角色").join("assets");
+        fs::create_dir_all(&package).unwrap();
+        fs::write(package.join("new-character.skel"), b"test").unwrap();
+        fs::write(package.join("new-character.atlas"), b"test").unwrap();
+        fs::write(package.join("new-character.webp"), b"test").unwrap();
+        let assets = scan_live2d_package_directory(&root);
+        assert_eq!(assets.len(), 1);
+        assert_eq!(assets[0].id, "新角色");
+        assert_eq!(assets[0].display_name.as_deref(), Some("新角色"));
+        assert!(Path::new(&assets[0].skeleton_path).is_file());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn discovers_multiple_loose_live2d_packages_without_manifest() {
+        let root = temp_root("dlc-auto-discovery-multiple");
+        let live2d = root.join("live2d");
+        fs::create_dir_all(&live2d).unwrap();
+        for stem in ["first", "second"] {
+            fs::write(live2d.join(format!("{stem}.skel")), b"test").unwrap();
+            fs::write(live2d.join(format!("{stem}.atlas")), b"test").unwrap();
+            fs::write(live2d.join(format!("{stem}.png")), b"test").unwrap();
+        }
+        let assets = scan_live2d_package_directory(&root);
+        assert_eq!(assets.len(), 2);
+        assert!(assets.iter().any(|asset| asset.id == "first"));
+        assert!(assets.iter().any(|asset| asset.id == "second"));
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -1322,12 +1665,15 @@ async fn update_overlay(app: AppHandle, payload: serde_json::Value) -> Result<()
         .get("showNotesSeparately")
         .and_then(|value| value.as_bool())
         .unwrap_or(true);
-    let was_note_move_mode = OVERLAY_NOTES_STATE
+    let note_move_mode = show_notes_separately && requested_note_move_mode;
+    let previous_note_move_mode = OVERLAY_NOTES_STATE
         .lock()
         .get("noteMoveMode")
         .and_then(|value| value.as_bool())
         .unwrap_or(false);
-    let note_move_mode = show_notes_separately && requested_note_move_mode;
+    if previous_note_move_mode && !note_move_mode {
+        *OVERLAY_NOTES_RESTORE_BOUNDS.lock() = Some(*OVERLAY_NOTES_BOUNDS_STATE.lock());
+    }
     let mut notes_payload = payload.clone();
     if let Some(record) = notes_payload.as_object_mut() {
         record.insert(
@@ -1340,10 +1686,40 @@ async fn update_overlay(app: AppHandle, payload: serde_json::Value) -> Result<()
         );
     }
     *OVERLAY_STATE.lock() = payload.clone();
+    let was_note_move_mode = {
+        let mut state = OVERLAY_NOTES_STATE.lock();
+        let was_note_move_mode = state
+            .get("noteMoveMode")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false);
+        if !notes_payload
+            .get("visibleNoteStepIds")
+            .is_some_and(serde_json::Value::is_array)
+        {
+            let same_chart = state
+                .get("chart")
+                .and_then(|chart| chart.get("id"))
+                .zip(
+                    notes_payload
+                        .get("chart")
+                        .and_then(|chart| chart.get("id")),
+                )
+                .is_some_and(|(previous, next)| previous == next);
+            let visible_ids = if same_chart {
+                state.get("visibleNoteStepIds").cloned()
+            } else {
+                Some(serde_json::Value::Array(Vec::new()))
+            };
+            if let (Some(ids), Some(record)) = (visible_ids, notes_payload.as_object_mut()) {
+                record.insert(String::from("visibleNoteStepIds"), ids);
+            }
+        }
+        *state = notes_payload.clone();
+        was_note_move_mode
+    };
     // The notes window may be created lazily. Keep the latest payload so its
     // React entry can recover the state even when the first emit happens
     // before the webview listener is attached.
-    *OVERLAY_NOTES_STATE.lock() = notes_payload.clone();
     let window = match app.get_webview_window("overlay") {
         Some(window) => window,
         None if !visible && !move_mode => {
@@ -1393,11 +1769,7 @@ async fn update_overlay(app: AppHandle, payload: serde_json::Value) -> Result<()
         .emit("overlay:update", payload.clone())
         .map_err(|error| error.to_string())?;
 
-    let has_visible_notes = payload
-        .get("visibleNoteStepIds")
-        .and_then(|value| value.as_array())
-        .is_some_and(|items| !items.is_empty());
-    let note_visible = show_notes_separately && (note_move_mode || (visible && has_visible_notes));
+    let note_visible = show_notes_separately && (note_move_mode || visible);
     if note_move_mode {
         if let Some(window) = app.get_webview_window("overlay-notes") {
             let _ = window.set_ignore_cursor_events(true);
@@ -1407,15 +1779,7 @@ async fn update_overlay(app: AppHandle, payload: serde_json::Value) -> Result<()
         if !was_note_move_mode {
             if let Some(bounds) = payload.get("noteBounds") {
                 if let Ok(bounds) = serde_json::from_value::<OverlayBounds>(bounds.clone()) {
-                    *OVERLAY_NOTES_BOUNDS_STATE.lock() = bounds;
-                    let _ = editor_window.set_position(PhysicalPosition::new(
-                        bounds.x.round() as i32,
-                        bounds.y.round() as i32,
-                    ));
-                    let _ = editor_window.set_size(PhysicalSize::new(
-                        bounds.width.max(1.0).round() as u32,
-                        bounds.height.max(1.0).round() as u32,
-                    ));
+                    apply_overlay_notes_bounds(&editor_window, bounds);
                 }
             }
         }
@@ -1439,19 +1803,9 @@ async fn update_overlay(app: AppHandle, payload: serde_json::Value) -> Result<()
         None if !note_visible => return Ok(()),
         None => ensure_overlay_notes_window(&app)?,
     };
-    if let Some(bounds) = payload.get("noteBounds") {
-        if let Ok(bounds) = serde_json::from_value::<OverlayBounds>(bounds.clone()) {
-            *OVERLAY_NOTES_BOUNDS_STATE.lock() = bounds;
-            let _ = note_window.set_position(PhysicalPosition::new(
-                bounds.x.round() as i32,
-                bounds.y.round() as i32,
-            ));
-            let _ = note_window.set_size(PhysicalSize::new(
-                bounds.width.max(1.0).round() as u32,
-                bounds.height.max(1.0).round() as u32,
-            ));
-        }
-    }
+    // The display window is kept alive across editor/display switches. Its
+    // current native bounds are already the result of the user's drag; never
+    // reposition it from a late React payload during a mode switch.
     if note_visible {
         let _ = note_window.set_always_on_top(true);
         let _ = note_window.set_shadow(false);
@@ -1461,7 +1815,6 @@ async fn update_overlay(app: AppHandle, payload: serde_json::Value) -> Result<()
     } else {
         let _ = note_window.set_ignore_cursor_events(true);
         let _ = note_window.hide();
-        let _ = note_window.destroy();
         return Ok(());
     }
     note_window
@@ -1471,61 +1824,31 @@ async fn update_overlay(app: AppHandle, payload: serde_json::Value) -> Result<()
 
 #[tauri::command]
 async fn update_overlay_visible_notes(app: AppHandle, step_ids: Vec<String>) -> Result<(), String> {
-    let mut notes_payload = OVERLAY_NOTES_STATE.lock().clone();
-    if let Some(record) = notes_payload.as_object_mut() {
-        record.insert(
-            String::from("visibleNoteStepIds"),
-            serde_json::to_value(&step_ids).map_err(|error| error.to_string())?,
-        );
-    }
-    *OVERLAY_NOTES_STATE.lock() = notes_payload.clone();
+    let notes_payload = {
+        let mut state = OVERLAY_NOTES_STATE.lock();
+        if let Some(record) = state.as_object_mut() {
+            record.insert(
+                String::from("visibleNoteStepIds"),
+                serde_json::to_value(&step_ids).map_err(|error| error.to_string())?,
+            );
+        }
+        state.clone()
+    };
 
-    let visible = notes_payload
-        .get("visible")
-        .and_then(|value| value.as_bool())
-        .unwrap_or(false);
     let move_mode = notes_payload
         .get("noteMoveMode")
         .and_then(|value| value.as_bool())
         .unwrap_or(false);
-    let show_notes_separately = notes_payload
-        .get("showNotesSeparately")
-        .and_then(|value| value.as_bool())
-        .unwrap_or(true);
-    let note_visible = show_notes_separately && (move_mode || (visible && !step_ids.is_empty()));
-
-    if !note_visible {
-        if let Some(window) = active_overlay_notes_window(&app) {
-            let _ = window.set_ignore_cursor_events(true);
-            let _ = window.hide();
-            let _ = window.destroy();
-        }
+    if move_mode {
+        return if let Some(window) = app.get_webview_window("overlay-notes-editor") {
+            window.emit("overlay-notes:update", notes_payload).map_err(|error| error.to_string())
+        } else {
+            Ok(())
+        };
+    }
+    let Some(window) = app.get_webview_window("overlay-notes") else {
         return Ok(());
-    }
-
-    let window = if move_mode {
-        ensure_overlay_notes_editor_window(&app)?
-    } else {
-        ensure_overlay_notes_window(&app)?
     };
-    if let Some(bounds) = notes_payload.get("noteBounds") {
-        if let Ok(bounds) = serde_json::from_value::<OverlayBounds>(bounds.clone()) {
-            *OVERLAY_NOTES_BOUNDS_STATE.lock() = bounds;
-            let _ = window.set_position(PhysicalPosition::new(
-                bounds.x.round() as i32,
-                bounds.y.round() as i32,
-            ));
-            let _ = window.set_size(PhysicalSize::new(
-                bounds.width.max(1.0).round() as u32,
-                bounds.height.max(1.0).round() as u32,
-            ));
-        }
-    }
-    let _ = window.set_always_on_top(true);
-    let _ = window.set_shadow(false);
-    let _ = window.show();
-    let _ = window.set_ignore_cursor_events(!move_mode);
-    let _ = window.set_focusable(move_mode);
     window
         .emit("overlay-notes:update", notes_payload)
         .map_err(|error| error.to_string())
@@ -1959,29 +2282,31 @@ fn emit_overlay_notes_window_bounds(app: &AppHandle, window: &WebviewWindow) {
 
 #[tauri::command]
 async fn set_overlay_notes_visible(app: AppHandle, visible: bool) -> Result<(), String> {
-    let should_show = {
+    let (should_show, move_mode) = {
         let mut state = OVERLAY_NOTES_STATE.lock();
         if let Some(record) = state.as_object_mut() {
             record.insert(String::from("visible"), serde_json::Value::Bool(visible));
         }
+        let show_notes_separately = state
+            .get("showNotesSeparately")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(true);
         let move_mode = state
             .get("noteMoveMode")
             .and_then(|value| value.as_bool())
             .unwrap_or(false);
-        let has_visible_notes = state
-            .get("visibleNoteStepIds")
-            .and_then(|value| value.as_array())
-            .is_some_and(|items| !items.is_empty());
-        visible && (move_mode || has_visible_notes)
+        (visible && show_notes_separately, move_mode)
     };
     if should_show {
-        let window = match app.get_webview_window("overlay-notes") {
-            Some(window) => window,
-            None => ensure_overlay_notes_window(&app)?,
+        let window = if move_mode {
+            ensure_overlay_notes_editor_window(&app)?
+        } else {
+            ensure_overlay_notes_window(&app)?
         };
         let _ = window.set_always_on_top(true);
         let _ = window.set_shadow(false);
-        let _ = window.set_ignore_cursor_events(true);
+        let _ = window.set_ignore_cursor_events(!move_mode);
+        let _ = window.set_focusable(move_mode);
         window.show().map_err(|error| error.to_string())?;
     } else {
         if let Some(window) = app.get_webview_window("overlay-notes") {
@@ -3641,7 +3966,10 @@ mod export_path_tests {
 fn find_ffmpeg_in_dlc(app: &AppHandle) -> Option<PathBuf> {
     dlc_search_roots(app)
         .into_iter()
-        .map(|root| root.join("ffmpeg").join("ffmpeg.exe"))
+        .map(|root| {
+            let nested = root.join("ffmpeg").join("ffmpeg.exe");
+            if nested.is_file() { nested } else { root.join("ffmpeg.exe") }
+        })
         .find(|candidate| candidate.is_file())
 }
 
@@ -3839,6 +4167,7 @@ mod winhook {
     use std::ffi::c_void;
     use std::io;
     use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::mpsc::{self, Sender};
     use std::sync::OnceLock;
     use std::time::{Duration, Instant};
     use windows::Gaming::Input::{
@@ -3847,7 +4176,9 @@ mod winhook {
     };
     use windows::Win32::System::WinRT::{RoInitialize, RO_INIT_MULTITHREADED};
 
-    static KEYBOARD_MOUSE_HOOKS_ACTIVE: AtomicBool = AtomicBool::new(false);
+    static KEYBOARD_HOOK_ACTIVE: AtomicBool = AtomicBool::new(false);
+    static MOUSE_HOOK_ACTIVE: AtomicBool = AtomicBool::new(false);
+    static HOOK_EVENT_DISPATCHER: OnceLock<Sender<(String, String, u8)>> = OnceLock::new();
 
     type Hhook = isize;
     type Hinstance = isize;
@@ -4171,14 +4502,16 @@ mod winhook {
             thread_id: u32,
         ) -> Hhook;
         fn CallNextHookEx(hhk: Hhook, n_code: i32, w_param: Wparam, l_param: Lparam) -> Lresult;
-        fn GetMessageW(
+        fn TranslateMessage(lp_msg: *const Msg) -> i32;
+        fn DispatchMessageW(lp_msg: *const Msg) -> Lresult;
+        fn PeekMessageW(
             lp_msg: *mut Msg,
             hwnd: Hwnd,
             msg_filter_min: u32,
             msg_filter_max: u32,
+            remove_msg: u32,
         ) -> i32;
-        fn TranslateMessage(lp_msg: *const Msg) -> i32;
-        fn DispatchMessageW(lp_msg: *const Msg) -> Lresult;
+        fn UnhookWindowsHookEx(hhk: Hhook) -> i32;
         fn GetAsyncKeyState(v_key: i32) -> i16;
     }
 
@@ -4189,34 +4522,83 @@ mod winhook {
     }
 
     pub fn start() -> Result<(), String> {
+        start_hook_event_dispatcher();
         start_polling_fallback()?;
 
         if let Err(error) = std::thread::Builder::new()
             .name(String::from("windows-global-input-hook"))
             .spawn(|| unsafe {
-                let keyboard_hook = SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard_proc), 0, 0);
-                let keyboard_error = io::Error::last_os_error();
-                let mouse_hook = SetWindowsHookExW(WH_MOUSE_LL, Some(mouse_proc), 0, 0);
-                let mouse_error = io::Error::last_os_error();
+                const PM_REMOVE: u32 = 0x0001;
+                let mut keyboard_hook: Hhook = 0;
+                let mut mouse_hook: Hhook = 0;
+                let mut next_reinstall = Instant::now() + Duration::from_secs(30);
+                loop {
+                    let mut keyboard_error = None;
+                    let mut mouse_error = None;
+                    if keyboard_hook == 0 {
+                        keyboard_hook = SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard_proc), 0, 0);
+                        if keyboard_hook == 0 {
+                            keyboard_error = Some(io::Error::last_os_error());
+                        }
+                    }
+                    if mouse_hook == 0 {
+                        mouse_hook = SetWindowsHookExW(WH_MOUSE_LL, Some(mouse_proc), 0, 0);
+                        if mouse_hook == 0 {
+                            mouse_error = Some(io::Error::last_os_error());
+                        }
+                    }
 
-                if keyboard_hook == 0 || mouse_hook == 0 {
-                    *INPUT_HOOK_STATUS.lock() = format!(
-                        "windows hooks unavailable; polling fallback active: keyboard={:?}, mouse={:?}",
-                        keyboard_error, mouse_error
-                    );
+                    KEYBOARD_HOOK_ACTIVE.store(keyboard_hook != 0, Ordering::SeqCst);
+                    MOUSE_HOOK_ACTIVE.store(mouse_hook != 0, Ordering::SeqCst);
+
+                    let status = match (keyboard_hook != 0, mouse_hook != 0) {
+                        (true, true) => String::from("windows input capture ready"),
+                        (true, false) => format!(
+                            "windows keyboard capture ready; mouse retrying: {:?}",
+                            mouse_error
+                        ),
+                        (false, true) => format!(
+                            "windows mouse capture ready; keyboard retrying: {:?}",
+                            keyboard_error
+                        ),
+                        (false, false) => format!(
+                            "windows hooks unavailable; polling fallback active: keyboard={:?}, mouse={:?}",
+                            keyboard_error, mouse_error
+                        ),
+                    };
+                    if INPUT_HOOK_STATUS.lock().as_str() != status {
+                        *INPUT_HOOK_STATUS.lock() = status;
+                    }
                     INPUT_HOOK_STARTED.store(true, Ordering::SeqCst);
-                    return;
-                }
 
-                KEYBOARD_MOUSE_HOOKS_ACTIVE.store(true, Ordering::SeqCst);
-                *INPUT_HOOK_STATUS.lock() = String::from("windows input capture ready");
+                    let mut msg = Msg::default();
+                    loop {
+                        let result = PeekMessageW(&mut msg, 0, 0, 0, PM_REMOVE);
+                        if result <= 0 {
+                            break;
+                        }
+                        let _ = TranslateMessage(&msg);
+                        let _ = DispatchMessageW(&msg);
+                    }
 
-                let mut msg = Msg::default();
-                while GetMessageW(&mut msg, 0, 0, 0) > 0 {
-                    let _ = TranslateMessage(&msg);
-                    let _ = DispatchMessageW(&msg);
+                    // Keep the hook recoverable if Windows silently removes a
+                    // low-level hook after a transient system failure.
+                    if Instant::now() >= next_reinstall {
+                        if keyboard_hook != 0 {
+                            let _ = UnhookWindowsHookEx(keyboard_hook);
+                            keyboard_hook = 0;
+                        }
+                        if mouse_hook != 0 {
+                            let _ = UnhookWindowsHookEx(mouse_hook);
+                            mouse_hook = 0;
+                        }
+                        KEYBOARD_HOOK_ACTIVE.store(false, Ordering::SeqCst);
+                        MOUSE_HOOK_ACTIVE.store(false, Ordering::SeqCst);
+                        next_reinstall = Instant::now() + Duration::from_secs(30);
+                    }
+
+                    std::thread::sleep(Duration::from_millis(5));
                 }
-                KEYBOARD_MOUSE_HOOKS_ACTIVE.store(false, Ordering::SeqCst);
             })
         {
             *INPUT_HOOK_STATUS.lock() = format!("polling fallback active; hook thread unavailable: {error}");
@@ -4224,6 +4606,28 @@ mod winhook {
         }
 
         Ok(())
+    }
+
+    fn start_hook_event_dispatcher() {
+        let (sender, receiver) = mpsc::channel::<(String, String, u8)>();
+        if HOOK_EVENT_DISPATCHER.set(sender).is_err() {
+            return;
+        }
+        let _ = std::thread::Builder::new()
+            .name(String::from("windows-global-input-dispatch"))
+            .spawn(move || {
+                while let Ok((event_type, code, mode)) = receiver.recv() {
+                    emit_input(&event_type, code, mode);
+                }
+            });
+    }
+
+    fn queue_hook_input(event_type: &str, code: String, capture_mode: u8) {
+        if let Some(sender) = HOOK_EVENT_DISPATCHER.get() {
+            let _ = sender.send((event_type.to_string(), code, capture_mode));
+        } else {
+            emit_input(event_type, code, capture_mode);
+        }
     }
 
     fn start_polling_fallback() -> Result<(), String> {
@@ -4256,10 +4660,14 @@ mod winhook {
                         previous_mode = mode;
                     }
 
-                    if mode == GLOBAL_INPUT_MODE_KEYBOARD
-                        && !KEYBOARD_MOUSE_HOOKS_ACTIVE.load(Ordering::Relaxed)
-                    {
+                    if mode == GLOBAL_INPUT_MODE_KEYBOARD {
                         for (index, (vk, code)) in keys.iter().enumerate() {
+                            if code.starts_with("Mouse") && MOUSE_HOOK_ACTIVE.load(Ordering::Relaxed) {
+                                continue;
+                            }
+                            if !code.starts_with("Mouse") && KEYBOARD_HOOK_ACTIVE.load(Ordering::Relaxed) {
+                                continue;
+                            }
                             let pressed = (GetAsyncKeyState(*vk) as u16 & 0x8000) != 0;
                             if pressed != previous[index] {
                                 previous[index] = pressed;
@@ -4786,7 +5194,7 @@ mod winhook {
             };
 
             if let Some(event_type) = event_type {
-                emit_input(
+                queue_hook_input(
                     event_type,
                     vk_to_code(data.vk_code),
                     GLOBAL_INPUT_MODE_KEYBOARD,
@@ -4819,7 +5227,7 @@ mod winhook {
             };
 
             if let Some((event_type, code)) = mapped {
-                emit_input(event_type, String::from(code), GLOBAL_INPUT_MODE_KEYBOARD);
+                queue_hook_input(event_type, String::from(code), GLOBAL_INPUT_MODE_KEYBOARD);
             }
         }
 
@@ -5244,7 +5652,8 @@ pub fn run() {
             cancel_video_key_mapping_recognition,
             cancel_video_export,
             export_video_with_overlay,
-            save_export_mp4
+            save_export_mp4,
+            apply_incremental_update
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

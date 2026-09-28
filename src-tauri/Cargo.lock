@@ -5199,8 +5199,10 @@ dependencies = [
 
 [[package]]
 name = "wwcombo"
-version = "0.65.0"
+version = "0.65.2"
 dependencies = [
+ "base64 0.22.1",
+ "flate2",
  "hidapi",
  "once_cell",
  "parking_lot",
@@ -5208,6 +5210,7 @@ dependencies = [
  "rfd",
  "serde",
  "serde_json",
+ "sha2",
  "tauri",
  "tauri-build",
  "tauri-plugin-opener",

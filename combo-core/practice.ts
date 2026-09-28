@@ -85,16 +85,21 @@ export class PracticeSession {
     private readonly settings: PracticeSettings
   ) {
     this.sourceChart = chart;
-    this.autoLoopPeriod = settings.mode === 'free'
-      ? [...(chart.periods ?? [])]
+    // Automatic repetition belongs to playback modes. Strict practice must
+    // still finish and report misses instead of silently creating new rounds.
+    const loopCandidates = settings.mode === 'strict'
+      ? []
+      : [...(chart.periods ?? [])]
         .filter((period) => period.kind === 'loop_axis')
-        .sort((left, right) => left.startMs - right.startMs || left.id.localeCompare(right.id))
-        .at(-1) ?? null
-      : null;
-    if (this.autoLoopPeriod) {
-      this.autoLoopSteps = chart.steps.filter((step) =>
-        step.startMin >= this.autoLoopPeriod!.startMs && step.startMin <= this.autoLoopPeriod!.endMs
+        .sort((left, right) => right.startMs - left.startMs || right.id.localeCompare(left.id));
+    for (const candidate of loopCandidates) {
+      const steps = chart.steps.filter((step) =>
+        step.startMin >= candidate.startMs && step.startMin < candidate.endMs
       );
+      if (!steps.length || candidate.endMs <= candidate.startMs) continue;
+      this.autoLoopPeriod = candidate;
+      this.autoLoopSteps = steps;
+      break;
     }
   }
 
@@ -140,7 +145,7 @@ export class PracticeSession {
     this.judgements.clear();
     this.missedStepIds.clear();
     this.unlockedAxisStarts.add(safeOffset);
-    if (this.settings.mode === 'free') {
+    if (this.settings.mode !== 'strict') {
       for (const period of this.chart.periods ?? []) {
         if (period.kind === 'loop_axis') this.unlockedAxisStarts.add(period.startMs);
       }
@@ -431,8 +436,16 @@ export class PracticeSession {
     const sourceSteps = this.autoLoopSteps;
     if (!period || !sourceSteps.length) return;
     const duration = period.endMs - period.startMs;
-    if (duration <= 0 || elapsed < period.startMs + duration / 2) return;
-    const requiredCopies = Math.floor((elapsed - (period.startMs + duration / 2)) / duration) + 1;
+    if (duration <= 0 || elapsed < period.startMs) return;
+    // Add the next round as soon as playback enters the loop axis. Waiting
+    // until its midpoint lets a chart whose last action ends early reach the
+    // end of the current step list and become `passed` before a new round is
+    // available. That stops the practice tick, which makes looping appear
+    // intermittent depending on where the last action is placed.
+    // Keep one copy ready while the original loop is active, then add one
+    // more only when playback reaches the next copied boundary. This avoids
+    // retaining an unnecessary extra round during long-running playback.
+    const requiredCopies = Math.max(1, Math.floor((elapsed - period.startMs) / duration));
     while (this.autoLoopCopies < requiredCopies) {
       const copyIndex = this.autoLoopCopies + 1;
       const offset = duration * copyIndex;

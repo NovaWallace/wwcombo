@@ -61,6 +61,8 @@ declare global {
         simulatedInputInstalled: boolean;
         live2dAssets: Array<{
           id: string;
+          displayName?: string;
+          names?: Record<string, string>;
           skeletonUrl: string;
           atlasUrl: string;
           textureUrl: string;
@@ -78,6 +80,7 @@ declare global {
       onVideoExportProgress?(callback: (progress: { progress: number; processedMs: number; durationMs: number }) => void): () => void;
       saveExportFile?(directory: string, filename: string, bytes: Uint8Array): Promise<{ path: string }>;
       saveExportMp4?(directory: string, filename: string, bytes: Uint8Array): Promise<{ path: string }>;
+      applyIncrementalUpdate?(url: string, expectedPatchSha256: string, expectedTargetSha256: string): Promise<{ started: boolean }>;
       onGlobalInput(callback: (event: DesktopInputEvent) => void): () => void;
     };
     trainerOverlay?: {

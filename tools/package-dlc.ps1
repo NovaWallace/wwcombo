@@ -126,7 +126,8 @@ if (-not $SkipLive2d) {
         }
 
         Reset-Stage
-        $packageFolder = "$($character.id)-$($character.characterId)"
+        # Use the localized character name so players can identify and install one character at a glance.
+        $packageFolder = [string]$names.'zh-CN'
         $packageRoot = Join-Path $stageRoot "wwcombo dlc\live2d\$packageFolder"
         $assetRoot = Join-Path $packageRoot "assets"
         New-Item -ItemType Directory -Force -Path $assetRoot | Out-Null
@@ -160,7 +161,7 @@ Then choose Refresh under Settings > wwcombo DLC and select this character under
 The animation is loaded only on the home page and released after leaving it.
 These copyrighted game assets are provided for a non-commercial fan project.
 "@
-        $archiveName = "wwcombo-v$Version-Live2D-$($character.characterId)-$($names.'en-US').zip"
+        $archiveName = "wwcombo-v$Version-Live2D-$($names.'zh-CN').zip"
         $archives += Compress-DlcStage $archiveName
     }
 }

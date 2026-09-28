@@ -25,6 +25,7 @@ import {
   Plus,
   Redo2,
   RefreshCw,
+  Save,
   Scissors,
   Settings2,
   Share2,
@@ -81,8 +82,8 @@ const MOBILE_EN_TEXT: Record<string, string> = {
   '连段图预览': 'Combo preview', '展开': 'Expand', '收起': 'Collapse', '模拟游戏': 'Game simulator', '退出模拟': 'Exit simulator', '启动轴': 'Opener', '循环轴': 'Loop', '该轴暂无操作': 'No actions in this axis', '实际外观可在“外观”中调整': 'Adjust the final appearance in Settings', '我的连段': 'My combos',
   '删除当前连段': 'Delete selected combo', '从手机文件导入': 'Import from phone', '空空如也，可以': 'Nothing here. You can ',
   '录制': 'Record', '或者右转': ' or visit ', '社区': 'Community', '哦': '.', '练习': 'Practice',
-  '连段社区': 'Combo Community', '点击社区中的下载即可装载到手机': 'Tap download in Community to import a combo', '刷新社区': 'Refresh Community',
-  '新建连段': 'New combo', '先命名，再设置队伍和文字轴': 'Name it, then configure the team and text timeline', '连段名字': 'Combo name', '新建': 'Create',
+  '连段社区': 'Combo Community', '点击社区中的下载即可装载到手机': 'Tap download in Community to import a combo', '刷新社区': 'Refresh Community', '社区加载中': 'Loading Community',
+  '新建连段': 'New combo', '先命名，再设置队伍和文字轴': 'Name it, then configure the team and text timeline', '连段名字': 'Combo name', '新建': 'Create', '保存': 'Save',
   '快捷编队': 'Quick team', '角色名和头像来自 API，点击头像记录选择顺序': 'Names and avatars come from the API; tap portraits in team order',
   '选择': 'Select', '首发': 'Starter', '选择编队角色': 'Choose team characters', '完成': 'Done',
   '按名字拼音排序；依次点击三个头像，关闭后保存编队。': 'Sorted by name. Tap three portraits in order, then finish to save.',
@@ -167,6 +168,7 @@ function mobileMessage(language: MobileLanguage, value: string): string {
     [/^上传失败：(.+)$/u, 'Upload failed: $1'],
     [/^启动失败：(.+)$/u, 'Start failed: $1'],
     [/^停止辅助失败：(.+)$/u, 'Could not stop assistant: $1'],
+    [/^已保存到下载文件夹：(.+)$/u, 'Saved to Downloads: $1'],
     [/^已保存 (.+)$/u, 'Saved $1'],
     [/^正在交给社区上传$/u, 'Sending to Community for upload'],
     [/^头像和底图服务暂时不可用，已保留本地资源$/u, 'Avatar and artwork services are unavailable; local assets were kept'],
@@ -1974,7 +1976,7 @@ export default function MobileApp() {
   const [availableUpdate, setAvailableUpdate] = useState<MobileReleaseManifest | null>(() => IS_MOBILE_UPDATE_PREVIEW ? {
     schemaVersion: 1,
     platform: 'mobile',
-    version: '0.65.0',
+    version: '0.65.2',
     title: 'WW Combo Trainer Mobile 0.65',
     notes: '优化更新检查、社区装载和悬浮连段图体验。\n这是更新弹窗预览内容。',
     publishedAt: new Date().toISOString(),
@@ -1983,6 +1985,8 @@ export default function MobileApp() {
   const [updateIgnoreChecked, setUpdateIgnoreChecked] = useState(false);
   const [updateChecking, setUpdateChecking] = useState(false);
   const [communityKey, setCommunityKey] = useState(0);
+  const [communityVisited, setCommunityVisited] = useState(false);
+  const [communityLoaded, setCommunityLoaded] = useState(false);
   const [mobileAssets, setMobileAssets] = useState<{ avatars: MobileAssetPreset[]; bases: MobileAssetPreset[] }>(readCachedMobileAssets);
   const [editorImage, setEditorImage] = useState<string | null>(null);
   const [editorTarget, setEditorTarget] = useState<'zones' | 'flow' | 'keys'>('zones');
@@ -2038,6 +2042,29 @@ export default function MobileApp() {
     localStorage.setItem(MOBILE_LANGUAGE_KEY, language);
     document.documentElement.lang = language;
   }, [language]);
+
+  useEffect(() => {
+    if (page === 'community') setCommunityVisited(true);
+  }, [page]);
+
+  useEffect(() => {
+    if (!communityVisited) return;
+    setCommunityLoaded(false);
+  }, [communityKey, language, communityVisited]);
+
+  useEffect(() => {
+    const links = [
+      ['preconnect', COMMUNITY_ORIGIN],
+      ['dns-prefetch', COMMUNITY_ORIGIN]
+    ].map(([rel, href]) => {
+      const link = document.createElement('link');
+      link.rel = rel;
+      link.href = href;
+      document.head.appendChild(link);
+      return link;
+    });
+    return () => links.forEach((link) => link.remove());
+  }, []);
 
   async function checkForMobileUpdate(manual = false) {
     if (!manual && startupUpdateCheckedRef.current) return;
@@ -2417,16 +2444,29 @@ export default function MobileApp() {
     });
   }
 
-  function beginNewRecording() {
+  function saveRecordingDraft() {
     const title = recordTitle.trim();
     if (!title) {
       setNotice('请先输入连段名字');
       return;
     }
-    setRecordTextAxis('');
-    setRecordAxisChart(null);
-    setRecordAxisError('');
-    setNotice(`已新建「${title}」，请设置快捷编队并输入文字轴`);
+    const parsed = recordAxisChart ?? parseRecordingAxis();
+    if (!parsed) {
+      setNotice('请先输入并确认文字轴');
+      return;
+    }
+    const next = normalizeChart({
+      ...parsed,
+      title,
+      character: recordTeam.join(' / '),
+      characterCount: 3,
+      updatedAt: Date.now()
+    });
+    addCharts([next], '已保存');
+    setRecordAxisChart(next);
+    setTimelineChart(next);
+    setTimelinePeriods([...(next.periods ?? [])]);
+    setPage('library');
   }
 
   async function startMobileRecording() {
@@ -2491,7 +2531,7 @@ export default function MobileApp() {
       applySharedChart(prepared.sharedChart);
       setShareTarget(null);
       setShareDraft(null);
-      setNotice(`已保存 ${prepared.filename}`);
+      setNotice(`已保存到下载文件夹：${prepared.filename}`);
     } catch (error) {
       setNotice(`保存失败：${error instanceof Error ? error.message : String(error)}`);
     }
@@ -3151,8 +3191,9 @@ export default function MobileApp() {
           </section>
         </>}
 
-        {page === 'community' && <section className="mobile-community-page">
-          <div className="mobile-community-toolbar"><strong>{t('连段社区')}</strong><span>{t('点击社区中的下载即可装载到手机')}</span><button type="button" aria-label={t('刷新社区')} onClick={() => setCommunityKey((current) => current + 1)}><RefreshCw size={18} /></button></div>
+        {(page === 'community' || communityVisited) && <section className={`mobile-community-page ${page === 'community' ? '' : 'is-hidden'}`} aria-hidden={page !== 'community'}>
+          <div className="mobile-community-toolbar"><strong>{t('连段社区')}</strong><span>{t('点击社区中的下载即可装载到手机')}</span><button type="button" aria-label={t('刷新社区')} onClick={() => { setCommunityLoaded(false); setCommunityKey((current) => current + 1); }}><RefreshCw size={18} /></button></div>
+          {!communityLoaded && <div className="mobile-community-loading" role="status"><RefreshCw size={17} />{t('社区加载中')}</div>}
           <iframe
             key={`${communityKey}-${language}`}
             ref={communityRef}
@@ -3160,14 +3201,15 @@ export default function MobileApp() {
             title={t('连段社区')}
             sandbox="allow-downloads allow-forms allow-modals allow-popups allow-popups-to-escape-sandbox allow-same-origin allow-scripts allow-top-navigation-by-user-activation"
             referrerPolicy="strict-origin-when-cross-origin"
-            onLoad={() => postCommunityState(communityRef.current?.contentWindow, COMMUNITY_ORIGIN, true)}
+            loading="eager"
+            onLoad={() => { setCommunityLoaded(true); postCommunityState(communityRef.current?.contentWindow, COMMUNITY_ORIGIN, true); }}
           />
         </section>}
 
         {page === 'record' && <section className="mobile-record-page">
           <section className="mobile-section mobile-record-create">
             <div className="mobile-section-heading"><div><strong>{t('新建连段')}</strong><span>{t('先命名，再设置队伍和文字轴')}</span></div></div>
-            <div className="mobile-record-title-row"><input value={recordTitle} onChange={(event) => setRecordTitle(event.target.value)} placeholder={t('连段名字')} /><button type="button" onClick={beginNewRecording}><Plus size={17} />{t('新建')}</button></div>
+            <div className="mobile-record-title-row"><input value={recordTitle} onChange={(event) => setRecordTitle(event.target.value)} placeholder={t('连段名字')} /><button type="button" onClick={saveRecordingDraft}><Save size={17} />{t('保存')}</button></div>
            </section>
 
            <section className="mobile-section mobile-formation-section">

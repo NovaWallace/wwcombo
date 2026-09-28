@@ -1,6 +1,6 @@
 {
   "name": "wuthering-combo-trainer",
-  "version": "0.65.0",
+  "version": "0.65.2",
   "private": true,
   "license": "MIT",
   "description": "Desktop combo trainer for Wuthering Waves.",
@@ -12,6 +12,7 @@
     "android:build:debug": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/build-android-debug.ps1",
     "package:dlc": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/package-dlc.ps1",
     "package:portable": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/package-portable.ps1",
+    "delta:create": "node tools/create-delta-patch.mjs",
     "preview": "vite preview --host 127.0.0.1 --port 4173",
     "typecheck": "tsc --noEmit",
     "community:init": "node scripts/community/community-combos.mjs init",
@@ -20,13 +21,15 @@
     "community:ingest": "node scripts/community/community-combos.mjs ingest",
     "community:publish": "node scripts/community/community-combos.mjs publish",
     "community:index": "node scripts/community/community-combos.mjs index",
-    "community:deploy": "node scripts/community/community-combos.mjs deploy",
+    "community:deploy": "npm run community:build && node scripts/community/community-combos.mjs deploy",
     "community:package-server": "node scripts/community/package-server.mjs",
+    "community:build": "node tools/build-community-site.mjs",
     "community:web": "node scripts/community/server.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "latest",
     "@vitejs/plugin-react": "latest",
+    "lucide": "^1.46.0",
     "lucide-react": "latest",
     "pixi-spine": "^4.0.6",
     "pixi.js": "^7.4.3",
@@ -39,6 +42,7 @@
     "@types/node": "latest",
     "@types/react": "latest",
     "@types/react-dom": "latest",
+    "esbuild": "^0.28.2",
     "imapflow": "^1.5.0",
     "mailparser": "^3.9.14"
   }

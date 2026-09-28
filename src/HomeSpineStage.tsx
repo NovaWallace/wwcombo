@@ -22,9 +22,16 @@ export function HomeSpineStage({ skeletonUrl, atlasUrl, textureUrl, scale = 2, o
   const applicationRef = useRef<import('pixi.js').Application | null>(null);
   const activeRef = useRef(active);
   const shiftXRef = useRef(shiftX);
+  const scaleRef = useRef(scale);
+  const offsetXRef = useRef(offsetX);
+  const offsetYRef = useRef(offsetY);
+  const fitModelRef = useRef<(() => void) | null>(null);
   const [loadState, setLoadState] = useState<LoadState>('loading');
   activeRef.current = active;
   shiftXRef.current = shiftX;
+  scaleRef.current = scale;
+  offsetXRef.current = offsetX;
+  offsetYRef.current = offsetY;
 
   useEffect(() => {
     const updatePlayback = () => {
@@ -122,15 +129,16 @@ export function HomeSpineStage({ skeletonUrl, atlasUrl, textureUrl, scale = 2, o
         nextApplication.renderer.resize(width, height);
         if (bounds.width <= 0 || bounds.height <= 0) return;
 
-        const fittedScale = Math.min(width / bounds.width, height / bounds.height) * scale;
+        const fittedScale = Math.min(width / bounds.width, height / bounds.height) * scaleRef.current;
         model.scale.set(fittedScale);
-        modelBaseX = width * (0.5 + offsetX) - (bounds.x + bounds.width / 2) * fittedScale;
+        modelBaseX = width * (0.5 + offsetXRef.current) - (bounds.x + bounds.width / 2) * fittedScale;
         modelViewportWidth = width;
         model.position.set(
           modelBaseX + width * renderedShiftX,
-          height * (0.5 + offsetY) - (bounds.y + bounds.height / 2) * fittedScale
+          height * (0.5 + offsetYRef.current) - (bounds.y + bounds.height / 2) * fittedScale
         );
       };
+      fitModelRef.current = fitModel;
 
       resizeObserver = new ResizeObserver(fitModel);
       resizeObserver.observe(stageHost);
@@ -148,6 +156,7 @@ export function HomeSpineStage({ skeletonUrl, atlasUrl, textureUrl, scale = 2, o
       application?.destroy(true, { children: true, texture: false, baseTexture: false });
       releaseAsset();
       if (applicationRef.current === application) applicationRef.current = null;
+      fitModelRef.current = null;
       application = null;
       stageHost.replaceChildren();
       setLoadState('error');
@@ -159,9 +168,14 @@ export function HomeSpineStage({ skeletonUrl, atlasUrl, textureUrl, scale = 2, o
       application?.destroy(true, { children: true, texture: false, baseTexture: false });
       releaseAsset();
       if (applicationRef.current === application) applicationRef.current = null;
+      fitModelRef.current = null;
       stageHost.replaceChildren();
     };
-  }, [atlasUrl, offsetX, offsetY, scale, skeletonUrl, textureUrl]);
+  }, [atlasUrl, skeletonUrl, textureUrl]);
+
+  useEffect(() => {
+    fitModelRef.current?.();
+  }, [scale, offsetX, offsetY]);
 
   return (
     <div className={`home-spine-frame ${loadState}`}>

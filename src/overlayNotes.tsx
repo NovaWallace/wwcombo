@@ -5,7 +5,7 @@ import type { ComboChart, PracticeSnapshot } from '../combo-core';
 import type { ComboImageStyle } from '../combo-core';
 import { normalizeComboImageStyle } from './combo-image/comboImage';
 import { createOverlayNotesBridge } from './desktopBridge';
-import { noteStepCompleted } from './noteDisplay';
+import { noteNumberByStepId, noteStepCompleted } from './noteDisplay';
 import { DecoratedNoteRow } from './noteRowDecoration';
 import { roundedTextOutlineShadow } from './textOutline';
 import './overlayNotes.css';
@@ -188,6 +188,7 @@ function NotesApp() {
       .sort((left, right) => left.startMin - right.startMin || left.id.localeCompare(right.id));
     return noteStyle.noteOrder === 'oldest-top' ? notes : notes.reverse();
   }, [payload.chart, payload.practice, payload.noteMoveMode, payload.visibleNoteStepIds, noteStyle.noteOrder]);
+  const noteNumbers = useMemo(() => noteNumberByStepId(payload.chart), [payload.chart]);
 
   const separateNotesEnabled = payload.showNotesSeparately !== false;
   const moveMode = separateNotesEnabled && payload.noteMoveMode === true;
@@ -257,7 +258,7 @@ function NotesApp() {
         />)}
       </div>}
       <div className="overlay-notes-content" style={{ textShadow: roundedTextOutlineShadow(noteStrokeEnabled, noteStrokeWidth, noteStroke, ['0 2px 5px rgba(0,0,0,.95)', '0 0 2px rgba(0,0,0,.9)']) }}>
-        {visibleNotes.map((step) => <DecoratedNoteRow className="overlay-notes-row" key={step.id} step={step} style={noteStyle} />)}
+        {visibleNotes.map((step) => <DecoratedNoteRow className="overlay-notes-row" key={step.id} step={step} style={noteStyle} number={noteNumbers.get(step.id)} />)}
       </div>
     </div>}
   </div>;

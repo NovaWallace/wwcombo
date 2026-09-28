@@ -317,11 +317,16 @@
 }
 
 .mobile-community-page { display: grid; grid-template-rows: auto minmax(0, 1fr); width: 100%; height: 100%; background: #fff; }
+.mobile-community-page.is-hidden { display: none; }
 .mobile-community-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 2px 10px; padding: 9px 12px; border-bottom: 1px solid #cbdceb; background: #f7fbff; }
 .mobile-community-toolbar strong { font-size: 15px; }
 .mobile-community-toolbar span { grid-column: 1; color: #74899c; font-size: 10px; }
 .mobile-community-toolbar button { grid-column: 2; grid-row: 1 / span 2; display: grid; place-items: center; width: 36px; height: 36px; border: 1px solid #bed1e4; border-radius: 7px; background: #fff; color: #3479b7; }
 .mobile-community-page iframe { display: block; width: 100%; min-width: 0; height: 100%; border: 0; background: #fff; }
+.mobile-community-page { position: relative; }
+.mobile-community-loading { position: absolute; z-index: 2; top: 46px; left: 50%; display: flex; align-items: center; gap: 7px; transform: translateX(-50%); padding: 7px 10px; border: 1px solid #cbdceb; border-radius: 5px; background: rgba(255, 255, 255, .94); color: #5c7890; font-size: 11px; font-weight: 700; box-shadow: 0 3px 12px rgba(35, 83, 120, .1); pointer-events: none; }
+.mobile-community-loading svg { animation: mobile-community-spin .9s linear infinite; color: #3479b7; }
+@keyframes mobile-community-spin { to { transform: rotate(360deg); } }
 
 .mobile-appearance-page { padding-bottom: 16px; }
 .mobile-language-setting { display: grid; gap: 10px; margin: 10px 10px 0; padding: 12px 14px; }

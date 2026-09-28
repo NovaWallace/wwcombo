@@ -1406,7 +1406,12 @@ function videoNoteList(chart: ComboChart, style: ComboImageStyle, timeMs: number
   return style.noteOrder === 'oldest-top' ? notes : notes.reverse();
 }
 
-function VideoNotesLayer({ chart, style, timeMs, bounds, moveMode, hostRef, onBoundsChange }: {
+function videoNoteFontSize(videoWidth: number, visualScale: number): number {
+  const logicalSize = clamp(Math.max(1, videoWidth) * 0.022, 14, 30);
+  return logicalSize * clamp(visualScale, 0.2, 4);
+}
+
+function VideoNotesLayer({ chart, style, timeMs, bounds, moveMode, hostRef, onBoundsChange, videoWidth, previewScale }: {
   chart: ComboChart;
   style: ComboImageStyle;
   timeMs: number;
@@ -1414,6 +1419,8 @@ function VideoNotesLayer({ chart, style, timeMs, bounds, moveMode, hostRef, onBo
   moveMode: boolean;
   hostRef: RefObject<HTMLElement | null>;
   onBoundsChange: (bounds: VideoNoteBounds) => void;
+  videoWidth: number;
+  previewScale: number;
 }) {
   const dragRef = useRef<VideoNoteDrag | null>(null);
   const notes = videoNoteList(chart, style, timeMs);
@@ -1448,9 +1455,15 @@ function VideoNotesLayer({ chart, style, timeMs, bounds, moveMode, hostRef, onBo
     dragRef.current = null;
   };
   const visualScale = clamp(bounds.scale, 0.2, 4);
-  return <div className={`video-note-layer ${moveMode ? 'move-mode' : ''}`} style={{ left: `${bounds.x}%`, top: `${bounds.y}%`, width: `${bounds.width}%`, height: `${bounds.height}%`, fontSize: `clamp(${14 * visualScale}px, ${2.2 * visualScale}vw, ${30 * visualScale}px)`, '--video-note-font-family': style.noteFontFamily, '--video-note-color': style.noteTextColor, '--video-note-order': style.noteOrder === 'oldest-top' ? 'flex-start' : 'flex-end' } as CSSProperties} onPointerDown={(event) => beginDrag(event)} onPointerMove={moveDrag} onPointerUp={finishDrag} onPointerCancel={finishDrag} onLostPointerCapture={() => finishDrag()}>
+  const displayScale = Number.isFinite(previewScale) && previewScale > 0 ? previewScale : 1;
+  const fontSize = videoNoteFontSize(videoWidth, visualScale) * displayScale;
+  const paddingY = 7 * displayScale;
+  const paddingX = 10 * displayScale;
+  const rowGap = 5 * displayScale;
+  const strokeWidth = Math.max(0, style.noteTextStrokeWidth) * displayScale;
+  return <div className={`video-note-layer ${moveMode ? 'move-mode' : ''}`} style={{ left: `${bounds.x}%`, top: `${bounds.y}%`, width: `${bounds.width}%`, height: `${bounds.height}%`, padding: `${paddingY}px ${paddingX}px`, gap: `${rowGap}px`, fontSize: `${fontSize}px`, '--video-note-font-family': style.noteFontFamily, '--video-note-color': style.noteTextColor, '--video-note-order': style.noteOrder === 'oldest-top' ? 'flex-start' : 'flex-end' } as CSSProperties} onPointerDown={(event) => beginDrag(event)} onPointerMove={moveDrag} onPointerUp={finishDrag} onPointerCancel={finishDrag} onLostPointerCapture={() => finishDrag()}>
     {moveMode && <div className="video-note-frame">{(['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'] as VideoLayerCropEdge[]).map((edge) => <button key={edge} type="button" aria-label={`Resize note area ${edge}`} className={`video-note-handle ${edge}`} onPointerDown={(event) => beginDrag(event, edge)} />)}</div>}
-    <div className="video-note-content" style={{ textShadow: roundedTextOutlineShadow(style.noteTextStrokeEnabled, style.noteTextStrokeWidth, style.noteTextStrokeColor) }}>{notes.map((step) => <DecoratedNoteRow className="video-note-row" key={step.id} step={step} style={style} />)}</div>
+    <div className="video-note-content" style={{ gap: `${rowGap}px`, textShadow: roundedTextOutlineShadow(style.noteTextStrokeEnabled, strokeWidth, style.noteTextStrokeColor) }}>{notes.map((step) => <DecoratedNoteRow className="video-note-row" key={step.id} step={step} style={style} scale={displayScale} />)}</div>
   </div>;
 }
 
@@ -3174,7 +3187,7 @@ export function VideoAxisWorkbench({ open, desktop, chart, moves, startingCharac
                   </div>
                   {layerTransformMode && (['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'] as VideoLayerCropEdge[]).map(renderLayerCropHandle)}
                 </div>
-                <VideoNotesLayer chart={chart} style={comboImageStyle} timeMs={chartPlaybackMs} bounds={videoNoteBounds} moveMode={videoNoteMoveMode} hostRef={stageFrameRef} onBoundsChange={setVideoNoteBounds} />
+                <VideoNotesLayer chart={chart} style={comboImageStyle} timeMs={chartPlaybackMs} bounds={videoNoteBounds} moveMode={videoNoteMoveMode} hostRef={stageFrameRef} onBoundsChange={setVideoNoteBounds} videoWidth={videoMeta.width} previewScale={(stageFrameSize?.width ?? videoMeta.width) / Math.max(1, videoMeta.width)} />
               </div>
               {isExporting && <div className="video-export-overlay" data-export-exclude="true" onPointerDown={(event) => event.stopPropagation()}>
                 <div className="video-export-circle" style={{ '--video-export-progress': `${Math.round(clamp(exportStatus.progress, 0, 1) * 360)}deg` } as CSSProperties}><span>{Math.round(exportStatus.progress * 100)}%</span></div>

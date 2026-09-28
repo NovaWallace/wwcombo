@@ -1,41 +1,8 @@
 import type { AppLanguage } from './i18n';
 
-export type HomeSpineId =
-  | 'zani'
-  | 'augusta'
-  | 'lupa'
-  | 'galbrena'
-  | 'ciaccona'
-  | 'cartethyia'
-  | 'phrolova'
-  | 'hiyuki'
-  | 'yinlin'
-  | 'jinhsi'
-  | 'changli'
-  | 'zhezhi'
-  | 'xuanling'
-  | 'suisui'
-  | 'qiuyuan'
-  | 'xiangli-yao'
-  | 'luuk-herssen'
-  | 'jiyan'
-  | 'brant'
-  | 'carlotta'
-  | 'lucilla'
-  | 'mornye'
-  | 'aemeath'
-  | 'denia'
-  | 'rebecca'
-  | 'iuno'
-  | 'sigrika'
-  | 'shorekeeper'
-  | 'phoebe'
-  | 'chisa'
-  | 'lynae'
-  | 'lucy'
-  | 'camellya'
-  | 'roccia'
-  | 'cantarella';
+// IDs are supplied by the installed DLC packages. Keep this as a string so a
+// newly dropped character does not require a frontend release.
+export type HomeSpineId = string;
 
 export type HomeSpineOption = {
   id: HomeSpineId;
@@ -92,9 +59,9 @@ export const HOME_SPINE_OPTIONS: readonly HomeSpineOption[] = [
   { id: 'camellya', names: { 'zh-CN': '椿', 'en-US': 'Camellya', 'ja-JP': 'ツバキ', 'ko-KR': '카멜리아' }, skeletonUrl: '/theme/camellya-spine/chun.skel', scale: 2 },
   { id: 'roccia', names: { 'zh-CN': '洛可可', 'en-US': 'Roccia', 'ja-JP': 'ロココ', 'ko-KR': '로코코' }, skeletonUrl: '/theme/roccia-spine/luokeke.skel', scale: 2 },
   { id: 'cantarella', names: { 'zh-CN': '坎特蕾拉', 'en-US': 'Cantarella', 'ja-JP': 'カンタレラ', 'ko-KR': '칸타렐라' }, skeletonUrl: '/theme/cantarella-spine/kanteleila.skel', scale: 2 },
+  { id: 'qingxiao', names: { 'zh-CN': '清宵', 'en-US': 'Qingxiao', 'ja-JP': 'Qingxiao', 'ko-KR': 'Qingxiao' }, skeletonUrl: '/theme/qingxiao-spine/qingxiao.skel', scale: 2 },
+  { id: 'jingran', names: { 'zh-CN': '景燃', 'en-US': 'Jingran', 'ja-JP': 'Jingran', 'ko-KR': 'Jingran' }, skeletonUrl: '/theme/jingran-spine/jingran.skel', scale: 2 },
 ];
-
-const HOME_SPINE_IDS = new Set<HomeSpineId>(HOME_SPINE_OPTIONS.map((option) => option.id));
 
 function finiteOr(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
@@ -113,24 +80,28 @@ export function normalizeHomeSpineTransforms(value: unknown): HomeSpineTransform
   if (!value || typeof value !== 'object') return {};
   const source = value as Record<string, unknown>;
   const result: HomeSpineTransforms = {};
-  for (const option of HOME_SPINE_OPTIONS) {
-    const candidate = source[option.id];
+  for (const [id, candidate] of Object.entries(source)) {
     if (!candidate || typeof candidate !== 'object') continue;
-    const fallback = defaultHomeSpineTransform(option.id);
+    const fallback = defaultHomeSpineTransform(id);
     const record = candidate as Record<string, unknown>;
-    result[option.id] = {
+    result[id] = {
       scale: Math.min(8, Math.max(0.25, finiteOr(record.scale, fallback.scale))),
       offsetX: Math.min(1, Math.max(-1, finiteOr(record.offsetX, fallback.offsetX))),
       offsetY: Math.min(1, Math.max(-1, finiteOr(record.offsetY, fallback.offsetY)))
     };
-  }
+   }
   return result;
 }
 
 export function normalizeHomeSpineId(value: unknown): HomeSpineId {
-  return typeof value === 'string' && HOME_SPINE_IDS.has(value as HomeSpineId) ? value as HomeSpineId : DEFAULT_HOME_SPINE_ID;
+  return typeof value === 'string' && value.trim() ? value.trim() : DEFAULT_HOME_SPINE_ID;
 }
 
 export function homeSpineOption(id: HomeSpineId): HomeSpineOption {
-  return HOME_SPINE_OPTIONS.find((option) => option.id === id) ?? HOME_SPINE_OPTIONS[0];
+  return HOME_SPINE_OPTIONS.find((option) => option.id === id) ?? {
+    id,
+    names: { 'zh-CN': id, 'en-US': id, 'ja-JP': id, 'ko-KR': id },
+    skeletonUrl: '',
+    scale: 2
+  };
 }
