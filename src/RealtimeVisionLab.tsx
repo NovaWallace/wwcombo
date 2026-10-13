@@ -1091,6 +1091,7 @@ export function RealtimeVisionLab({
           <div className="realtime-vision-buff-list">
             {settings.buffs.map((buff) => {
               const capturing = capturingBuffId === buff.id;
+              const fieldCount = 2 + Number(buff.nonRefreshable) + Number(buff.triggerMode === 'hold-release');
               return <article key={buff.id} className="realtime-vision-buff-row">
                 <div className="realtime-vision-trigger-main">
                   <label className="realtime-vision-name-field"><span>{text('名称', 'Name')}</span><input value={buff.name} onChange={(event) => updateBuff(buff.id, { name: event.target.value.slice(0, 40) })} /></label>
@@ -1104,14 +1105,14 @@ export function RealtimeVisionLab({
                   </button>
                   {buff.triggerCode && <button className="icon-button" type="button" title={text('清除按键', 'Clear Input')} onClick={() => updateBuff(buff.id, { triggerCode: '' })}><RotateCcw size={14} /></button>}
                   <div className="segmented realtime-vision-trigger-mode">
-                    <button className={buff.triggerMode === 'press' ? 'active' : ''} type="button" onClick={() => updateBuff(buff.id, { triggerMode: 'press', nonRefreshable: false })}>{text('按下', 'Press')}</button>
+                    <button className={buff.triggerMode === 'press' ? 'active' : ''} type="button" onClick={() => updateBuff(buff.id, { triggerMode: 'press' })}>{text('按下', 'Press')}</button>
                     <button className={buff.triggerMode === 'hold-release' ? 'active' : ''} type="button" onClick={() => updateBuff(buff.id, { triggerMode: 'hold-release' })}>{text('长按松开', 'Hold & Release')}</button>
                   </div>
-                  {buff.triggerMode === 'hold-release' && <label className="realtime-vision-non-refreshable"><input type="checkbox" checked={buff.nonRefreshable} onChange={(event) => updateBuff(buff.id, { nonRefreshable: event.target.checked })} /><span>{text('不可刷新', 'No Refresh')}</span></label>}
+                  <label className="realtime-vision-non-refreshable"><input type="checkbox" checked={buff.nonRefreshable} onChange={(event) => updateBuff(buff.id, { nonRefreshable: event.target.checked })} /><span>{text('不可刷新', 'No Refresh')}</span></label>
                 </div>
-                <div className={`realtime-vision-field-grid ${buff.triggerMode === 'hold-release' ? (buff.nonRefreshable ? 'four' : 'three') : ''}`}>
+                <div className={`realtime-vision-field-grid ${fieldCount === 4 ? 'four' : fieldCount === 3 ? 'three' : ''}`}>
                   <label>{text('持续秒数', 'Duration')}<input type="number" min={0.1} max={600} step={0.1} value={buff.durationSeconds} onChange={(event) => updateBuff(buff.id, { durationSeconds: boundedNumber(event.target.value, 0.1, 600, buff.durationSeconds) })} /></label>
-                  {buff.triggerMode === 'hold-release' && buff.nonRefreshable && <label>{text('冷却秒数', 'Cooldown')}<input type="number" min={0.1} max={600} step={0.1} value={buff.cooldownSeconds} onChange={(event) => updateBuff(buff.id, { cooldownSeconds: boundedNumber(event.target.value, 0.1, 600, buff.cooldownSeconds) })} /></label>}
+                  {buff.nonRefreshable && <label>{text('冷却秒数', 'Cooldown')}<input type="number" min={0.1} max={600} step={0.1} value={buff.cooldownSeconds} onChange={(event) => updateBuff(buff.id, { cooldownSeconds: boundedNumber(event.target.value, 0.1, 600, buff.cooldownSeconds) })} /></label>}
                   <label>{text('结束前警示', 'Warn Before')}<input type="number" min={0} max={120} step={0.1} value={buff.warningLeadSeconds} onChange={(event) => updateBuff(buff.id, { warningLeadSeconds: boundedNumber(event.target.value, 0, 120, buff.warningLeadSeconds) })} /></label>
                   {buff.triggerMode === 'hold-release' && <label>{text('长按门槛（秒）', 'Hold Threshold (s)')}<input type="number" min={0.1} max={5} step={0.05} value={buff.holdThresholdMs / 1000} onChange={(event) => updateBuff(buff.id, { holdThresholdMs: Math.round(boundedNumber(event.target.value, 0.1, 5, buff.holdThresholdMs / 1000) * 1000) })} /></label>}
                 </div>

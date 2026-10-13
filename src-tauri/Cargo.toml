@@ -1,6 +1,6 @@
 [package]
 name = "wwcombo"
-version = "0.7.0"
+version = "0.7.1"
 default-run = "wwcombo"
 description = "Wuthering Waves combo trainer"
 authors = ["NovaWallace"]
