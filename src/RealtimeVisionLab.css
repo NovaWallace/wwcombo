@@ -404,6 +404,15 @@
   background: rgba(110, 8, 5, .58);
 }
 
+.realtime-vision-monitor.cooldown {
+  border-left-color: #6ea5ff;
+}
+
+.realtime-vision-monitor-timing .cooldown-time {
+  color: #a8c8ff;
+  font-size: 12px;
+}
+
 .realtime-vision-monitor.empty {
   grid-column: 1 / -1;
   display: flex;
@@ -486,6 +495,10 @@
 
 .realtime-vision-field-grid.three {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.realtime-vision-field-grid.four {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .realtime-vision-schedule-grid {
@@ -708,6 +721,26 @@
   font-size: 10px;
 }
 
+.realtime-vision-non-refreshable {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 0 7px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.realtime-vision-non-refreshable input {
+  width: auto;
+  height: auto;
+  margin: 0;
+}
+
 .realtime-vision-trigger-actions {
   min-width: 0;
   display: flex;
@@ -879,4 +912,10 @@
 
 @media (prefers-reduced-motion: reduce) {
   .realtime-vision-state.running i { animation: none; }
+}
+
+@media (max-width: 720px) {
+  .realtime-vision-field-grid.four { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .realtime-vision-trigger-binding { flex-wrap: wrap; }
+  .realtime-vision-trigger-mode { margin-left: 0; }
 }

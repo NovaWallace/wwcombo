@@ -69,6 +69,8 @@ import { localizeCharacterName, localizeDefaultCharacterName, localizeEnglish, s
 import type { AppLanguage } from './i18n';
 import { localizedDefaultMoveLabel, localizedMovePrompt  } from './moveLabels';
 import { noteNumberByStepId, noteStepCompleted  } from './noteDisplay';
+import { OkwwExportPanel } from './OkwwExportPanel';
+import { alignOkwwChartToOrder, analyzeOkwwProject, createOkwwProject, generateOkwwPackage, OKWW_PROBES, orderOkwwStepIds, type OkwwExportMetadata, type OkwwPostCheck, type OkwwProject, type OkwwRule } from './okwwExport';
 import { DecoratedNoteRow  } from './noteRowDecoration';
 import { EmbeddedBrowserExitControl } from './EmbeddedBrowserExitControl';
 import { NumericDraftInput  } from './NumericDraftInput';
@@ -94,7 +96,7 @@ const realtimeVisionInputPublisher = __BUFF_TIMER_ENABLED__
   : null;
 const VideoAxisWorkbench = lazy(() => import('./VideoAxisWorkbench').then((module) => ({ default: module.VideoAxisWorkbench })));
 
-type Page = 'home' | 'record' | 'practice' | 'appearance' | 'experiment' | 'community' | 'settings';
+type Page = 'home' | 'record' | 'practice' | 'appearance' | 'experiment' | 'community' | 'settings' | 'okww';
 type ExperimentPage = 'axis' | 'keymap' | 'export-axis' | 'afyg-dps' | 'realtime-vision' | 'simulated-input';
 type HomeDestination = 'record' | 'practice' | 'appearance' | 'community' | 'experiment' | 'settings';
 type EditorTab = 'timeline' | 'content';
@@ -334,6 +336,7 @@ type TimelineHistorySnapshot = { chart: ComboChart | null; contentLabels: Record
 type TimelineHistoryControl = { canUndo: boolean; canRedo: boolean; onCaptureHistory: () => void; onUndo: () => void; onRedo: () => void  };
 
 const STORAGE_KEY = 'ww-combo-trainer-state-v2';
+const OKWW_PROJECT_STORAGE_PREFIX = 'ww-combo-okww-export-v1:';
 const APPEARANCE_MODE_STORAGE_KEY = 'ww-combo-trainer-appearance-mode-v1';
 const OVERLAY_LAYOUT_PRESET_STORAGE_KEY = 'ww-combo-trainer-overlay-layout-presets-v1';
 const FIRST_RUN_HELP_PROMPT_STORAGE_KEY = 'ww-combo-trainer-help-prompt-v1';
@@ -1943,6 +1946,15 @@ export default function App() {
   const [customIconSources, setCustomIconSources] = useState<CustomIconSources>(saved.customIconSources ?? { });
   const [chart, setChart] = useState<ComboChart | null>(saved.chart);
   const [library, setLibrary] = useState<ComboChart[]>(saved.library);
+  const [okwwProject, setOkwwProject] = useState<OkwwProject | null>(null);
+  const okwwProjectRef = useRef<OkwwProject | null>(null);
+  const [okwwSelectedStepId, setOkwwSelectedStepId] = useState<string | null>(null);
+  const [okwwExporting, setOkwwExporting] = useState(false);
+  const [okwwUndoStack, setOkwwUndoStack] = useState<OkwwProject[]>([]);
+  const [okwwRedoStack, setOkwwRedoStack] = useState<OkwwProject[]>([]);
+  const okwwDraftIds = useMemo(() => new Set(library.filter((item) => {
+    try { return Boolean(localStorage.getItem(`${OKWW_PROJECT_STORAGE_PREFIX}${item.id}`)); } catch { return false; }
+  }).map((item) => item.id)), [library, okwwProject]);
   const [startingCharacterSlot, setStartingCharacterSlot] = useState<CharacterSlot>(saved.startingCharacterSlot);
   const [practiceRoleOrder, setPracticeRoleOrder] = useState<CharacterSlot[]>(saved.practiceRoleOrder);
   const [overlaySettings, setOverlaySettings] = useState<OverlaySettings>(saved.overlaySettings);
@@ -2017,6 +2029,7 @@ export default function App() {
   const [simulatedInputUndoStack, setSimulatedInputUndoStack] = useState<TimelineHistorySnapshot[]>([]);
   const [shareDraft, setShareDraft] = useState<CommunityShareDraft | null>(null);
   const [sharePreflightWarning, setSharePreflightWarning] = useState<SharePreflightWarning | null>(null);
+  const [okwwExportDraft, setOkwwExportDraft] = useState<OkwwExportMetadata | null>(null);
   const [timelineRedoStack, setTimelineRedoStack] = useState<TimelineHistorySnapshot[]>([]);
   const [simulatedInputRedoStack, setSimulatedInputRedoStack] = useState<TimelineHistorySnapshot[]>([]);
   const [communityFrameKey, setCommunityFrameKey] = useState(0);
@@ -2062,7 +2075,13 @@ export default function App() {
   const practiceInputSuppressedUntilRef = useRef(0);
   const trainerCaptureSuspendSourcesRef = useRef(new Set<'timeline-pointer' | 'timeline-focus'>());
   const trainerCaptureContextRef = useRef({ page, shareDialogOpen: Boolean(shareDraft), textAxisImportOpen, quickInputOpen, videoWorkbenchOpen  });
-  const globalInputAutoStartAttemptedRef = useRef(false);
+  const globalInputAutoOwnedRef = useRef(false);
+  const globalInputAutoRequestRef = useRef(0);
+  const autoGlobalInputNeeded = page === 'record'
+    || page === 'practice'
+    || (page === 'experiment' && (experimentPage === 'keymap' || experimentPage === 'realtime-vision'));
+  const autoGlobalInputNeededRef = useRef(autoGlobalInputNeeded);
+  autoGlobalInputNeededRef.current = autoGlobalInputNeeded;
   const pendingPracticeAxisErrorStepIdsRef = useRef(new Set<string>());
   const practiceAxisWindowFocusedRef = useRef(typeof document === 'undefined' ? true : document.visibilityState === 'visible' && document.hasFocus());
   const recentInputTransitionsRef = useRef(new Map<string, { source: NonNullable<TrainerLikeInputEvent['source']>; receivedAt: number  }>());
@@ -2336,6 +2355,13 @@ export default function App() {
     const payload = JSON.stringify({ compatibilityMode, moves, bindings, gamepadBindings, inputMode, gamepadIconSet, gamepadRecognitionMode, keyboardIconMode, shortcutSettings, customIconSources, chart, library, startingCharacterSlot, practiceRoleOrder, overlaySettings, overlayLayoutBounds, overlayNoteLayoutBounds, comboImageStyle, verticalComboImageStyle, waterfallComboImageStyle, roleBaseFollowsAvatar, rhythmUiSettings, axisGateEnabled, resetPracticeProgressOnStop, exportDirectory, recordingIndicatorEnabled, recordingIndicatorCorner, recordingRecognitionSettings, simulatedInputSettings, simulatedInputChartId, live2dEnabled, homeSpineId, homeSpineTransforms, homeDirectControl, homeBackgroundSrc, teamPresets  });
     if (payload.length < LOCAL_STORAGE_SOFT_LIMIT) localStorage.setItem(STORAGE_KEY, payload);
   }, [compatibilityMode, moves, bindings, gamepadBindings, inputMode, gamepadIconSet, gamepadRecognitionMode, keyboardIconMode, shortcutSettings, customIconSources, chart, library, startingCharacterSlot, practiceRoleOrder, overlaySettings, overlayLayoutBounds, overlayNoteLayoutBounds, comboImageStyle, verticalComboImageStyle, waterfallComboImageStyle, roleBaseFollowsAvatar, rhythmUiSettings, axisGateEnabled, resetPracticeProgressOnStop, exportDirectory, recordingIndicatorEnabled, recordingIndicatorCorner, recordingRecognitionSettings, simulatedInputSettings, simulatedInputChartId, live2dEnabled, homeSpineId, homeSpineTransforms, homeDirectControl, homeBackgroundSrc, teamPresets]);
+
+  useEffect(() => {
+    okwwProjectRef.current = okwwProject;
+    if (!okwwProject) return;
+    try { localStorage.setItem(`${OKWW_PROJECT_STORAGE_PREFIX}${okwwProject.sourceChartId}`, JSON.stringify(okwwProject)); }
+    catch { /* Export still works if the draft exceeds browser storage. */ }
+  }, [okwwProject]);
 
   useEffect(() => setChartTitle(chart?.title ?? ''), [chart?.id]);
 
@@ -3228,8 +3254,9 @@ export default function App() {
       const status = result.ok ? await desktop.getGlobalInputStatus() : null;
       const enabled = Boolean(result.ok && status?.started);
       setGlobalInputEnabled(enabled);
+      if (enabled) globalInputAutoOwnedRef.current = automatic;
       setGlobalInputStatus(enabled ? localizedMessage('全局监听已开启', 'Global input enabled') : localizedMessage(`全局监听不可用：${result.reason ?? status?.status ?? '未知原因' }`, `Global input unavailable: ${result.reason ?? status?.status ?? 'unknown reason' }`));
-      if (automatic && enabled) setDebugMessage(localizedMessage('全局捕获已默认开启；编辑时间轴、填写分享信息和调整外观时会自动暂停招式捕获。', 'Global Input Capture is enabled by default. Action capture pauses automatically while editing the timeline, share details, or appearance.'));
+      if (automatic && enabled) setDebugMessage(localizedMessage('进入需要全局输入的页面后已自动开启捕获；编辑时间轴、填写分享信息和调整外观时会自动暂停招式捕获。', 'Global Input Capture is enabled when entering a page that needs it. Action capture pauses automatically while editing the timeline, sharing details, or appearance.'));
      } catch (error) {
       setGlobalInputEnabled(false);
       setGlobalInputStatus(localizedMessage(`全局监听启动失败：${error instanceof Error ? error.message : String(error) }`, `Global input failed to start: ${error instanceof Error ? error.message : String(error) }`));
@@ -3237,6 +3264,7 @@ export default function App() {
    }
 
   async function stopGlobalInput() {
+    globalInputAutoOwnedRef.current = false;
     setGlobalInputEnabled(false);
     setGlobalInputStatus(localizedMessage('全局监听已关闭，保留窗口内监听', 'Global input disabled; in-window input remains active'));
     await desktop?.stopGlobalInput();
@@ -3249,10 +3277,26 @@ export default function App() {
    }, [desktop, globalInputMode]);
 
   useEffect(() => {
-    if (globalInputAutoStartAttemptedRef.current) return;
-    globalInputAutoStartAttemptedRef.current = true;
-    void startGlobalInput(true);
-   }, [desktop]);
+    if (!desktop || !autoGlobalInputNeeded || globalInputEnabled) return;
+    const request = ++globalInputAutoRequestRef.current;
+    void startGlobalInput(true).then(() => {
+      if (request !== globalInputAutoRequestRef.current || autoGlobalInputNeededRef.current) return;
+      if (globalInputAutoOwnedRef.current) {
+        globalInputAutoOwnedRef.current = false;
+        void desktop.stopGlobalInput?.().catch(() => undefined);
+      }
+    });
+    return () => {
+      if (globalInputAutoRequestRef.current === request) globalInputAutoRequestRef.current += 1;
+    };
+   }, [autoGlobalInputNeeded, desktop, experimentPage, globalInputEnabled, page]);
+
+  useEffect(() => {
+    if (autoGlobalInputNeeded || !globalInputAutoOwnedRef.current) return;
+    globalInputAutoOwnedRef.current = false;
+    setGlobalInputEnabled(false);
+    void desktop?.stopGlobalInput?.().catch(() => undefined);
+   }, [autoGlobalInputNeeded, desktop]);
 
   useEffect(() => {
     if (page !== 'record') trainerCaptureSuspendSourcesRef.current.clear();
@@ -3411,6 +3455,216 @@ export default function App() {
     setChart(nextChart);
     setLibrary((current) => upsertLibraryChart(current, nextChart));
    }
+
+  function openOkwwExport() {
+    if (!chart) return;
+    let project: OkwwProject | null = null;
+    try {
+      const raw = localStorage.getItem(`${OKWW_PROJECT_STORAGE_PREFIX}${chart.id}`);
+      const savedProject = raw ? JSON.parse(raw) as Partial<OkwwProject> : null;
+      if (savedProject?.schemaVersion === 1 && savedProject.sourceChartId === chart.id && isReasonableChart(savedProject.chart) && savedProject.classes && Array.isArray(savedProject.rules)) {
+        project = { ...savedProject, sequenceIds: savedProject.sequenceIds ?? orderOkwwStepIds(savedProject.chart),
+          rules: savedProject.rules.map((rule) => rule.origin === 'auto' && rule.onTimeout === 'continue'
+            ? { ...rule, onTimeout: 'skip', maxRetries: 3, onExhausted: 'switch' } : rule),
+          postChecks: Array.isArray(savedProject.postChecks) ? savedProject.postChecks : [],
+          replaySettings: { keyFrequencyMs: simulatedInputSettings.keyFrequencyMs, startDelayMs: 0, minSwitchHoldMs: 0, ...(savedProject.replaySettings ?? {}) } } as OkwwProject;
+      }
+    } catch { /* Start from the selected chart if an old draft is invalid. */ }
+    if (!project) {
+      const names = chartCharacterAssignments(chart);
+      project = createOkwwProject(chartWithContentLabels(chart, contentLabelsForChart(chart, comboImageStyle.contentLabels)), {
+        1: names[1] ?? comboImageStyle.roleStyles[1].name,
+        2: names[2] ?? comboImageStyle.roleStyles[2].name,
+        3: names[3] ?? comboImageStyle.roleStyles[3].name
+      });
+      project.replaySettings = { keyFrequencyMs: simulatedInputSettings.keyFrequencyMs, startDelayMs: 0, minSwitchHoldMs: 0 };
+    } else if (chart.updatedAt > project.chart.updatedAt) {
+      showToast(text('已恢复之前的 OKWW 草稿；原连段后来又被修改，草稿不会自动覆盖。', 'Restored the OKWW draft. The source combo has changed since then.'));
+    }
+    setOkwwProject(project);
+    setOkwwSelectedStepId(project.chart.steps.find((step) => !['start_challenge', 'stop_recording'].includes(step.moveId))?.id ?? null);
+    setOkwwUndoStack([]);
+    setOkwwRedoStack([]);
+    setEditorTab('timeline');
+    setPage('okww');
+  }
+
+  function captureOkwwHistory() {
+    const current = okwwProjectRef.current;
+    if (!current) return;
+    setOkwwUndoStack((items) => [...items.slice(-MAX_TIMELINE_HISTORY + 1), structuredClone(current)]);
+    setOkwwRedoStack([]);
+  }
+
+  function undoOkwwTimeline() {
+    if (!okwwProject || !okwwUndoStack.length) return;
+    setOkwwRedoStack((items) => [...items.slice(-MAX_TIMELINE_HISTORY + 1), structuredClone(okwwProject)]);
+    setOkwwProject(okwwUndoStack[okwwUndoStack.length - 1]);
+    setOkwwUndoStack((items) => items.slice(0, -1));
+  }
+
+  function redoOkwwTimeline() {
+    if (!okwwProject || !okwwRedoStack.length) return;
+    setOkwwUndoStack((items) => [...items.slice(-MAX_TIMELINE_HISTORY + 1), structuredClone(okwwProject)]);
+    setOkwwProject(okwwRedoStack[okwwRedoStack.length - 1]);
+    setOkwwRedoStack((items) => items.slice(0, -1));
+  }
+
+  function updateOkwwStep(stepId: string, patch: Partial<ComboStep>) {
+    setOkwwProject((current) => {
+      if (!current) return current;
+      const chart = applyFreeFirePeriods({ ...current.chart, updatedAt: Date.now(), steps: stepId === '__insert__' ? [...current.chart.steps, normalizeStep(patch as ComboStep)] : current.chart.steps.map((step) => step.id === stepId ? normalizeStep({ ...step, ...patch }) : step) });
+      return { ...current, chart, sequenceIds: stepId === '__insert__' || patch.startMin !== undefined || patch.startMax !== undefined ? orderOkwwStepIds(chart) : current.sequenceIds };
+    });
+  }
+
+  function insertOkwwSteps(steps: ComboStep[]) {
+    setOkwwProject((current) => {
+      if (!current) return current;
+      const chart = applyFreeFirePeriods({ ...current.chart, updatedAt: Date.now(), steps: [...current.chart.steps, ...steps.map(normalizeStep)] });
+      return { ...current, chart, sequenceIds: orderOkwwStepIds(chart) };
+    });
+  }
+
+  function deleteOkwwSteps(stepIds: string[]) {
+    const ids = new Set(stepIds);
+    const sequence = okwwProjectRef.current?.sequenceIds ?? (okwwProjectRef.current ? orderOkwwStepIds(okwwProjectRef.current.chart) : []);
+    const deletedIndex = sequence.findIndex((id) => ids.has(id));
+    setOkwwProject((current) => current ? { ...current,
+      chart: applyFreeFirePeriods({ ...current.chart, updatedAt: Date.now(), steps: current.chart.steps.filter((step) => !ids.has(step.id)) }),
+      sequenceIds: current.sequenceIds?.filter((id) => !ids.has(id)),
+      rules: current.rules.filter((rule) => !ids.has(rule.stepId)).map((rule) => ids.has(rule.failureTargetStepId ?? '')
+        ? { ...rule, failureTargetStepId: undefined, onTimeout: rule.onTimeout === 'branch' ? 'skip' : rule.onTimeout } : rule),
+      postChecks: current.postChecks?.filter((check) => !ids.has(check.stepId)).map((check) => ids.has(check.failureTargetStepId ?? '')
+        ? { ...check, failureTargetStepId: undefined, onFailure: check.onFailure === 'branch' ? 'abort' : check.onFailure } : check)
+    } : current);
+    setOkwwSelectedStepId((id) => id && ids.has(id) ? sequence.slice(deletedIndex + 1).find((next) => !ids.has(next)) ?? [...sequence.slice(0, deletedIndex)].reverse().find((next) => !ids.has(next)) ?? null : id);
+  }
+
+  function updateOkwwPeriods(periods: ComboPeriod[]) {
+    setOkwwProject((current) => current ? { ...current, chart: applyFreeFirePeriods({ ...current.chart, updatedAt: Date.now(), periods: constrainAxisPeriods(periods) }) } : current);
+  }
+
+  function insertOkwwFlowStep(anchorId: string, moveId: string, template?: ComboStep, copiedContentLabel?: string) {
+    if (!okwwProject) return;
+    const move = moves.find((item) => item.id === moveId);
+    const anchor = okwwProject.chart.steps.find((item) => item.id === anchorId);
+    if (!move || !anchor) return;
+    const run = analyzeOkwwProject(okwwProject).runs.find((item) => item.switchStepId === anchorId || item.sourceStepIds.includes(anchorId));
+    const switchTarget = /^switch_([1-3])$/.exec(moveId);
+    const newStep: ComboStep = normalizeStep({
+      ...(template ?? {}), id: crypto.randomUUID(), moveId: move.id, label: template?.label ?? move.label, color: move.color,
+      characterSlot: switchTarget ? Number(switchTarget[1]) as CharacterSlot : (run?.slot ?? anchor.characterSlot ?? 1) as CharacterSlot,
+      lane: move.id === 'basic_attack' ? 'independent' : 'main', independent: Boolean(move.independent), advancesStep: move.advancesStep,
+      startMin: anchor.startMin + 1, startMax: anchor.startMin + 1,
+      durationMin: template?.durationMin ?? (move.id === 'basic_attack' ? 1000 : 200), durationMax: template?.durationMax ?? (move.id === 'basic_attack' ? 1000 : 200),
+      samples: []
+    });
+    captureOkwwHistory();
+    setOkwwProject((current) => {
+      if (!current) return current;
+      const sequenceIds = [...(current.sequenceIds ?? orderOkwwStepIds(current.chart))];
+      const anchorIndex = sequenceIds.indexOf(anchorId);
+      sequenceIds.splice(Math.max(0, anchorIndex + (/^switch_/.test(anchor.moveId) ? 0 : 1)), 0, newStep.id);
+      const contentLabels = { ...current.chart.contentLabels };
+      const label = copiedContentLabel ?? (move.id === 'empty_action' ? 'f' : defaultComboContentLabelForMoveId(move.id));
+      if (label) contentLabels[newStep.id] = label;
+      const chart = alignOkwwChartToOrder({ ...current.chart, steps: [...current.chart.steps, newStep], contentLabels }, sequenceIds);
+      return { ...current, chart, sequenceIds };
+    });
+    setOkwwSelectedStepId(newStep.id);
+  }
+
+  function changeOkwwFlowMove(stepId: string, moveId: string) {
+    const move = moves.find((item) => item.id === moveId);
+    if (!move) return;
+    const previousStep = okwwProject?.chart.steps.find((item) => item.id === stepId);
+    const previousRun = okwwProject && analyzeOkwwProject(okwwProject).runs.find((item) => item.switchStepId === stepId || item.sourceStepIds.includes(stepId));
+    captureOkwwHistory();
+    setOkwwProject((current) => {
+      if (!current) return current;
+      const switchTarget = /^switch_([1-3])$/.exec(moveId);
+      const changedCategory = Boolean(previousStep?.moveId.startsWith('switch_')) !== Boolean(switchTarget);
+      const contentLabels = { ...current.chart.contentLabels };
+      const nextLabel = move.id === 'empty_action' ? 'f' : defaultComboContentLabelForMoveId(move.id);
+      if (nextLabel) contentLabels[stepId] = nextLabel;
+      else delete contentLabels[stepId];
+      return { ...current, rules: changedCategory ? current.rules.filter((rule) => rule.stepId !== stepId) : current.rules,
+        postChecks: current.postChecks?.filter((check) => check.stepId !== stepId), chart: { ...current.chart, contentLabels, updatedAt: Date.now(), steps: current.chart.steps.map((step) => step.id === stepId ? normalizeStep({
+        ...step, moveId: move.id, label: move.label, color: move.color, advancesStep: move.advancesStep,
+        characterSlot: switchTarget ? Number(switchTarget[1]) as CharacterSlot : previousStep?.moveId.startsWith('switch_') ? previousRun?.slot ?? step.characterSlot : step.characterSlot,
+        independent: Boolean(move.independent), lane: move.id === 'basic_attack' ? 'independent' : 'main'
+      }) : step) } };
+    });
+  }
+
+  function moveOkwwFlowStep(stepId: string, direction: -1 | 1) {
+    if (!okwwProject) return;
+    const run = analyzeOkwwProject(okwwProject).runs.find((item) => item.sourceStepIds.includes(stepId));
+    const neighborId = run?.sourceStepIds[run.sourceStepIds.indexOf(stepId) + direction];
+    if (!neighborId) return;
+    captureOkwwHistory();
+    setOkwwProject((current) => {
+      if (!current) return current;
+      const sequenceIds = [...(current.sequenceIds ?? orderOkwwStepIds(current.chart))];
+      const from = sequenceIds.indexOf(stepId);
+      const to = sequenceIds.indexOf(neighborId);
+      [sequenceIds[from], sequenceIds[to]] = [sequenceIds[to], sequenceIds[from]];
+      return { ...current, chart: alignOkwwChartToOrder(current.chart, sequenceIds), sequenceIds };
+    });
+  }
+
+  function addOkwwRule(step: ComboStep) {
+    if (!okwwProject) return;
+    const run = analyzeOkwwProject(okwwProject).runs.find((item) => item.switchStepId === step.id || item.steps.some((action) => action.id === step.id));
+    const className = okwwProject.classes[run?.slot ?? ((step.characterSlot ?? 1) as 1 | 2 | 3)];
+    const probe = OKWW_PROBES.find((item) => !item.className || item.className === className);
+    if (!probe) return;
+    captureOkwwHistory();
+    setOkwwProject((current) => current ? { ...current, rules: [...current.rules, {
+      id: crypto.randomUUID(), stepId: step.id, probe: probe.id, origin: 'manual', behavior: 'wait', timeoutMs: 1500,
+      onTimeout: 'skip', whileWaiting: probe.id === 'concerto_full' ? 'basic_attack' : 'none', maxRetries: 3, onExhausted: 'abort'
+    }] } : current);
+  }
+
+  function addOkwwPostCheck(step: ComboStep) {
+    if (step.moveId.startsWith('switch_')) return;
+    const probe = step.moveId.startsWith('liberation') ? 'liberation_cast' : 'target_locked';
+    captureOkwwHistory();
+    setOkwwProject((current) => current ? { ...current, postChecks: [...(current.postChecks ?? []), {
+      id: crypto.randomUUID(), stepId: step.id, probe, timeoutMs: 1200, onFailure: 'abort'
+    }] } : current);
+  }
+
+  function saveOkwwDraft() {
+    if (!okwwProject) return;
+    try {
+      localStorage.setItem(`${OKWW_PROJECT_STORAGE_PREFIX}${okwwProject.sourceChartId}`, JSON.stringify(okwwProject));
+      showToast(text('OKWW 草稿已保存。', 'OKWW draft saved.'));
+    } catch (error) { showToast(text(`保存草稿失败：${String(error)}`, `Could not save draft: ${String(error)}`)); }
+  }
+
+  function openOkwwExportDialog() {
+    if (!okwwProject) return;
+    setOkwwExportDraft({ name: okwwProject.chart.title, description: '', author: okwwProject.author || 'wwcombo' });
+  }
+
+  async function exportOkwwPackage(metadata: OkwwExportMetadata) {
+    if (!okwwProject || okwwExporting) return;
+    setOkwwExporting(true);
+    try {
+      const result = generateOkwwPackage(okwwProject, metadata);
+      let path: string | null = null;
+      if (desktop?.saveExportFile) {
+        const directory = await ensureExportDirectory();
+        if (!directory) return;
+        path = (await desktop.saveExportFile(directory, result.filename, result.bytes)).path;
+      } else downloadBytes(result.bytes, result.filename, 'application/zip');
+      showToast(path ? text(`已导出 OKWW 队伍包：${path}`, `Exported OKWW team: ${path}`) : text(`已下载：${result.filename}`, `Downloaded: ${result.filename}`));
+      setOkwwExportDraft(null);
+    } catch (error) { showToast(text(`OKWW 导出失败：${String(error)}`, `OKWW export failed: ${String(error)}`)); }
+    finally { setOkwwExporting(false); }
+  }
 
   function deleteLibraryChart(chartId: string) {
     setLibrary((current) => {
@@ -4390,7 +4644,44 @@ export default function App() {
       : experimentPage === 'keymap' || experimentPage === 'realtime-vision' || experimentPage === 'simulated-input'
         ? 'settings'
         : 'experiment'
-    : page === 'home' ? null : page;
+    : page === 'home' ? null : page === 'okww' ? 'practice' : page;
+  const okwwTimelineStyle = okwwProject ? normalizeComboImageStyle({ ...comboImageStyle, contentLabels: okwwProject.chart.contentLabels ?? {} }) : comboImageStyle;
+  const okwwRuleMarkerMap = new Map<string, { id: string; stepId: string; timeMs: number; label: string; count: number }>();
+  [...(okwwProject?.rules ?? []), ...(okwwProject?.postChecks ?? [])].forEach((rule) => {
+    const step = okwwProject?.chart.steps.find((item) => item.id === rule.stepId);
+    const probe = OKWW_PROBES.find((item) => item.id === rule.probe);
+    if (!step || !probe) return;
+    const previous = okwwRuleMarkerMap.get(step.id);
+    okwwRuleMarkerMap.set(step.id, previous
+      ? { ...previous, label: `${previous.label} · ${probe.label}`, count: previous.count + 1 }
+      : { id: step.id, stepId: step.id, timeMs: step.startMin, label: probe.label, count: 1 });
+  });
+  const okwwRuleMarkers = [...okwwRuleMarkerMap.values()];
+  const okwwTimelineEditor = okwwProject ? <TimelineEditor
+    key={`okww-timeline-${okwwProject.sourceChartId}`}
+    chart={okwwProject.chart}
+    moves={moves}
+    bindings={activeRuntimeBindings}
+    shortcutSettings={shortcutSettings}
+    comboImageStyle={okwwTimelineStyle}
+    clipboardControl={{ value: timelineClipboard, onChange: setTimelineClipboard }}
+    mode={editorTab}
+    onModeChange={setEditorTab}
+    zoom={editorZoom}
+    onZoomChange={setEditorZoom}
+    onUpdate={updateOkwwStep}
+    onInsert={insertOkwwSteps}
+    onDelete={deleteOkwwSteps}
+    onPeriodsChange={updateOkwwPeriods}
+    onContentChange={(patch) => setOkwwProject((current) => current && patch.contentLabels ? { ...current, chart: { ...current.chart, contentLabels: patch.contentLabels, updatedAt: Date.now() } } : current)}
+    onQuickInput={(stepId) => setOkwwSelectedStepId(stepId)}
+    onSelectionChange={(stepIds) => { if (stepIds.length) setOkwwSelectedStepId(stepIds[0]); }}
+    onSave={saveOkwwDraft}
+    historyControl={{ canUndo: okwwUndoStack.length > 0, canRedo: okwwRedoStack.length > 0, onCaptureHistory: captureOkwwHistory, onUndo: undoOkwwTimeline, onRedo: redoOkwwTimeline }}
+    keyboardShortcutsEnabled={page === 'okww'}
+    highlightedStepIds={new Set([...okwwProject.rules, ...(okwwProject.postChecks ?? [])].map((rule) => rule.stepId))}
+    ruleLane={{ markers: okwwRuleMarkers, onSelect: setOkwwSelectedStepId }}
+  /> : null;
   const simulatedInputTimelineEditor = simulatedInputAvailable && simulatedInputChart ? <TimelineEditor
     key={`simulated-input-timeline-${simulatedInputChart.id}`}
     chart={simulatedInputChart}
@@ -4474,7 +4765,7 @@ export default function App() {
         <div className="sidebar-illustration" aria-hidden="true" />
       </aside>
 
-      <main className={`workspace ${page === 'home' ? 'workspace-home' : '' } ${page === 'community' ? 'workspace-community' : '' } ${page === 'experiment' ? 'workspace-experiment' : '' } ${page === 'experiment' && experimentPage === 'afyg-dps' ? 'workspace-afyg' : '' }` }>
+      <main className={`workspace ${page === 'home' ? 'workspace-home' : '' } ${page === 'community' ? 'workspace-community' : '' } ${page === 'experiment' ? 'workspace-experiment' : '' } ${page === 'experiment' && experimentPage === 'afyg-dps' ? 'workspace-afyg' : '' } ${page === 'okww' ? 'workspace-okww' : ''}` }>
         {page === 'home' && <HomePage appearanceMode={appearanceMode } announcement={clientAnnouncement } live2dEnabled={live2dEnabled } homeSpineId={homeSpineId } homeSpineTransforms={homeSpineTransforms } live2dAssets={dlcStatus.live2dAssets } directControlEnabled={homeDirectControl } backgroundSrc={homeBackgroundSrc } showcaseActive={homeShowcaseActive } onTransformChange={(id, transform) => setHomeSpineTransforms((current) => ({ ...current, [id]: transform })) } onEnterShowcase={() => { setHomeShowcaseActive(true); const request = document.documentElement.requestFullscreen?.(); if (request) void request.catch(() => undefined); } } onExitShowcase={() => { setHomeShowcaseActive(false); if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined); } } onNavigate={(destination) => {
           if (destination === 'experiment') {
             setExperimentPage('afyg-dps');
@@ -4527,10 +4818,41 @@ export default function App() {
               </div>
               <PracticeAxisPreview chart={practiceChart } practice={practice } style={activeRenderComboImageStyle } errorStepIds={practicePreset === 'strict' ? practiceAxisErrorStepIds : [] } onExport={(previewWidth) => { setExportAxisPracticeWidth(previewWidth); setExportAxisOpenedFromPractice(true); setExperimentPage('export-axis'); navigateToPage('experiment');  } } />
             </div>
-            <LibraryPanel chart={chart } library={library } style={comboImageStyle } avatarPresets={defaultAvatars } onSelect={(id) => selectComboChart(library.find((item) => item.id === id) ?? chart) } onEdit={(id) => { const item = library.find((entry) => entry.id === id); if (item) { selectComboChart(item); setPage('record'); setEditorTab('timeline');  }  } } onDelete={deleteLibraryChart } onShare={openShareDialog } onImport={() => importInputRef.current?.click() } onRecord={() => navigateToPage('record') } onCommunity={() => navigateToPage('community') } />
+            <LibraryPanel chart={chart } library={library } style={comboImageStyle } avatarPresets={defaultAvatars } okwwDraftIds={okwwDraftIds} onSelect={(id) => selectComboChart(library.find((item) => item.id === id) ?? chart) } onEdit={(id) => { const item = library.find((entry) => entry.id === id); if (item) { selectComboChart(item); setPage('record'); setEditorTab('timeline');  }  } } onDelete={deleteLibraryChart } onShare={openShareDialog } onImport={() => importInputRef.current?.click() } onExportOkww={openOkwwExport} onRecord={() => navigateToPage('record') } onCommunity={() => navigateToPage('community') } />
             <input ref={importInputRef } className="file-input" type="file" accept="application/json,.json" onChange={(event) => { const file = event.currentTarget.files?.[0] ?? null; event.currentTarget.value = ''; void importCharts(file);  } } />
           </section>
         ) }
+
+        {page === 'okww' && okwwProject && <OkwwExportPanel
+          project={okwwProject}
+          timeline={okwwTimelineEditor}
+          style={okwwTimelineStyle}
+          moves={moves}
+          avatarPresets={defaultAvatars}
+          selectedStepId={okwwSelectedStepId}
+          onSelectStep={setOkwwSelectedStepId}
+          onClassChange={(slot, className) => { captureOkwwHistory(); setOkwwProject((current) => current ? { ...current, classes: { ...current.classes, [slot]: className } } : current); }}
+          onAuthorChange={(author) => setOkwwProject((current) => current ? { ...current, author } : current)}
+          onAddRule={addOkwwRule}
+          onRuleChange={(id, rulePatch) => { captureOkwwHistory(); setOkwwProject((current) => current ? { ...current, rules: current.rules.map((rule) => rule.id === id ? { ...rule, ...rulePatch } : rule) } : current); }}
+          onReplaySettingsChange={(patch) => setOkwwProject((current) => current ? { ...current, replaySettings: { keyFrequencyMs: current.replaySettings?.keyFrequencyMs ?? 100, startDelayMs: current.replaySettings?.startDelayMs ?? 0, minSwitchHoldMs: current.replaySettings?.minSwitchHoldMs ?? 0, ...patch } } : current)}
+          onRemoveRule={(id) => { captureOkwwHistory(); setOkwwProject((current) => current ? { ...current, rules: current.rules.filter((rule) => rule.id !== id) } : current); }}
+          onAddPostCheck={addOkwwPostCheck}
+          onPostCheckChange={(id, patch: Partial<OkwwPostCheck>) => { captureOkwwHistory(); setOkwwProject((current) => current ? { ...current, postChecks: current.postChecks?.map((check) => check.id === id ? { ...check, ...patch } : check) } : current); }}
+          onRemovePostCheck={(id) => { captureOkwwHistory(); setOkwwProject((current) => current ? { ...current, postChecks: current.postChecks?.filter((check) => check.id !== id) } : current); }}
+          onInsertStep={insertOkwwFlowStep}
+          onChangeMove={changeOkwwFlowMove}
+          onMoveStep={moveOkwwFlowStep}
+          onDeleteStep={(stepId) => { captureOkwwHistory(); deleteOkwwSteps([stepId]); }}
+          onUndo={undoOkwwTimeline}
+          onRedo={redoOkwwTimeline}
+          canUndo={okwwUndoStack.length > 0}
+          canRedo={okwwRedoStack.length > 0}
+          onSave={saveOkwwDraft}
+          onExport={openOkwwExportDialog}
+          onExit={() => setPage('practice')}
+          exporting={okwwExporting}
+        />}
 
         {page === 'appearance' && (
           <section className="appearance-page-layout">
@@ -4616,6 +4938,7 @@ export default function App() {
       {quickInputOpen && (quickInputTarget === 'simulated' ? simulatedInputChart : practiceChart) && <QuickInputDialog chart={(quickInputTarget === 'simulated' ? simulatedInputChart : practiceChart)! } style={quickInputTarget === 'simulated' ? simulatedInputTimelineStyle : comboImageStyle } initialValues={quickInputTarget === 'simulated' ? simulatedInputQuickInputMemory : quickInputMemory } startStepId={quickInputStartStepId } onApply={applyQuickInput } onClose={() => setQuickInputOpen(false) } /> }
       {!desktop && <InlineOverlayNotesFallback chart={overlayPracticeChart } practice={practice } visible={overlayVisible } moveMode={overlayNoteMoveMode } showNotesSeparately={activeOverlayComboImageStyle.showNotesSeparately } noteStyle={activeOverlayComboImageStyle } bounds={activeOverlayNoteBounds } visibleStepIds={overlayVisibleNoteStepIds } onBoundsChange={(next) => setOverlayNoteLayoutBounds((current) => ({ ...current, [overlaySettings.layout]: normalizeOverlayNoteBounds(next, current[overlaySettings.layout]) })) } />}
       <TeamSelectionDialog open={quickTeamSelectionOpen} avatarPresets={defaultAvatars} customAvatarPresets={comboImageStyle.avatarPresets} onClose={() => setQuickTeamSelectionOpen(false)} onApply={applyQuickTeamSelection} onSave={saveQuickTeamPreset} />
+      {okwwExportDraft && <OkwwExportDialog metadata={okwwExportDraft} onChange={setOkwwExportDraft} onExport={() => void exportOkwwPackage(okwwExportDraft)} onClose={() => setOkwwExportDraft(null)} />}
       {shareDraft && chart && <CommunityShareDialog draft={shareDraft } onChange={setShareDraft } onExport={() => void exportSharedChart(shareDraft) } onUploadCommunity={() => uploadSharedChartToCommunity(shareDraft) } onClose={() => { setSharePreflightWarning(null); setShareDraft(null);  } } /> }
       {shareDraft && sharePreflightWarning && <SharePreflightWarningDialog warning={sharePreflightWarning } onEdit={() => { const needsPeriods = sharePreflightWarning.missingStartup || sharePreflightWarning.missingLoop; setSharePreflightWarning(null); setShareDraft(null); setPage('record'); setEditorTab(needsPeriods ? 'timeline' : 'content');  } } onContinue={() => setSharePreflightWarning(null) } /> }
       {videoWorkbenchMounted && chart && <Suspense fallback={moduleLoadingFallback }><VideoAxisWorkbench open={videoWorkbenchOpen } desktop={desktop } chart={chart } moves={moves } startingCharacterSlot={startingCharacterSlot } recognitionBasedOnTextAxis={recognitionBasedOnTextAxis } comboImageStyle={activeRenderComboImageStyle } timelineContentLabels={comboImageStyle.contentLabels } overlaySettings={overlaySettings } rhythmUiSettings={rhythmUiSettings } shortcutSettings={shortcutSettings } exportDirectory={exportDirectory } ensureExportDirectory={ensureExportDirectory } timelineEditor={<TimelineEditor chart={chart } moves={moves } bindings={activeRuntimeBindings } shortcutSettings={shortcutSettings } inputSignal={timelinePlacementInputSignal } comboImageStyle={comboImageStyle } clipboardControl={{ value: timelineClipboard, onChange: setTimelineClipboard  }} mode={editorTab } onModeChange={setEditorTab } zoom={editorZoom } onZoomChange={setEditorZoom } onUpdate={updateStep } onInsert={insertSteps } onDelete={deleteSteps } onPeriodsChange={updatePeriods } onContentChange={updateComboImageStyle } onQuickInput={(stepId) => openQuickInput(stepId)} onSave={saveCurrentChart } historyControl={{ canUndo: timelineUndoStack.length > 0, canRedo: timelineRedoStack.length > 0, onCaptureHistory: captureTimelineHistory, onUndo: undoTimeline, onRedo: redoTimeline  }} /> } onApplyChart={applyVideoWorkbenchChart } onApplyContentLabels={(contentLabels) => updateComboImageStyle({ contentLabels }) } onClose={() => { setVideoWorkbenchOpen(false); setVideoWorkbenchMounted(false);  } } onSave={saveCurrentChart } getDisplaySize={getDisplaySize } /></Suspense> }
@@ -5599,6 +5922,7 @@ type TimelineLane = {
   auxiliary?: boolean;
   label?: string;
  };
+type TimelineRuleLane = { markers: Array<{ id: string; stepId: string; timeMs: number; label: string; count: number }>; onSelect: (stepId: string) => void };
 
 type TimelinePlayheadControl = {
   playbackMs: number;
@@ -5905,7 +6229,7 @@ function TextAxisImportDialog({ moves, characters, chart, contentLabels, startin
   );
  }
 
-function TimelineEditor({ chart, moves, bindings, shortcutSettings, inputSignal, comboImageStyle, clipboardControl, mode, onModeChange, zoom, onZoomChange, playheadControl, onUpdate, onInsert, onDelete, onPeriodsChange, onContentChange, onQuickInput, onSelectionChange, onPeriodSelectionChange, onSave, historyControl, videoCompactMode = false, videoLayerTransformControl, videoNoteTransformControl, videoLaneHeight, inspectorPortalTarget, toolbarPortalTarget, hideInspector = false, renderTotalOverride, keyboardShortcutsEnabled = true, videoAutoFollow = false, timelinePanelControl, referenceTimingControl, timingKeyframeControl, workshopImportControl, highlightedStepIds, readOnly = false, auxiliaryLane, timeLabelForMs }: { chart: ComboChart; moves: MoveDefinition[]; bindings: KeyBinding[]; shortcutSettings: ShortcutSettings; inputSignal?: (TrainerLikeInputEvent & { id: string  }) | null; comboImageStyle: ComboImageStyle; clipboardControl: TimelineClipboardControl; mode: EditorTab; onModeChange?: (mode: EditorTab) => void; zoom: number; onZoomChange: (value: number) => void; playheadControl?: TimelinePlayheadControl; onUpdate: (stepId: string, patch: Partial<ComboStep>) => void; onInsert: (steps: ComboStep[]) => void; onDelete: (stepIds: string[]) => void; onPeriodsChange: (periods: ComboPeriod[]) => void; onContentChange: (patch: Partial<ComboImageStyle>) => void; onQuickInput: (stepId: string | null) => void; onSelectionChange?: (stepIds: string[]) => void; onPeriodSelectionChange?: (period: ComboPeriod | null) => void; onSave: () => void; historyControl?: TimelineHistoryControl; videoCompactMode?: boolean; videoLayerTransformControl?: VideoLayerTransformControl; videoNoteTransformControl?: VideoLayerTransformControl & { disabled?: boolean }; videoLaneHeight?: number; inspectorPortalTarget?: HTMLElement | null; toolbarPortalTarget?: HTMLElement | null; hideInspector?: boolean; renderTotalOverride?: number; keyboardShortcutsEnabled?: boolean; videoAutoFollow?: boolean; timelinePanelControl?: TimelinePanelControl; referenceTimingControl?: TimelineReferenceTimingControl; timingKeyframeControl?: TimelineTimingKeyframeControl; workshopImportControl?: TimelineWorkshopImportControl; highlightedStepIds?: Set<string>; readOnly?: boolean; auxiliaryLane?: { label: string }; timeLabelForMs?: (timelineMs: number) => number  }) {
+function TimelineEditor({ chart, moves, bindings, shortcutSettings, inputSignal, comboImageStyle, clipboardControl, mode, onModeChange, zoom, onZoomChange, playheadControl, onUpdate, onInsert, onDelete, onPeriodsChange, onContentChange, onQuickInput, onSelectionChange, onPeriodSelectionChange, onSave, historyControl, videoCompactMode = false, videoLayerTransformControl, videoNoteTransformControl, videoLaneHeight, inspectorPortalTarget, toolbarPortalTarget, hideInspector = false, renderTotalOverride, keyboardShortcutsEnabled = true, videoAutoFollow = false, timelinePanelControl, referenceTimingControl, timingKeyframeControl, workshopImportControl, highlightedStepIds, readOnly = false, auxiliaryLane, ruleLane, timeLabelForMs }: { chart: ComboChart; moves: MoveDefinition[]; bindings: KeyBinding[]; shortcutSettings: ShortcutSettings; inputSignal?: (TrainerLikeInputEvent & { id: string  }) | null; comboImageStyle: ComboImageStyle; clipboardControl: TimelineClipboardControl; mode: EditorTab; onModeChange?: (mode: EditorTab) => void; zoom: number; onZoomChange: (value: number) => void; playheadControl?: TimelinePlayheadControl; onUpdate: (stepId: string, patch: Partial<ComboStep>) => void; onInsert: (steps: ComboStep[]) => void; onDelete: (stepIds: string[]) => void; onPeriodsChange: (periods: ComboPeriod[]) => void; onContentChange: (patch: Partial<ComboImageStyle>) => void; onQuickInput: (stepId: string | null) => void; onSelectionChange?: (stepIds: string[]) => void; onPeriodSelectionChange?: (period: ComboPeriod | null) => void; onSave: () => void; historyControl?: TimelineHistoryControl; videoCompactMode?: boolean; videoLayerTransformControl?: VideoLayerTransformControl; videoNoteTransformControl?: VideoLayerTransformControl & { disabled?: boolean }; videoLaneHeight?: number; inspectorPortalTarget?: HTMLElement | null; toolbarPortalTarget?: HTMLElement | null; hideInspector?: boolean; renderTotalOverride?: number; keyboardShortcutsEnabled?: boolean; videoAutoFollow?: boolean; timelinePanelControl?: TimelinePanelControl; referenceTimingControl?: TimelineReferenceTimingControl; timingKeyframeControl?: TimelineTimingKeyframeControl; workshopImportControl?: TimelineWorkshopImportControl; highlightedStepIds?: Set<string>; readOnly?: boolean; auxiliaryLane?: { label: string }; ruleLane?: TimelineRuleLane; timeLabelForMs?: (timelineMs: number) => number  }) {
   const { language, text  } = useI18n();
   const CHARACTER_SLOTS = chart.characterCount === 4 ? ALL_CHARACTER_SLOTS : DEFAULT_CHARACTER_SLOTS;
   const [selectedId, setSelectedId] = useState(chart.steps[0]?.id ?? '');
@@ -8206,7 +8530,8 @@ function TimelineEditor({ chart, moves, bindings, shortcutSettings, inputSignal,
       {renderedToolbarNode }
       <div className="timeline-editor-scroll" ref={scrollRef } onWheel={handleTimelineWheelZoom } onPointerMove={(event) => { lastTimelinePointerMsRef.current = timelineClientXToMs(event.clientX); handlePendingEdgeMove(event);  } } onPointerLeave={() => { lastTimelinePointerMsRef.current = null; stopPendingEdgeScroll();  } } onPointerUp={stopPendingEdgeScroll } onPointerCancel={stopPendingEdgeScroll } onContextMenu={(event) => { if (pending) handleSpecialContextMenu(event);  } }>
         {playheadOffscreenDirection && activePlayheadControl && <div className="timeline-playhead-offscreen-layer"><button className={`timeline-playhead-offscreen ${playheadOffscreenDirection }`  } title={playheadOffscreenDirection === 'left' ? text('当前播放位置在左侧', 'The current playback position is to the left') : text('当前播放位置在右侧', 'The current playback position is to the right') } onClick={(event) => { event.stopPropagation(); scrollToTimelineMs(activePlayheadControl.playbackMs);  } }>{playheadOffscreenDirection === 'left' ? <ChevronLeft size={16 } /> : <ChevronRight size={16 } /> }</button></div> }
-        <div className="timeline-scroll-content" style={{ width: trackWidth + 112  } }>
+        <div className={`timeline-scroll-content ${ruleLane ? 'has-okww-rule-lane' : ''}`} style={{ width: trackWidth + 112  } }>
+          {ruleLane && <div className="timeline-okww-rule-track" style={{ width: trackWidth }}><div className="timeline-editor-lane okww-rule-lane-label">OKWW</div>{ruleLane.markers.map((marker) => <button key={marker.id} type="button" className="timeline-okww-rule-marker" style={{ left: `${(marker.timeMs / renderTotal) * 100}%` }} title={marker.label} aria-label={marker.label} onClick={() => ruleLane.onSelect(marker.stepId)}><Diamond size={12} fill="currentColor" />{marker.count > 1 && <span>{marker.count}</span>}</button>)}</div>}
           {activePlayheadControl && <div className={`timeline-playhead-overlay ${pending ? 'placement-active' : '' } ${activePlayheadControl.disabled ? 'disabled' : '' }`  } style={{ left: playheadContentX  } } onPointerDown={beginPlayheadDrag }><span /></div> }
         {renderLoopBoundaryGuides() }
         {timingKeyframeControl?.boundaries.map((marker) => <div key={`line-${marker.id}`} className="timeline-timing-keyframe-line automatic" data-afyg-global-line="true" data-keyframe-id={marker.id} style={{ left: 112 + (marker.timelineMs / renderTotal) * trackWidth } as CSSProperties} />)}
@@ -9654,7 +9979,7 @@ function HelpPanel({ tab, onTabChange  }: { tab: HelpTab; onTabChange: (value: H
  }
 
 
-function LibraryPanel({ chart, library, style, avatarPresets, onSelect, onEdit, onDelete, onShare, onImport, onRecord, onCommunity  }: { chart: ComboChart | null; library: ComboChart[]; style: ComboImageStyle; avatarPresets: DefaultAvatarEntry[]; onSelect: (id: string) => void; onEdit: (id: string) => void; onDelete: (id: string) => void; onShare: () => void; onImport: () => void; onRecord: () => void; onCommunity: () => void  }) {
+function LibraryPanel({ chart, library, style, avatarPresets, okwwDraftIds, onSelect, onEdit, onDelete, onShare, onImport, onExportOkww, onRecord, onCommunity  }: { chart: ComboChart | null; library: ComboChart[]; style: ComboImageStyle; avatarPresets: DefaultAvatarEntry[]; okwwDraftIds: ReadonlySet<string>; onSelect: (id: string) => void; onEdit: (id: string) => void; onDelete: (id: string) => void; onShare: () => void; onImport: () => void; onExportOkww: () => void; onRecord: () => void; onCommunity: () => void  }) {
   const { language, text  } = useI18n();
   const [pendingDelete, setPendingDelete] = useState<ComboChart | null>(null);
   const presetAvatarByName = useMemo(() => new Map(avatarPresets.map((preset) => [preset.name.trim(), preset.src])), [avatarPresets]);
@@ -9672,16 +9997,32 @@ function LibraryPanel({ chart, library, style, avatarPresets, onSelect, onEdit, 
 
   return (
     <div className="panel library-panel">
-      <div className="panel-title library-panel-title"><div><h2>{text('连段列表', 'Combo Library') }</h2><p>{text('保存、导入和编辑后的连段谱会出现在这里。', 'Saved, imported, and edited combo charts appear here.') }</p></div><div className="library-title-actions"><button onClick={onImport}><Upload size={16 } />{text('导入', 'Import') }</button><button className="library-share-button" data-practice-input-block="true" onClick={onShare } disabled={!chart }><Share2 size={16 } />{text('分享', 'Share') }</button></div></div>
+<div className="panel-title library-panel-title"><div><h2>{text('连段列表', 'Combo Library') }</h2><p>{text('保存、导入和编辑后的连段谱会出现在这里。', 'Saved, imported, and edited combo charts appear here.') }</p></div><div className="library-title-actions"><button onClick={onImport}><Upload size={16 } />{text('导入', 'Import') }</button><button className="library-okww-button" onClick={onExportOkww} disabled={!chart}><Download size={16 } />{text('导出', 'Export')}<span className="okww-corner-badge">okww</span></button><button className="library-share-button" data-practice-input-block="true" onClick={onShare } disabled={!chart }><Share2 size={16 } />{text('分享', 'Share') }</button></div></div>
       <div className="library-list">{library.length ? library.map((item) => {
         const roleAvatars = chartRoleAvatars(item);
-        return <div key={item.id } className={`library-item ${chart?.id === item.id ? 'active' : '' }`}><button className="library-item-main" onClick={() => onSelect(item.id) }><span className="library-item-title-row"><span className="library-role-avatars">{roleAvatars.map((role) => <span key={role.slot } className="library-role-avatar" title={role.name } style={avatarBackgroundStyle(role.src) } />)}</span><strong>{item.title }</strong></span><span>{item.steps.length } {text('指令', 'actions') } · {new Date(item.updatedAt).toLocaleString(language) }</span></button><div className="library-item-actions"><button className="icon-button" title={text('编辑连段', 'Edit combo') } aria-label={text(`编辑 ${item.title }`, `Edit ${item.title }`) } onClick={() => onEdit(item.id) }><Pencil size={16 } /></button><button className="icon-button danger" title={text('删除连段', 'Delete combo') } aria-label={text(`删除 ${item.title }`, `Delete ${item.title }`) } onClick={() => setPendingDelete(item) }><Trash2 size={16 } /></button></div></div>;
+        return <div key={item.id } className={`library-item ${chart?.id === item.id ? 'active' : '' }`}><button className="library-item-main" onClick={() => onSelect(item.id) }><span className="library-item-title-row"><span className="library-role-avatars">{roleAvatars.map((role) => <span key={role.slot } className="library-role-avatar" title={role.name } style={avatarBackgroundStyle(role.src) } />)}</span><strong>{item.title }</strong>{okwwDraftIds.has(item.id) && <span className="library-okww-badge">okww</span>}</span><span>{item.steps.length } {text('指令', 'actions') } · {new Date(item.updatedAt).toLocaleString(language) }</span></button><div className="library-item-actions"><button className="icon-button" title={text('编辑连段', 'Edit combo') } aria-label={text(`编辑 ${item.title }`, `Edit ${item.title }`) } onClick={() => onEdit(item.id) }><Pencil size={16 } /></button><button className="icon-button danger" title={text('删除连段', 'Delete combo') } aria-label={text(`删除 ${item.title }`, `Delete ${item.title }`) } onClick={() => setPendingDelete(item) }><Trash2 size={16 } /></button></div></div>;
        }) : <div className="library-empty-state"><img src="/mobile-empty-lingyang.png" alt="" /><p>{text('空空如也，可以', 'Nothing here. You can') } <button type="button" onClick={onRecord }>{text('录制', 'Record') }</button> {text('或者右转', 'or head to') } <button type="button" onClick={onCommunity }>{text('社区', 'Community') }</button> {text('哦', '.') }</p></div> }</div>
       {pendingDelete && <div className="library-confirm-backdrop" role="presentation" onMouseDown={() => setPendingDelete(null) }><div className="library-confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="library-delete-title" onMouseDown={(event) => event.stopPropagation() }><Trash2 size={24 } /><h3 id="library-delete-title">{text('确认删除连段？', 'Delete this combo?') }</h3><p>{text(`“${pendingDelete.title }”删除后无法恢复。`, `“${pendingDelete.title }” cannot be recovered after deletion.`) }</p><div><button onClick={() => setPendingDelete(null) }>{text('取消', 'Cancel') }</button><button className="danger" onClick={() => { onDelete(pendingDelete.id); setPendingDelete(null);  } }>{text('确认删除', 'Delete') }</button></div></div></div> }
     </div>
   );
  }
 
+
+function OkwwExportDialog({ metadata, onChange, onExport, onClose }: { metadata: OkwwExportMetadata; onChange: (metadata: OkwwExportMetadata) => void; onExport: () => void; onClose: () => void }) {
+  const { text } = useI18n();
+  const patch = (value: Partial<OkwwExportMetadata>) => onChange({ ...metadata, ...value });
+  return <div className="community-share-backdrop" role="presentation" onMouseDown={onClose}>
+    <div className="community-share-dialog okww-export-dialog" role="dialog" aria-modal="true" aria-labelledby="okww-export-dialog-title" onMouseDown={(event) => event.stopPropagation()}>
+      <div className="community-share-head"><div><h2 id="okww-export-dialog-title">{text('导出 OKWW 队伍包', 'Export OKWW Team')}</h2><p>{text('填写队伍包名称和备注，生成可导入 OKWW 的 ZIP。', 'Name and describe the team package before exporting the importable ZIP.')}</p></div><button className="icon-button" type="button" title={text('关闭', 'Close')} onClick={onClose}><X size={18} /></button></div>
+      <div className="community-share-form">
+        <label className="community-share-wide"><span>{text('名称', 'Name')}</span><input value={metadata.name ?? ''} maxLength={80} onChange={(event) => patch({ name: event.target.value })} /></label>
+        <label className="community-share-wide"><span>{text('备注', 'Notes')}</span><textarea value={metadata.description ?? ''} maxLength={800} rows={5} placeholder={text('例如：适用于奥古斯塔 / 尤诺 / 守岸人的录制轴。', 'For example: recorded rotation for Augusta / Iuno / Shorekeeper.')} onChange={(event) => patch({ description: event.target.value })} /></label>
+        <label className="community-share-wide"><span>{text('作者', 'Author')}</span><input value={metadata.author ?? ''} maxLength={80} onChange={(event) => patch({ author: event.target.value })} /></label>
+      </div>
+      <div className="community-share-actions"><button type="button" onClick={onClose}>{text('取消', 'Cancel')}</button><button className="community-share-yellow-button" type="button" disabled={!metadata.name?.trim()} onClick={onExport}><Download size={16} />{text('导出 ZIP', 'Export ZIP')}</button></div>
+    </div>
+  </div>;
+}
 
 function CommunityShareDialog({ draft, onChange, onExport, onUploadCommunity, onClose  }: { draft: CommunityShareDraft; onChange: (draft: CommunityShareDraft) => void; onExport: () => void; onUploadCommunity: () => void; onClose: () => void  }) {
   const { text  } = useI18n();

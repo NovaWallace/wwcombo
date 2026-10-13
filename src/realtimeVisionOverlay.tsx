@@ -21,6 +21,10 @@ type RealtimeVisionOverlayPayload = {
     expiresAtTimerSeconds: number | null;
     remainingSeconds: number | null;
     warning: boolean;
+    cooldownEndsAtTimerSeconds?: number | null;
+    cooldownRemainingSeconds?: number | null;
+    cooldownWarning?: boolean;
+    nonRefreshable?: boolean;
     pending?: boolean;
   }>;
 };
@@ -167,7 +171,7 @@ function RealtimeVisionOverlayApp() {
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
   };
 
-  return <main className={`realtime-vision-overlay ${payload.buffs.some((buff) => buff.warning) ? 'has-warning' : ''} ${moveMode ? 'move-mode' : ''}`} style={overlayStyle} onPointerDown={beginDrag} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag}>
+  return <main className={`realtime-vision-overlay ${payload.buffs.some((buff) => buff.warning || buff.cooldownWarning) ? 'has-warning' : ''} ${moveMode ? 'move-mode' : ''}`} style={overlayStyle} onPointerDown={beginDrag} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag}>
     <div className="realtime-vision-current-time">
       <strong className={payload.timer?.stale ? 'stale' : ''}>{payload.timer?.text ?? '--:--'}</strong>
     </div>
@@ -175,9 +179,11 @@ function RealtimeVisionOverlayApp() {
       {payload.buffs.map((buff) => {
         const expiresAt = formatChallengeTimerSeconds(buff.expiresAtTimerSeconds);
         const triggeredAt = formatChallengeTimerSeconds(buff.triggeredAtTimerSeconds);
-        return <div key={buff.id} className={buff.warning ? 'warning' : buff.pending ? 'pending' : ''}>
+        const cooldownEndsAt = formatChallengeTimerSeconds(buff.cooldownEndsAtTimerSeconds ?? null);
+        const cooldownActive = (buff.cooldownRemainingSeconds ?? 0) > 0;
+        return <div key={buff.id} className={buff.warning || buff.cooldownWarning ? 'warning' : buff.pending ? 'pending' : cooldownActive ? 'cooldown' : ''}>
           <strong className="realtime-vision-buff-name">{buff.name}</strong>
-          <time><span>{triggeredAt ?? '--:--'}</span><b>→</b><span>{expiresAt ?? '--:--'}</span></time>
+          <time><span>{triggeredAt ?? '--:--'}</span><b>→</b><span>{expiresAt ?? '--:--'}</span>{cooldownActive && <><b className="cooldown-separator">·</b><span>{cooldownEndsAt ?? '--:--'}</span></>}</time>
         </div>;
       })}
     </div>

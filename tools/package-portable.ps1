@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "0.65",
+    [string]$Version = "",
     [string]$Date = (Get-Date -Format "yyyyMMdd"),
     [string]$OutputDirectory = "release-packages",
     [switch]$SkipBuild
@@ -7,6 +7,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
+if (-not $Version) { $Version = (Get-Content -LiteralPath (Join-Path $repositoryRoot "package.json") -Raw | ConvertFrom-Json).version }
 $outputRoot = [IO.Path]::GetFullPath((Join-Path $repositoryRoot $OutputDirectory))
 $packageName = "wwcombo-v$Version-Windows-x64-portable-$Date"
 $packageRoot = Join-Path $outputRoot $packageName
@@ -15,6 +16,7 @@ $releaseExe = Join-Path $repositoryRoot "src-tauri\target\release\wwcombo.exe"
 
 if (-not $SkipBuild) {
     Push-Location $repositoryRoot
+    $buildStartedAt = Get-Date
     $previousExperimentalLabs = $env:WWCOMBO_INCLUDE_EXPERIMENTAL_ANALYSIS_LABS
     $previousBuffTimer = $env:WWCOMBO_INCLUDE_BUFF_TIMER
     $previousSimulatedInput = $env:WWCOMBO_INCLUDE_SIMULATED_INPUT
@@ -25,6 +27,7 @@ if (-not $SkipBuild) {
         $env:WWCOMBO_INCLUDE_SIMULATED_INPUT = "1"
         $env:WWCOMBO_SIMULATED_INPUT_DLC_REQUIRED = "1"
         cargo tauri build --no-bundle --features release-core
+        if ($LASTEXITCODE -ne 0) { throw "Tauri build failed (exit code $LASTEXITCODE)." }
     } finally {
         if ($null -eq $previousExperimentalLabs) {
             Remove-Item Env:WWCOMBO_INCLUDE_EXPERIMENTAL_ANALYSIS_LABS -ErrorAction SilentlyContinue
@@ -50,6 +53,12 @@ if (-not $SkipBuild) {
     }
 }
 if (-not (Test-Path -LiteralPath $releaseExe -PathType Leaf)) { throw "Release executable is missing: $releaseExe" }
+if ((Get-Item -LiteralPath $releaseExe).VersionInfo.ProductVersion -ne $Version) {
+    throw "Release executable version does not match $Version."
+}
+if (-not $SkipBuild -and (Get-Item -LiteralPath $releaseExe).LastWriteTime -lt $buildStartedAt) {
+    throw "Release executable was not rebuilt: $releaseExe"
+}
 
 $distRoot = Join-Path $repositoryRoot "dist"
 $requiredFrontendModules = @(
@@ -64,6 +73,14 @@ $requiredFrontendChunks = Get-ChildItem -LiteralPath (Join-Path $distRoot "asset
 }
 if ($requiredFrontendChunks.Count -lt 3) {
     throw "Core build is missing video/Buff frontend chunks. Found: $($requiredFrontendChunks.Name -join ', ')"
+}
+$mainChunk = Get-ChildItem -LiteralPath (Join-Path $distRoot "assets") -Filter "main-*.js" -File | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+$buffChunk = Get-ChildItem -LiteralPath (Join-Path $distRoot "assets") -Filter "RealtimeVisionLab-*.js" -File | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+if (-not $mainChunk -or -not (Select-String -LiteralPath $mainChunk.FullName -Pattern "Export OKWW Team" -SimpleMatch -Quiet)) {
+    throw "Core build is missing the OKWW export UI."
+}
+if (-not $buffChunk -or -not (Select-String -LiteralPath $buffChunk.FullName -Pattern "cooldownSeconds" -SimpleMatch -Quiet) -or -not (Select-String -LiteralPath $buffChunk.FullName -Pattern "nonRefreshable" -SimpleMatch -Quiet)) {
+    throw "Core build is missing the non-refreshable Buff cooldown."
 }
 
 function Get-Sha256Hex([string]$Path) {
@@ -87,6 +104,7 @@ New-Item -ItemType Directory -Force -Path $packageRoot | Out-Null
 
 Copy-Item -LiteralPath $releaseExe -Destination (Join-Path $packageRoot "wwcombo.exe")
 $documents = @(
+    @{ Source = "README.txt"; Destination = "README.txt" },
     @{ Source = "README.md"; Destination = "README_ZH.txt" },
     @{ Source = "README_EN.txt"; Destination = "README_EN.txt" },
     @{ Source = "README_JA.md"; Destination = "README_JA.txt" },

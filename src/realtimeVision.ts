@@ -15,6 +15,8 @@ export type RealtimeBuffDefinition = {
   triggerMode: RealtimeBuffTriggerMode;
   triggerInputMode: RealtimeBuffInputMode;
   holdThresholdMs: number;
+  nonRefreshable: boolean;
+  cooldownSeconds: number;
   durationSeconds: number;
   warningLeadSeconds: number;
   matchThreshold: number;
@@ -153,6 +155,8 @@ export const DEFAULT_REALTIME_VISION_SETTINGS: RealtimeVisionSettings = {
     triggerMode: 'press',
     triggerInputMode: 'keyboard',
     holdThresholdMs: 300,
+    nonRefreshable: false,
+    cooldownSeconds: 30,
     durationSeconds: 15,
     warningLeadSeconds: 3,
     matchThreshold: 0.86,
@@ -307,6 +311,12 @@ export function normalizeRealtimeVisionSettings(value: Partial<RealtimeVisionSet
       triggerMode,
       triggerInputMode,
       holdThresholdMs: clamp(Math.round(Number(entry?.holdThresholdMs) || 300), 100, 5000),
+      nonRefreshable: entry?.nonRefreshable === true,
+      cooldownSeconds: clamp(
+        Number(entry?.cooldownSeconds) || DEFAULT_REALTIME_VISION_SETTINGS.buffs[0].cooldownSeconds,
+        0.1,
+        600
+      ),
       durationSeconds: clamp(
         Number(entry?.durationSeconds) || DEFAULT_REALTIME_VISION_SETTINGS.buffs[0].durationSeconds,
         0.1,

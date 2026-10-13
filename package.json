@@ -1,6 +1,6 @@
 {
   "name": "wuthering-combo-trainer",
-  "version": "0.65.2",
+  "version": "0.7.0",
   "private": true,
   "license": "MIT",
   "description": "Desktop combo trainer for Wuthering Waves.",
@@ -12,6 +12,7 @@
     "android:build:debug": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/build-android-debug.ps1",
     "package:dlc": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/package-dlc.ps1",
     "package:portable": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/package-portable.ps1",
+    "package:dlc:bundle": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/package-dlc-bundle.ps1",
     "delta:create": "node tools/create-delta-patch.mjs",
     "preview": "vite preview --host 127.0.0.1 --port 4173",
     "typecheck": "tsc --noEmit",
@@ -27,8 +28,9 @@
     "community:web": "node scripts/community/server.mjs"
   },
   "dependencies": {
-    "@tauri-apps/api": "latest",
+    "@tauri-apps/api": "2.11.1",
     "@vitejs/plugin-react": "latest",
+    "fflate": "^0.8.2",
     "lucide": "^1.46.0",
     "lucide-react": "latest",
     "pixi-spine": "^4.0.6",

@@ -31,7 +31,7 @@ import type { RealtimeVisionInputSignal } from './realtimeVisionInput';
 import './RealtimeVisionLab.css';
 
 const STORAGE_KEY = 'wwcombo-realtime-vision-v1';
-const SETTINGS_SCHEMA_VERSION = 11;
+const SETTINGS_SCHEMA_VERSION = 12;
 const ANALYSIS_MAX_WIDTH = 1280;
 const DEFAULT_REALTIME_VISION_OVERLAY_BOUNDS: RealtimeVisionOverlayBounds = {
   x: 40,
@@ -57,7 +57,10 @@ type TriggeredBuff = {
   triggeredAtTimerSeconds: number;
   expiresAtTimerSeconds: number;
   remainingSeconds: number;
+  cooldownEndsAtTimerSeconds: number | null;
+  cooldownRemainingSeconds: number | null;
   warning: boolean;
+  cooldownWarning: boolean;
   timerCorrectionPending: boolean;
 };
 type PendingTrigger = {
@@ -225,6 +228,8 @@ function createBuff(index: number, inputMode: InputMode): RealtimeBuffDefinition
     triggerMode: 'press',
     triggerInputMode: inputMode,
     holdThresholdMs: 300,
+    nonRefreshable: false,
+    cooldownSeconds: 30,
     durationSeconds: 15,
     warningLeadSeconds: 3,
     matchThreshold: 0.9,
@@ -244,7 +249,14 @@ function triggeredBuff(buff: RealtimeBuffDefinition, timerSeconds: number, timer
     triggeredAtTimerSeconds: timerSeconds,
     expiresAtTimerSeconds: expiresAt,
     remainingSeconds: Math.max(0, timerSeconds - expiresAt),
+    cooldownEndsAtTimerSeconds: buff.nonRefreshable
+      ? challengeTimerExpirySeconds(timerSeconds, buff.cooldownSeconds)
+      : null,
+    cooldownRemainingSeconds: buff.nonRefreshable
+      ? Math.max(0, timerSeconds - (challengeTimerExpirySeconds(timerSeconds, buff.cooldownSeconds) ?? timerSeconds))
+      : null,
     warning: false,
+    cooldownWarning: false,
     timerCorrectionPending
   };
 }
@@ -261,12 +273,25 @@ function refreshTriggeredBuffs(
     if (!definition?.enabled) return [];
     if (timerSeconds > entry.triggeredAtTimerSeconds + 2) return [];
     const remainingSeconds = timerSeconds - entry.expiresAtTimerSeconds;
-    if (remainingSeconds <= 0) return [];
+    const cooldownEndsAtTimerSeconds = definition.nonRefreshable
+      ? challengeTimerExpirySeconds(entry.triggeredAtTimerSeconds, definition.cooldownSeconds)
+      : null;
+    const cooldownRemainingSeconds = cooldownEndsAtTimerSeconds === null
+      ? null
+      : Math.max(0, timerSeconds - cooldownEndsAtTimerSeconds);
+    if (remainingSeconds <= 0 && (cooldownRemainingSeconds === null || cooldownRemainingSeconds <= 0)) return [];
     return [{
       ...entry,
       name: definition.name.trim() || entry.name,
-      remainingSeconds,
-      warning: remainingSeconds <= definition.warningLeadSeconds
+      remainingSeconds: Math.max(0, remainingSeconds),
+      cooldownEndsAtTimerSeconds,
+      cooldownRemainingSeconds: definition.nonRefreshable
+        ? cooldownRemainingSeconds
+        : null,
+      warning: remainingSeconds > 0 && remainingSeconds <= definition.warningLeadSeconds,
+      cooldownWarning: cooldownRemainingSeconds !== null
+        && cooldownRemainingSeconds > 0
+        && cooldownRemainingSeconds <= definition.warningLeadSeconds
     }];
   });
 }
@@ -336,6 +361,7 @@ export function RealtimeVisionLab({
   const lastPressAtRef = useRef(new Map<string, number>());
   const audioContextRef = useRef<AudioContext | null>(null);
   const warnedBuffIdsRef = useRef(new Set<string>());
+  const activeBuffsRef = useRef<TriggeredBuff[]>([]);
   const desktopOverlayPendingRef = useRef<unknown | null>(null);
   const desktopOverlaySendingRef = useRef(false);
   const overlayMoveModeRef = useRef(false);
@@ -345,6 +371,7 @@ export function RealtimeVisionLab({
   const running = captureState === 'running';
   settingsRef.current = settings;
   runningRef.current = running;
+  activeBuffsRef.current = activeBuffs;
   capturingBuffIdRef.current = capturingBuffId;
   overlayMoveModeRef.current = overlayMoveMode;
 
@@ -611,16 +638,23 @@ export function RealtimeVisionLab({
         pendingTriggersRef.current = stillPending;
         setPendingBuffIds(new Set(stillPending.map((item) => item.buff.id)));
         if (activated.length) {
+          let acceptedActivationCount = 0;
           setActiveBuffs((current) => {
             const next = [...current];
             for (const entry of activated) {
+              const definition = settingsRef.current.buffs.find((buff) => buff.id === entry.id);
+              const blockedByCooldown = Boolean(definition?.nonRefreshable)
+                && next.some((active) => active.id === entry.id
+                  && (active.remainingSeconds > 0 || (active.cooldownRemainingSeconds ?? 0) > 0));
+              if (blockedByCooldown) continue;
               const index = next.findIndex((item) => item.id === entry.id);
               if (index >= 0) next[index] = entry;
               else next.push(entry);
+              acceptedActivationCount += 1;
             }
             return refreshTriggeredBuffs(next, frameTimerSeconds, settingsRef.current.buffs);
           });
-          playTone('detected');
+          if (acceptedActivationCount > 0) playTone('detected');
         }
       }
       setActiveBuffs((current) => {
@@ -681,6 +715,10 @@ export function RealtimeVisionLab({
   }, [playTone, running, stopCapture, text]);
 
   function activateBuff(buff: RealtimeBuffDefinition, eventTime: number) {
+    const blockedByCooldown = buff.nonRefreshable
+      && activeBuffsRef.current.some((active) => active.id === buff.id
+        && (active.remainingSeconds > 0 || (active.cooldownRemainingSeconds ?? 0) > 0));
+    if (blockedByCooldown) return;
     const snapshot = timerSnapshotRef.current;
     const timerSeconds = projectedTimerSeconds(snapshot, eventTime);
     if (timerSeconds !== null) {
@@ -693,6 +731,8 @@ export function RealtimeVisionLab({
           return next;
         });
         setActiveBuffs((current) => {
+          if (buff.nonRefreshable && current.some((active) => active.id === buff.id
+            && (active.remainingSeconds > 0 || (active.cooldownRemainingSeconds ?? 0) > 0))) return current;
           const next = current.filter((item) => item.id !== entry.id);
           return [...next, entry];
         });
@@ -764,7 +804,10 @@ export function RealtimeVisionLab({
   }, []);
 
   useEffect(() => {
-    const nextWarningIds = new Set(activeBuffs.filter((buff) => buff.warning).map((buff) => buff.id));
+    const nextWarningIds = new Set([
+      ...activeBuffs.filter((buff) => buff.warning).map((buff) => `${buff.id}:duration`),
+      ...activeBuffs.filter((buff) => buff.cooldownWarning).map((buff) => `${buff.id}:cooldown`)
+    ]);
     if ([...nextWarningIds].some((id) => !warnedBuffIdsRef.current.has(id))) playTone('warning');
     warnedBuffIdsRef.current = nextWarningIds;
   }, [activeBuffs, playTone]);
@@ -952,7 +995,7 @@ export function RealtimeVisionLab({
     <header className="panel-title experiment-subtitle realtime-vision-heading">
       <div>
         <h2>{text('按键 Buff 计时', 'Key-triggered Buff Timer')}</h2>
-        <p>{text('只识别游戏计时器；按键触发后记录游戏时间，并显示 Buff 的结束时间。按 Esc 可复用结束练习的按键并直接重置计时。', 'Only the game timer is recognized. A configured input records game time and shows when the Buff ends. Press Esc to reuse the practice stop key and reset the timer.')}</p>
+        <p>{text('只识别游戏计时器；按键触发后记录游戏时间，并显示 Buff 结束和不可刷新冷却结束时间。按 Esc 可复用结束练习的按键并直接重置计时。', 'Only the game timer is recognized. A configured input records Buff and non-refreshable cooldown end times. Press Esc to reuse the practice stop key and reset the timer.')}</p>
       </div>
       <div className="realtime-vision-heading-actions">
         <button type="button" onClick={resetTimer}><RotateCcw size={17} />{text('重置计时 Esc', 'Reset Timer Esc')}</button>
@@ -994,16 +1037,19 @@ export function RealtimeVisionLab({
         </div>
         <canvas ref={analysisCanvasRef} className="realtime-vision-analysis-canvas" aria-hidden="true" />
         <div className="realtime-vision-monitor-grid">
-          {activeBuffs.map((buff) => <div key={buff.id} className={`realtime-vision-monitor present ${buff.warning ? 'warning' : ''}`}>
+          {activeBuffs.map((buff) => <div key={buff.id} className={`realtime-vision-monitor present ${buff.warning || buff.cooldownWarning ? 'warning' : ''} ${(buff.cooldownRemainingSeconds ?? 0) > 0 ? 'cooldown' : ''}`}>
             <span>{buff.name}</span>
-            <strong>{buff.triggerMode === 'press' ? text('按下触发', 'On press') : text('长按松开', 'Hold and release')}</strong>
+            <strong>{buff.remainingSeconds > 0
+              ? buff.triggerMode === 'press' ? text('按下触发', 'On press') : text('长按松开', 'Hold and release')
+              : text('Buff 已结束，冷却中', 'Buff ended, cooldown')}</strong>
             <div className="realtime-vision-monitor-timing">
               <em>{text('结束', 'Ends')} {formatChallengeTimerSeconds(buff.expiresAtTimerSeconds)}</em>
+              {(buff.cooldownRemainingSeconds ?? 0) > 0 && <em className="cooldown-time">{text('冷却至', 'Ready')} {formatChallengeTimerSeconds(buff.cooldownEndsAtTimerSeconds)}</em>}
               <small>{text('触发', 'Triggered')} {formatChallengeTimerSeconds(buff.triggeredAtTimerSeconds)} · {text('剩余', 'Remaining')} {Math.max(0, buff.remainingSeconds).toFixed(buff.remainingSeconds < 10 ? 1 : 0)}s</small>
             </div>
           </div>)}
           {settings.buffs.filter((buff) => pendingBuffIds.has(buff.id) && !activeBuffs.some((active) => active.id === buff.id)).map((buff) => <div key={`pending-${buff.id}`} className="realtime-vision-monitor pending"><span>{buff.name}</span><strong>{text('已收到按键', 'Input received')}</strong><small>{text('正在等待游戏计时器读数', 'Waiting for the game timer reading')}</small></div>)}
-          {!activeBuffs.length && !pendingBuffIds.size && <div className="realtime-vision-monitor empty">{text('按下已配置的按键后，这里和左上角提示区会显示触发时间与结束时间。', 'Press a configured input to show its trigger and end times here and in the top-left alert.')}</div>}
+          {!activeBuffs.length && !pendingBuffIds.size && <div className="realtime-vision-monitor empty">{text('按下已配置的按键后，这里和左上角提示区会显示触发、结束和冷却时间。', 'Press a configured input to show trigger, end, and cooldown times here and in the top-left alert.')}</div>}
         </div>
       </div>
 
@@ -1058,12 +1104,14 @@ export function RealtimeVisionLab({
                   </button>
                   {buff.triggerCode && <button className="icon-button" type="button" title={text('清除按键', 'Clear Input')} onClick={() => updateBuff(buff.id, { triggerCode: '' })}><RotateCcw size={14} /></button>}
                   <div className="segmented realtime-vision-trigger-mode">
-                    <button className={buff.triggerMode === 'press' ? 'active' : ''} type="button" onClick={() => updateBuff(buff.id, { triggerMode: 'press' })}>{text('按下', 'Press')}</button>
+                    <button className={buff.triggerMode === 'press' ? 'active' : ''} type="button" onClick={() => updateBuff(buff.id, { triggerMode: 'press', nonRefreshable: false })}>{text('按下', 'Press')}</button>
                     <button className={buff.triggerMode === 'hold-release' ? 'active' : ''} type="button" onClick={() => updateBuff(buff.id, { triggerMode: 'hold-release' })}>{text('长按松开', 'Hold & Release')}</button>
                   </div>
+                  {buff.triggerMode === 'hold-release' && <label className="realtime-vision-non-refreshable"><input type="checkbox" checked={buff.nonRefreshable} onChange={(event) => updateBuff(buff.id, { nonRefreshable: event.target.checked })} /><span>{text('不可刷新', 'No Refresh')}</span></label>}
                 </div>
-                <div className={`realtime-vision-field-grid ${buff.triggerMode === 'hold-release' ? 'three' : ''}`}>
+                <div className={`realtime-vision-field-grid ${buff.triggerMode === 'hold-release' ? (buff.nonRefreshable ? 'four' : 'three') : ''}`}>
                   <label>{text('持续秒数', 'Duration')}<input type="number" min={0.1} max={600} step={0.1} value={buff.durationSeconds} onChange={(event) => updateBuff(buff.id, { durationSeconds: boundedNumber(event.target.value, 0.1, 600, buff.durationSeconds) })} /></label>
+                  {buff.triggerMode === 'hold-release' && buff.nonRefreshable && <label>{text('冷却秒数', 'Cooldown')}<input type="number" min={0.1} max={600} step={0.1} value={buff.cooldownSeconds} onChange={(event) => updateBuff(buff.id, { cooldownSeconds: boundedNumber(event.target.value, 0.1, 600, buff.cooldownSeconds) })} /></label>}
                   <label>{text('结束前警示', 'Warn Before')}<input type="number" min={0} max={120} step={0.1} value={buff.warningLeadSeconds} onChange={(event) => updateBuff(buff.id, { warningLeadSeconds: boundedNumber(event.target.value, 0, 120, buff.warningLeadSeconds) })} /></label>
                   {buff.triggerMode === 'hold-release' && <label>{text('长按门槛（秒）', 'Hold Threshold (s)')}<input type="number" min={0.1} max={5} step={0.05} value={buff.holdThresholdMs / 1000} onChange={(event) => updateBuff(buff.id, { holdThresholdMs: Math.round(boundedNumber(event.target.value, 0.1, 5, buff.holdThresholdMs / 1000) * 1000) })} /></label>}
                 </div>

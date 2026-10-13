@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "0.65",
+    [string]$Version = "",
     [string]$OutputDirectory = "release-packages\dlc",
     [string[]]$Live2dId = @(),
     [switch]$SkipFfmpeg,
@@ -9,6 +9,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
+if (-not $Version) { $Version = (Get-Content -LiteralPath (Join-Path $repositoryRoot "package.json") -Raw | ConvertFrom-Json).version }
 $outputRoot = [IO.Path]::GetFullPath((Join-Path $repositoryRoot $OutputDirectory))
 $stageRoot = Join-Path $outputRoot "_stage"
 $sourceManifestPath = Join-Path $repositoryRoot "live2d-optional\manifest.json"

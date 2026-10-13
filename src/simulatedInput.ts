@@ -16,6 +16,7 @@ export type SimulatedInputSettings = {
   keyFrequencyMs: number;
   holdDurationMs: number;
 };
+export type SimulatedInputBuildOptions = { minSwitchHoldMs?: number };
 
 type DraftSimulatedInputEvent = SimulatedInputEvent & { order: number };
 type RandomSource = () => number;
@@ -119,7 +120,8 @@ export function buildSimulatedInputEvents(
   chart: ComboChart,
   bindings: KeyBinding[],
   settings: SimulatedInputSettings,
-  random: RandomSource = Math.random
+  random: RandomSource = Math.random,
+  options: SimulatedInputBuildOptions = {}
 ): { events: SimulatedInputEvent[]; skipped: number } {
   const drafts: DraftSimulatedInputEvent[] = [];
   let skipped = 0;
@@ -131,6 +133,7 @@ export function buildSimulatedInputEvents(
   let activeSwitchWindow: SwitchWindow | null = null;
   const nextOrder = () => order++;
   const frequencyMs = Math.max(MIN_SIMULATED_KEY_FREQUENCY_MS, Math.round(finiteNonNegative(settings.keyFrequencyMs) || DEFAULT_SIMULATED_KEY_FREQUENCY_MS));
+  const minSwitchHoldMs = options.minSwitchHoldMs === undefined ? MIN_SIMULATED_SWITCH_HOLD_MS : finiteNonNegative(options.minSwitchHoldMs);
   const tapPressMs = Math.max(16, Math.min(50, Math.floor(frequencyMs * 0.4)));
 
   const appendClickWindow = (window: ClickWindow) => {
@@ -182,7 +185,7 @@ export function buildSimulatedInputEvents(
 
     if (isSwitchMove(step.moveId)) {
       breakActionsAtSwitch(startMs);
-      const switchEndMs = startMs + Math.max(MIN_SIMULATED_SWITCH_HOLD_MS, recordedDurationMs);
+      const switchEndMs = startMs + Math.max(minSwitchHoldMs, recordedDurationMs);
       const currentSwitchWindow = activeSwitchWindow as SwitchWindow | null;
       if (currentSwitchWindow?.moveId === step.moveId && startMs <= currentSwitchWindow.endMs) {
         currentSwitchWindow.endMs = Math.max(currentSwitchWindow.endMs, switchEndMs);
